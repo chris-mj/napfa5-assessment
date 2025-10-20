@@ -5,22 +5,161 @@ import Navbar from './components/Navbar'
 import ScoreForm from './components/ScoreForm'
 import Charts from './components/Charts'
 import { computeTotalScore } from './utils/scoring'
+import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom'
+import { isPlatformOwner, getUserRoles } from "./lib/roles";
 
+import Students from './pages/Students'
+import AddAttempt from './pages/AddAttempt'
+import Login from "./pages/Login";
+import AdminGlobal from "./pages/AdminGlobal";
+import CreateSchool from "./pages/CreateSchool";
+import ModifyUser from "./pages/ModifyUser";
+import ChangePassword from "./pages/ChangePassword";
+
+
+function Nav({ user, onLogout }) {
+    const link = "px-3 py-2 rounded hover:bg-gray-100";
+    const active = "bg-gray-200";
+
+    const [roles, setRoles] = useState([]); // holds {role, school_id, school_name}
+    const isOwner = isPlatformOwner(user);
+    const isSchoolSuperadmin = roles.some((r) => r.role === "superadmin");
+
+    // fetch memberships for the current user
+    useEffect(() => {
+        if (user && !isOwner) {
+            getUserRoles(user, supabase).then(setRoles);
+        } else {
+            setRoles([]);
+        }
+    }, [user, isOwner]);
+
+    return (
+        <nav className="flex items-center justify-between p-3 border-b bg-white">
+            {/* LEFT SIDE NAV LINKS */}
+            <div className="flex gap-2 flex-wrap">
+                <NavLink
+                    to="/"
+                    end
+                    className={({ isActive }) => `${link} ${isActive ? active : ""}`}
+                >
+                    Home
+                </NavLink>
+
+                <NavLink
+                    to="/students"
+                    className={({ isActive }) => `${link} ${isActive ? active : ""}`}
+                >
+                    Students
+                </NavLink>
+
+                <NavLink
+                    to="/add-attempt"
+                    className={({ isActive }) => `${link} ${isActive ? active : ""}`}
+                >
+                    Add Attempt
+                </NavLink>
+
+                {/* 🌍 GLOBAL ADMIN CONTROLS — only for your MOE email */}
+                {isOwner && (
+                    <>
+                        <NavLink
+                            to="/admin/global"
+                            className={({ isActive }) => `${link} ${isActive ? active : ""}`}
+                        >
+                            Global Admin
+                        </NavLink>
+                        <NavLink
+                            to="/admin/create-school"
+                            className={({ isActive }) => `${link} ${isActive ? active : ""}`}
+                        >
+                            Create School
+                        </NavLink>
+                        <NavLink
+                            to="/admin/modify-user"
+                            className={({ isActive }) => `${link} ${isActive ? active : ""}`}
+                        >
+                            Modify Users
+                        </NavLink>
+                    </>
+                )}
+
+                {/* 🏫 SCHOOL SUPERADMIN CONTROLS */}
+                {!isOwner && isSchoolSuperadmin && (
+                    <>
+                        <NavLink
+                            to="/admin/modify-user"
+                            className={({ isActive }) => `${link} ${isActive ? active : ""}`}
+                        >
+                            Modify Users
+                        </NavLink>
+                        <NavLink
+                            to="/admin/school"
+                            className={({ isActive }) => `${link} ${isActive ? active : ""}`}
+                        >
+                            School Admin
+                        </NavLink>
+                    </>
+                )}
+            </div>
+
+            {/* RIGHT SIDE USER SECTION */}
+            <div className="flex gap-2 items-center">
+                {user ? (
+                    <>
+                        <span className="text-sm text-gray-600">{user.email}</span>
+                        <NavLink
+                            to="/change-password"
+                            className={({ isActive }) => `${link} ${isActive ? active : ""}`}
+                        >
+                            Change Password
+                        </NavLink>
+                        <button
+                            onClick={onLogout}
+                            className="text-sm px-3 py-1 rounded bg-red-500 text-white hover:bg-red-600"
+                        >
+                            Logout
+                        </button>
+                    </>
+                ) : (
+                    <NavLink
+                        to="/login"
+                        className={({ isActive }) => `${link} ${isActive ? active : ""}`}
+                    >
+                        Login
+                    </NavLink>
+                )}
+            </div>
+        </nav>
+    );
+}
+
+
+function Home() {
+    return (
+        <div className="p-6">
+            <h1 className="text-2xl font-bold mb-2">NAPFA5 Assessment</h1>
+            <p className="text-gray-600">
+                Welcome to your NAPFA tracking system.<br />
+                Use the navigation above to access different sections.
+            </p>
+        </div>
+    );
+}
 export default function App(){
   const [user, setUser] = useState(null)
   const [students, setStudents] = useState([])
   const [selected, setSelected] = useState(null)
   const [scores, setScores] = useState([])
 
-  useEffect(()=>{
-    supabase.auth.getSession().then(r=>{
-      if(r.data?.session) setUser(r.data.session.user)
-    })
-    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
-      setUser(session?.user ?? null)
-    })
-    return () => authListener.subscription.unsubscribe()
-  }, [])
+    // Check auth on mount
+    useEffect(() => {
+        supabase.auth.getSession().then(({ data }) => setUser(data.session?.user || null));
+        const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+            setUser(session?.user || null);
+        });
+        return () => listener.subscription.unsubscribe();
+    }, [])
 
   useEffect(()=>{ if(user) loadStudents() }, [user])
 
@@ -37,18 +176,51 @@ export default function App(){
     setScores(data)
   }
 
-  async function handleLogin(){
-    const email = prompt('Enter teacher email to receive magic link (Supabase)')
-    if(!email) return
-    const { error } = await supabase.auth.signInWithOtp({ email })
-    if(error) return alert(error.message)
-    alert('Magic link sent — check your email')
-  }
+    async function handleLogin() {
+        const method = window.prompt(
+            'Type "1" for Magic Link login, or "2" for Email & Password login:'
+        )
+        if (!method) return
 
-  async function handleLogout(){
-    await supabase.auth.signOut()
-    setUser(null)
-  }
+        const email = window.prompt('Enter your email:')
+        if (!email) return
+
+        if (method === '1') {
+            // existing magic link sign-in
+            const { error } = await supabase.auth.signInWithOtp({ email })
+            if (error) return alert(error.message)
+            alert('✅ Magic link sent — check your email!')
+            return
+        }
+
+        if (method === '2') {
+            const password = window.prompt('Enter your password:')
+            if (!password) return
+
+            // try sign-in with password
+            const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+
+            if (error?.message?.includes('Invalid login credentials')) {
+                // offer to sign up
+                if (window.confirm('No account found. Create one?')) {
+                    const { error: signupErr } = await supabase.auth.signUp({ email, password })
+                    if (signupErr) return alert(signupErr.message)
+                    alert('✅ Account created! You can now log in.')
+                }
+            } else if (error) {
+                alert('Error: ' + error.message)
+            } else {
+                alert('✅ Signed in successfully!')
+                setUser(data?.user || null)
+            }
+        }
+    }
+
+
+    const handleLogout = async () => {
+        await supabase.auth.signOut();
+        setUser(null);
+    };
 
   function onStudentSelect(s){
     setSelected(s)
@@ -59,59 +231,22 @@ export default function App(){
     loadScoresFor(selected.id)
   }
 
-  return (
-    <div className="min-h-screen">
-      <Navbar user={user} onLogout={handleLogout} />
-      <div className="container mx-auto p-4 grid grid-cols-4 gap-4">
-        <div className="col-span-1">
-          <div className="bg-white p-4 rounded shadow">
-            {!user ? (
-              <div>
-                <h3 className="font-semibold mb-2">Sign in</h3>
-                <p className="text-sm mb-3">Sign in with Magic Link</p>
-                <button onClick={handleLogin} className="px-4 py-2 bg-blue-600 text-white rounded">Send magic link</button>
-              </div>
-            ) : (
-              <div>
-                <h3 className="font-semibold mb-2">Students</h3>
-                <div className="space-y-2">
-                  {students.length? students.map(s=> (
-                    <div key={s.id} className={`p-2 border rounded cursor-pointer ${selected?.id===s.id? 'bg-slate-100':'bg-white'}`} onClick={()=>onStudentSelect(s)}>
-                      <div className="font-medium">{s.name}</div>
-                      <div className="text-xs text-slate-500">{s.class} • {s.student_id}</div>
-                    </div>
-                  )) : (
-                    <div>No students yet. Add them via Supabase dashboard or run initial SQL.</div>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
+    return (
+        <BrowserRouter>
+            <Nav user={user} onLogout={handleLogout} />
+            <Routes>
+                <Route path="/" element={<Home />} />
+                <Route path="/students" element={<Students />} />
+                <Route path="/add-attempt" element={<AddAttempt />} />
+                <Route path="/login" element={<Login onLogin={setUser} />} />
 
-        <div className="col-span-3 space-y-4">
-          {selected ? (
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <ScoreForm student={selected} onSaved={onNewScore} />
-              </div>
-              <div>
-                <div className="p-4 bg-white rounded shadow">
-                  <h3 className="font-semibold">Summary</h3>
-                  <p className="text-sm">Student: {selected.name}</p>
-                  <p className="text-sm">Class: {selected.class}</p>
-                  <p className="text-sm">Student ID: {selected.student_id}</p>
-                </div>
-                <div className="mt-4">
-                  <Charts scores={scores} />
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="p-4 bg-white rounded shadow">Select a student to begin.</div>
-          )}
-        </div>
-      </div>
-    </div>
-  )
+                <Route path="/admin/global" element={<AdminGlobal user={user} />} />
+                <Route path="/admin/create-school" element={<CreateSchool user={user} />} />
+                <Route path="/admin/modify-user" element={<ModifyUser user={user} />} />
+
+                <Route path="/change-password" element={<ChangePassword />} />
+
+            </Routes>
+        </BrowserRouter>
+    );
 }
