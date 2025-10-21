@@ -271,15 +271,30 @@ export default function ModifyUser({ user }) {
 
             // 2️⃣  AUTH_USER_MISSING → create the Auth user, then call RPC again
             if (error?.message === "AUTH_USER_MISSING" || error?.code === "P0002") {
-                const response = await fetch("/api/createUser", {
+                // determine which API base to use
+                const apiBase = import.meta.env.DEV
+                    ? "https://napfa5-assessment.vercel.app" // 👈 replace with your actual deployed domain
+                    : "";
+
+                const response = await fetch(`${apiBase}/api/createUser`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
                         email: form.email,
-                        password: form.password || "Temp1234!",
+                        password: form.password || "test1234",
                         fullName: form.fullName,
                     }),
                 });
+
+                // const response = await fetch("/api/createUser", {
+                //     method: "POST",
+                //     headers: { "Content-Type": "application/json" },
+                //     body: JSON.stringify({
+                //         email: form.email,
+                //         password: form.password || "test1234",
+                //         fullName: form.fullName,
+                //     }),
+                // });
                 const result = await response.json();
 
                 if (!response.ok) {
