@@ -1,5 +1,6 @@
-﻿import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
+﻿import { BrowserRouter as Router, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import { supabase } from "./lib/supabaseClient";
 import Nav from "./components/Navbar";
 import Home from "./pages/Home";
@@ -11,6 +12,7 @@ import Students from "./pages/Students";
 import AddAttempt from "./pages/AddAttempt";
 import AdminGlobal from "./pages/AdminGlobal";
 import ChangePassword from "./pages/ChangePassword";
+import LoadingOverlay from "./components/LoadingOverlay";
 
 export default function App() {
     const [user, setUser] = useState(null);
@@ -28,55 +30,132 @@ export default function App() {
         return () => listener.subscription.unsubscribe();
     }, []);
 
-    if (loading) return <div className="p-4">Loading...</div>;
-
-    // Handles logout + redirect
-    async function handleLogout() {
-        await supabase.auth.signOut();
-        window.location.href = "/"; // redirect to public home
-    }
+    if (loading) return <LoadingOverlay />;
 
     return (
         <Router>
-            <Nav user={user} onLogout={handleLogout} />
-            <Routes>
-                {/* dYO? Public pages */}
-                <Route path="/" element={<Home user={user} />} />
-                <Route path="/login" element={!user ? <Login /> : <Navigate to="/dashboard" />} />
-
-                {/* dY"? Auth-only pages */}
-                <Route
-                    path="/dashboard"
-                    element={user ? <Dashboard user={user} /> : <Navigate to="/login" />}
-                />
-                <Route
-                    path="/modify-user"
-                    element={user ? <ModifyUser user={user} /> : <Navigate to="/login" />}
-                />
-                <Route
-                    path="/create-school"
-                    element={user ? <CreateSchool user={user} /> : <Navigate to="/login" />}
-                />
-                <Route
-                    path="/students"
-                    element={user ? <Students user={user} /> : <Navigate to="/login" />}
-                />
-                <Route
-                    path="/add-attempt"
-                    element={user ? <AddAttempt user={user} /> : <Navigate to="/login" />}
-                />
-                <Route
-                    path="/admin-global"
-                    element={user ? <AdminGlobal user={user} /> : <Navigate to="/login" />}
-                />
-                <Route
-                    path="/change-password"
-                    element={user ? <ChangePassword user={user} /> : <Navigate to="/login" />}
-                />
-
-                {/* Catch-all */}
-                <Route path="*" element={<Navigate to="/" />} />
-            </Routes>
+            <AnimatedRoutes user={user} setUser={setUser} />
         </Router>
+    );
+}
+
+function AnimatedRoutes({ user, setUser }) {
+    const location = useLocation();
+    const navigate = useNavigate();
+
+    const handleLogout = async () => {
+        await supabase.auth.signOut();
+        setUser(null);
+        navigate("/", { replace: true });
+    };
+
+    return (
+        <>
+            <Nav user={user} onLogout={handleLogout} />
+            <AnimatePresence mode="wait" initial={false}>
+                <Routes location={location} key={location.pathname}>
+                    {/* dYO? Public pages */}
+                    <Route path="/" element={<PageFade><Home /></PageFade>} />
+                    <Route
+                        path="/login"
+                        element={
+                            !user ? (
+                                <PageFade><Login onLogin={setUser} /></PageFade>
+                            ) : (
+                                <Navigate to="/dashboard" />
+                            )
+                        }
+                    />
+
+                    {/* dY"? Auth-only pages */}
+                    <Route
+                        path="/dashboard"
+                        element={
+                            user ? (
+                                <PageFade><Dashboard user={user} /></PageFade>
+                            ) : (
+                                <Navigate to="/login" replace />
+                            )
+                        }
+                    />
+                    <Route
+                        path="/modify-user"
+                        element={
+                            user ? (
+                                <PageFade><ModifyUser user={user} /></PageFade>
+                            ) : (
+                                <Navigate to="/login" replace />
+                            )
+                        }
+                    />
+                    <Route
+                        path="/create-school"
+                        element={
+                            user ? (
+                                <PageFade><CreateSchool user={user} /></PageFade>
+                            ) : (
+                                <Navigate to="/login" replace />
+                            )
+                        }
+                    />
+                    <Route
+                        path="/students"
+                        element={
+                            user ? (
+                                <PageFade><Students user={user} /></PageFade>
+                            ) : (
+                                <Navigate to="/login" replace />
+                            )
+                        }
+                    />
+                    <Route
+                        path="/add-attempt"
+                        element={
+                            user ? (
+                                <PageFade><AddAttempt user={user} /></PageFade>
+                            ) : (
+                                <Navigate to="/login" replace />
+                            )
+                        }
+                    />
+                    <Route
+                        path="/admin-global"
+                        element={
+                            user ? (
+                                <PageFade><AdminGlobal user={user} /></PageFade>
+                            ) : (
+                                <Navigate to="/login" replace />
+                            )
+                        }
+                    />
+                    <Route
+                        path="/change-password"
+                        element={
+                            user ? (
+                                <PageFade><ChangePassword user={user} /></PageFade>
+                            ) : (
+                                <Navigate to="/login" replace />
+                            )
+                        }
+                    />
+
+                    {/* Catch-all */}
+                    <Route path="*" element={<Navigate to="/" replace />} />
+                </Routes>
+            </AnimatePresence>
+        </>
+    );
+}
+
+function PageFade({ children }) {
+    return (
+        <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2, ease: "easeOut" }}
+        >
+            {children}
+        </motion.div>
     );
 }

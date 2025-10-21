@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
 
 export default function Login({ onLogin }) {
@@ -7,17 +8,19 @@ export default function Login({ onLogin }) {
     const [useMagic, setUseMagic] = useState(false);
     const [loading, setLoading] = useState(false);
     const [message, setMessage] = useState("");
+    const navigate = useNavigate();
 
-    // ✅ Detect magic-link sessions automatically
+    // Detect magic-link sessions automatically
     useEffect(() => {
         const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
             if (session?.user) {
-                // Redirect automatically after successful magic-link login
-                window.location.href = "/dashboard";
+                onLogin?.(session.user);
+                navigate("/dashboard", { replace: true });
             }
         });
         return () => listener.subscription.unsubscribe();
-    }, []);
+    }, [navigate, onLogin]);
+
     const handleSubmit = async (e) => {
         e.preventDefault();
         setMessage("");
@@ -27,7 +30,7 @@ export default function Login({ onLogin }) {
             if (useMagic) {
                 const { error } = await supabase.auth.signInWithOtp({ email });
                 if (error) throw error;
-                setMessage("✅ Magic link sent! Check your email.");
+                setMessage("Magic link sent! Check your email.");
             } else {
                 const { data, error } = await supabase.auth.signInWithPassword({
                     email,
@@ -35,29 +38,21 @@ export default function Login({ onLogin }) {
                 });
 
                 if (error?.message?.includes("Invalid login credentials please contact admin")) {
-                    // if (window.confirm("No account found. Create one?")) {
-                    //     const { error: signUpError } = await supabase.auth.signUp({
-                    //         email,
-                    //         password,
-                    //     });
-                    //     if (signUpError) throw signUpError;
-                    //     setMessage("✅ Account created. Please verify your email.");
-                    // }
+                    // handled by admin
                 } else if (error) {
                     throw error;
                 } else if (data?.user) {
-                    setMessage("✅ Signed in successfully!");
-                    onLogin?.(data?.user || null);
-                    window.location.href = "/dashboard";
+                    setMessage("Signed in successfully!");
+                    onLogin?.(data.user);
+                    navigate("/dashboard", { replace: true });
                 }
             }
         } catch (err) {
-            setMessage("❌ " + err.message);
+            setMessage("Error: " + err.message);
         } finally {
             setLoading(false);
         }
     };
-
 
     return (
         <div className="flex justify-center items-center h-[80vh]">
@@ -96,7 +91,7 @@ export default function Login({ onLogin }) {
                         ? "Please wait..."
                         : useMagic
                             ? "Send Magic Link"
-                            : "Sign In / Sign Up"}
+                            : "Sign In"}
                 </button>
 
                 <button
@@ -114,8 +109,8 @@ export default function Login({ onLogin }) {
                         const { error } = await supabase.auth.resetPasswordForEmail(email, {
                             redirectTo: `${window.location.origin}/change-password`,
                         });
-                        if (error) setMessage("❌ " + error.message);
-                        else setMessage("📩 Password reset link sent to your email.");
+                        if (error) setMessage("Error: " + error.message);
+                        else setMessage("Password reset link sent to your email.");
                     }}
                     className="text-sm text-blue-700 underline w-full"
                 >
