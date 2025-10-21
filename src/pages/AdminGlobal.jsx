@@ -27,10 +27,10 @@ export default function AdminGlobal({ user }) {
             <div className="flex items-center justify-between mb-4">
                 <h1 className="text-2xl font-bold">Global Admin</h1>
                 <div className="flex gap-2">
-                    <Link to="/admin/create-school" className="bg-blue-600 text-white px-3 py-2 rounded hover:bg-blue-700">
+                    <Link to="/create-school" className="bg-blue-600 text-white px-3 py-2 rounded hover:bg-blue-700">
                         + Create School
                     </Link>
-                    <Link to="/admin/modify-user" className="bg-green-600 text-white px-3 py-2 rounded hover:bg-green-700">
+                    <Link to="/modify-user" className="bg-green-600 text-white px-3 py-2 rounded hover:bg-green-700">
                         + Modify Users
                     </Link>
                 </div>

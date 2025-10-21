@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 
 export default function Login({ onLogin }) {
@@ -8,6 +8,16 @@ export default function Login({ onLogin }) {
     const [loading, setLoading] = useState(false);
     const [message, setMessage] = useState("");
 
+    // ✅ Detect magic-link sessions automatically
+    useEffect(() => {
+        const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+            if (session?.user) {
+                // Redirect automatically after successful magic-link login
+                window.location.href = "/dashboard";
+            }
+        });
+        return () => listener.subscription.unsubscribe();
+    }, []);
     const handleSubmit = async (e) => {
         e.preventDefault();
         setMessage("");
@@ -24,20 +34,21 @@ export default function Login({ onLogin }) {
                     password,
                 });
 
-                if (error?.message?.includes("Invalid login credentials")) {
-                    if (window.confirm("No account found. Create one?")) {
-                        const { error: signUpError } = await supabase.auth.signUp({
-                            email,
-                            password,
-                        });
-                        if (signUpError) throw signUpError;
-                        setMessage("✅ Account created. Please verify your email.");
-                    }
+                if (error?.message?.includes("Invalid login credentials please contact admin")) {
+                    // if (window.confirm("No account found. Create one?")) {
+                    //     const { error: signUpError } = await supabase.auth.signUp({
+                    //         email,
+                    //         password,
+                    //     });
+                    //     if (signUpError) throw signUpError;
+                    //     setMessage("✅ Account created. Please verify your email.");
+                    // }
                 } else if (error) {
                     throw error;
-                } else {
+                } else if (data?.user) {
                     setMessage("✅ Signed in successfully!");
                     onLogin?.(data?.user || null);
+                    window.location.href = "/dashboard";
                 }
             }
         } catch (err) {
@@ -46,6 +57,7 @@ export default function Login({ onLogin }) {
             setLoading(false);
         }
     };
+
 
     return (
         <div className="flex justify-center items-center h-[80vh]">
