@@ -112,6 +112,23 @@ export default function ModifyUser({ user }) {
         loadMembers(schoolId);
     }, [schoolId, loadMembers]);
 
+    useEffect(() => {
+        if (!schoolId) return;
+        const channel = supabase
+            .channel(`memberships:${schoolId}`)
+            .on(
+                "postgres_changes",
+                { event: "*", schema: "public", table: "memberships", filter: `school_id=eq.${schoolId}` },
+                () => {
+                    loadMembers(schoolId);
+                }
+            )
+            .subscribe();
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [schoolId, loadMembers]);
+
     const memberEmails = useMemo(
         () => new Set(members.map((member) => member.email.toLowerCase())),
         [members]
@@ -271,6 +288,8 @@ export default function ModifyUser({ user }) {
 
             // 2️⃣  AUTH_USER_MISSING → create the Auth user, then call RPC again
             if (error?.message === "AUTH_USER_MISSING" || error?.code === "P0002") {
+                // Call /api/createUser and link user (as you already have)
+                setFeedback({ type: "info", text: "Creating new user..." });
                 // determine which API base to use
                 const apiBase = import.meta.env.DEV
                     ? "https://napfa5-assessment.vercel.app" // 👈 replace with your actual deployed domain
@@ -315,6 +334,9 @@ export default function ModifyUser({ user }) {
                 }
 
                 setFeedback({ type: "success", text: "✅ User created and linked successfully." });
+                setForm(INITIAL_FORM);
+                await loadMembers(schoolId);
+                return;
             }
 
 
@@ -323,7 +345,10 @@ export default function ModifyUser({ user }) {
                 return
             }
 
-            setFeedback({ type: 'success', text: 'User linked or updated successfully.' })
+            setFeedback({ type: 'success', text: 'User linked or updated successfully.' });
+            setForm(INITIAL_FORM);
+            await loadMembers(schoolId);
+
         } finally {
             setSubmitting(false)
         }
