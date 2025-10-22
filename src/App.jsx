@@ -12,7 +12,9 @@ import Students from "./pages/Students";
 import AddAttempt from "./pages/AddAttempt";
 import AdminGlobal from "./pages/AdminGlobal";
 import ChangePassword from "./pages/ChangePassword";
-import LoadingOverlay from "./components/LoadingOverlay";
+import Contact from "./pages/Contact";
+import Sessions from "./pages/Sessions";
+import SessionDetail from "./pages/SessionDetail";
 
 export default function App() {
     const [user, setUser] = useState(null);
@@ -30,7 +32,7 @@ export default function App() {
         return () => listener.subscription.unsubscribe();
     }, []);
 
-    if (loading) return <LoadingOverlay />;
+    if (loading) return <div className="p-4">Loading...</div>;
 
     return (
         <Router>
@@ -54,7 +56,7 @@ function AnimatedRoutes({ user, setUser }) {
             <Nav user={user} onLogout={handleLogout} />
             <AnimatePresence mode="wait" initial={false}>
                 <Routes location={location} key={location.pathname}>
-                    {/* dYO? Public pages */}
+                    {/* Public pages */}
                     <Route path="/" element={<PageFade><Home /></PageFade>} />
                     <Route
                         path="/login"
@@ -62,12 +64,13 @@ function AnimatedRoutes({ user, setUser }) {
                             !user ? (
                                 <PageFade><Login onLogin={setUser} /></PageFade>
                             ) : (
-                                <Navigate to="/dashboard" />
+                                <Navigate to="/dashboard" replace />
                             )
                         }
                     />
+                    <Route path="/contact" element={<PageFade><Contact /></PageFade>} />
 
-                    {/* dY"? Auth-only pages */}
+                    {/* Auth-only pages */}
                     <Route
                         path="/dashboard"
                         element={
@@ -103,6 +106,26 @@ function AnimatedRoutes({ user, setUser }) {
                         element={
                             user ? (
                                 <PageFade><Students user={user} /></PageFade>
+                            ) : (
+                                <Navigate to="/login" replace />
+                            )
+                        }
+                    />
+                    <Route
+                        path="/sessions"
+                        element={
+                            user ? (
+                                <PageFade><Sessions user={user} /></PageFade>
+                            ) : (
+                                <Navigate to="/login" replace />
+                            )
+                        }
+                    />
+                    <Route
+                        path="/sessions/:id"
+                        element={
+                            user ? (
+                                <PageFade><SessionDetail user={user} /></PageFade>
                             ) : (
                                 <Navigate to="/login" replace />
                             )

@@ -1,4 +1,4 @@
-import { NavLink } from "react-router-dom";
+﻿import { NavLink } from "react-router-dom";
 import { isPlatformOwner } from "../lib/roles";
 
 export default function Navbar({ user, onLogout }) {
@@ -23,19 +23,25 @@ export default function Navbar({ user, onLogout }) {
                         >
                             Dashboard
                         </NavLink>
+                        <NavLink
+                            to="/sessions"
+                            className={({ isActive }) => `${link} ${isActive ? active : ""}`}
+                        >
+                            Sessions
+                        </NavLink>
                         {isOwner && (
                             <>
-                                <NavLink
-                                    to="/admin-global"
-                                    className={({ isActive }) => `${link} ${isActive ? active : ""}`}
-                                >
-                                    Global Admin
-                                </NavLink>
                                 <NavLink
                                     to="/create-school"
                                     className={({ isActive }) => `${link} ${isActive ? active : ""}`}
                                 >
                                     Create School
+                                </NavLink>
+                                <NavLink
+                                    to="/admin-global"
+                                    className={({ isActive }) => `${link} ${isActive ? active : ""}`}
+                                >
+                                    Global Admin
                                 </NavLink>
                             </>
                         )}
@@ -50,6 +56,12 @@ export default function Navbar({ user, onLogout }) {
             </div>
 
             <div className="flex items-center gap-3">
+                <NavLink
+                    to="/contact"
+                    className={({ isActive }) => `${link} ${isActive ? active : ""}`}
+                >
+                    Contact Us
+                </NavLink>
                 {user ? (
                     <>
                         <div className="text-sm text-gray-600">{user.email}</div>
