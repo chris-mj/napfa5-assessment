@@ -5,12 +5,12 @@
   "engines": {
     "node": "22.x"
   },
-    "scripts": {
-        "dev": "vite",
-        "build": "vite build",
-        "vercel-build": "vite build",
-        "preview": "vite preview"
-    },
+  "scripts": {
+    "prebuild": "chmod +x node_modules/.bin/vite",
+    "build": "vite build",
+    "vercel-build": "npm run prebuild && vite build"
+  },
+
     "dependencies": {
         "@supabase/functions-js": "^2.76.1",
         "@supabase/supabase-js": "^2.75.1",
