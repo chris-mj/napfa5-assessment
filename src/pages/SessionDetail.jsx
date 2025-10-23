@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
+import AttemptEditor from "../components/AttemptEditor";
 import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
+import RosterUpload from "../components/SessionRosterUpload";
+import RosterSelect from "../components/SessionRosterSelect";
 
 const ROLE_CAN_MANAGE = ["superadmin", "admin"];
 
@@ -13,6 +16,7 @@ export default function SessionDetail({ user }) {
     const [membershipError, setMembershipError] = useState("");
 
     const [session, setSession] = useState(null);
+    const [roster, setRoster] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
     const [editMode, setEditMode] = useState(false);
@@ -66,6 +70,23 @@ export default function SessionDetail({ user }) {
             })
             .finally(() => setLoading(false));
     }, [membership?.school_id, id]);
+
+    useEffect(() => {
+        if (!id) return;
+        loadRoster();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [id]);
+
+    const loadRoster = async () => {
+        const { data, error: err } = await supabase
+            .from("session_roster")
+            .select("student_id, students!inner(id, student_identifier, name)")
+            .eq("session_id", id)
+            .order("student_id", { ascending: true });
+        if (err) return;
+        const list = (data || []).map((r) => ({ id: r.students.id, student_identifier: r.students.student_identifier, name: r.students.name }));
+        setRoster(list);
+    };
 
     useEffect(() => {
         if (!flash) return;
@@ -136,7 +157,12 @@ export default function SessionDetail({ user }) {
                 Back
             </button>
             <header className="space-y-2">
-                <h1 className="text-3xl font-semibold text-gray-800">{session.title}</h1>
+                <div className="flex items-center gap-3">
+                    <h1 className="text-3xl font-semibold text-gray-800">{session.title}</h1>
+                    <span className={`text-xs px-2 py-1 rounded border ${session.status === 'completed' ? 'bg-gray-200 text-gray-700' : session.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-800'}`}>
+                        {session.status}
+                    </span>
+                </div>
                 <p className="text-gray-600">
                     Session date: <span className="font-medium">{new Date(session.session_date).toLocaleDateString()}</span>
                 </p>
@@ -146,6 +172,20 @@ export default function SessionDetail({ user }) {
             </header>
 
             {flash && <div className="text-sm text-blue-600">{flash}</div>}
+
+            {/* Status/role banner */}
+            <div className="text-sm">
+                {session.status === "completed" && (
+                    <div className="mb-3 px-3 py-2 rounded border bg-gray-50 text-gray-700">
+                        Session is completed. Scores and roster are read-only.
+                    </div>
+                )}
+                {session.status !== "completed" && membership?.role === "score_taker" && (
+                    <div className="mb-3 px-3 py-2 rounded border bg-yellow-50 text-yellow-800">
+                        You are a score_taker. You can record scores while the session is Active. Session settings and roster are admin-only.
+                    </div>
+                )}
+            </div>
 
             <section className="space-y-4">
                 {canManage ? (
@@ -195,6 +235,18 @@ export default function SessionDetail({ user }) {
                             >
                                 Edit Session
                             </button>
+                            {session.status === 'draft' && (
+                                <button onClick={async ()=>{
+                                    const { data, error: err } = await supabase.from('sessions').update({ status: 'active' }).eq('id', session.id).select().single();
+                                    if (!err) { setSession(data); setFlash('Session activated.'); }
+                                }} className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">Activate</button>
+                            )}
+                            {session.status === 'active' && (
+                                <button onClick={async ()=>{
+                                    const { data, error: err } = await supabase.from('sessions').update({ status: 'completed' }).eq('id', session.id).select().single();
+                                    if (!err) { setSession(data); setFlash('Session completed.'); }
+                                }} className="px-4 py-2 bg-gray-800 text-white rounded hover:bg-gray-900">Mark Completed</button>
+                            )}
                             <button
                                 onClick={handleDelete}
                                 className="px-4 py-2 border border-red-300 text-red-600 rounded hover:bg-red-50"
@@ -207,6 +259,64 @@ export default function SessionDetail({ user }) {
                     <p className="text-sm text-gray-500">You have view-only access to this session.</p>
                 )}
             </section>
+
+            <section className="space-y-3">
+                <h2 className="text-xl font-semibold">Roster</h2>
+                {canManage && (
+                    <div className="space-y-3">
+                        <RosterUpload sessionId={id} schoolId={membership?.school_id} onDone={loadRoster} />
+                        <RosterSelect sessionId={id} schoolId={membership?.school_id} onDone={loadRoster} />
+                    </div>
+                )}
+                <div className="border rounded">
+                    <table className="w-full">
+                        <thead>
+                            <tr className="bg-gray-100 text-left">
+                                <th className="px-3 py-2 border">Student ID</th>
+                                <th className="px-3 py-2 border">Name</th>
+                                <th className="px-3 py-2 border w-48">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        {roster.length === 0 ? (
+                            <tr><td colSpan="3" className="px-3 py-4 text-center text-gray-500">No students in this session yet.</td></tr>
+                        ) : roster.map((s) => (
+                            <RosterRow
+                                key={s.id}
+                                s={s}
+                                sessionId={id}
+                                canRecord={session.status === 'active' && ['admin','superadmin','score_taker'].includes(membership?.role)}
+                                onSaved={loadRoster}
+                            />
+                        ))}
+                        </tbody>
+                    </table>
+                </div>
+            </section>
         </div>
+    );
+}
+
+function RosterRow({ s, sessionId, canRecord, onSaved }) {
+    const [open, setOpen] = useState(false);
+    return (
+        <>
+            <tr>
+                <td className="px-3 py-2 border">{s.student_identifier}</td>
+                <td className="px-3 py-2 border">{s.name}</td>
+                <td className="px-3 py-2 border">
+                    <button onClick={() => canRecord && setOpen(v => !v)} disabled={!canRecord} className="px-3 py-1.5 border rounded hover:bg-gray-100 text-sm">
+                        
+                    </button>
+                </td>
+            </tr>
+            {open && (
+                <tr>
+                    <td colSpan="3" className="px-3 py-3 border bg-gray-50">
+                        <AttemptEditor sessionId={sessionId} studentId={s.id} onSaved={onSaved} />
+                    </td>
+                </tr>
+            )}
+        </>
     );
 }
