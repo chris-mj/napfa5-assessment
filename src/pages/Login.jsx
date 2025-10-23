@@ -60,7 +60,10 @@ export default function Login({ onLogin }) {
                 onSubmit={handleSubmit}
                 className="p-6 w-[360px] bg-white border rounded shadow space-y-4"
             >
-                <h1 className="text-xl font-bold text-center">NAPFA5 Login</h1>
+                <div className="flex flex-col items-center gap-2 mb-1">
+                    <img src="/icon.png" alt="NAPFA5" className="w-10 h-10" />
+                    <h1 className="text-xl font-bold text-center">NAPFA5 Login</h1>
+                </div>
 
                 <input
                     type="email"

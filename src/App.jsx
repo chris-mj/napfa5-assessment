@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { supabase } from "./lib/supabaseClient";
 import Nav from "./components/Navbar";
+import LoadingOverlay from "./components/LoadingOverlay";
 import Home from "./pages/Home";
 import Dashboard from "./pages/Dashboard";
 import Login from "./pages/Login";
@@ -15,6 +16,7 @@ import ChangePassword from "./pages/ChangePassword";
 import Contact from "./pages/Contact";
 import Sessions from "./pages/Sessions";
 import SessionDetail from "./pages/SessionDetail";
+import NotFound from "./pages/NotFound";
 
 export default function App() {
     const [user, setUser] = useState(null);
@@ -32,7 +34,7 @@ export default function App() {
         return () => listener.subscription.unsubscribe();
     }, []);
 
-    if (loading) return <div className="p-4">Loading...</div>;
+    if (loading) return <LoadingOverlay />;
 
     return (
         <Router>
@@ -163,7 +165,7 @@ function AnimatedRoutes({ user, setUser }) {
                     />
 
                     {/* Catch-all */}
-                    <Route path="*" element={<Navigate to="/" replace />} />
+                    <Route path="*" element={<PageFade><NotFound /></PageFade>} />
                 </Routes>
             </AnimatePresence>
         </>

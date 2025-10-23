@@ -8,7 +8,10 @@ export default function Navbar({ user, onLogout }) {
 
     return (
         <nav className="bg-white shadow p-3 flex justify-between items-center">
-            <div className="font-bold">NAPFA5</div>
+            <NavLink to="/" className="flex items-center gap-2">
+                <img src="/icon.png" alt="NAPFA5" className="w-6 h-6" />
+                <span className="font-bold">NAPFA5</span>
+            </NavLink>
 
             <div className="flex gap-3">
                 <NavLink to="/" end className={({ isActive }) => `${link} ${isActive ? active : ""}`}>

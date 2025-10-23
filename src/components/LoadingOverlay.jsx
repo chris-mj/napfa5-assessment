@@ -9,6 +9,16 @@ export default function LoadingOverlay() {
             transition={{ duration: 0.6, ease: "easeInOut" }}
             className="fixed inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-blue-600 to-indigo-700 text-white z-50"
         >
+            {/* Icon */}
+            <motion.img
+                src="/icon.png"
+                alt="NAPFA5"
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                transition={{ duration: 0.5, ease: "easeOut" }}
+                className="w-16 h-16 mb-3 rounded"
+            />
+
             {/* Logo / title animation */}
             <motion.div
                 initial={{ scale: 0.7, opacity: 0 }}

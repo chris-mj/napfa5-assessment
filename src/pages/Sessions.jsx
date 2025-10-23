@@ -343,7 +343,10 @@ export default function Sessions({ user }) {
                         ))}
                     </div>
                 ) : sessions.length === 0 ? (
-                    <div className="text-gray-600">No sessions found.</div>
+                    <div className="text-gray-600 flex flex-col items-center justify-center py-10 text-center">
+                        <img src="/icon.png" alt="No sessions" className="w-12 h-12 mb-3 opacity-80" />
+                        <p>No sessions found.</p>
+                    </div>
                 ) : (
                     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                         {sessions.map((session) => (

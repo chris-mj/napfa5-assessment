@@ -8,12 +8,15 @@ export default function Dashboard({ user }) {
 
     return (
         <div className="p-6 space-y-4">
-            <div>
-                <h1 className="text-3xl font-semibold">Dashboard</h1>
-                <p className="text-gray-700">Welcome back, <strong>{user?.email}</strong>.</p>
-                <p className="text-gray-600">
-                    Use these quick links to jump straight into the areas you manage most often.
-                </p>
+            <div className="flex items-center gap-3">
+                <img src="/icon.png" alt="NAPFA5" className="w-8 h-8" />
+                <div>
+                    <h1 className="text-3xl font-semibold">Dashboard</h1>
+                    <p className="text-gray-700">Welcome back, <strong>{user?.email}</strong>.</p>
+                    <p className="text-gray-600">
+                        Use these quick links to jump straight into the areas you manage most often.
+                    </p>
+                </div>
             </div>
             <div className="flex flex-wrap gap-3">
                 <NavLink to="/students" className={navLinkClass}>
