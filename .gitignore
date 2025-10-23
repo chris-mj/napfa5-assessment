@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+node_modules_old/
+
+# Build output
+dist/
+
+# Env
+.env
+
+# IDE/editor
+.idea/
+.vscode/
+.DS_Store
+
+# Package tarballs
+vite-*.tgz
+
+# Windows reserved device names that can appear accidentally
+CON
+PRN
+AUX
+NUL
+COM1
+LPT1
