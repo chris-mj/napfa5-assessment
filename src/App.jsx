@@ -1,22 +1,22 @@
-﻿import { BrowserRouter as Router, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
+import { useEffect, useState, lazy, Suspense } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { supabase } from "./lib/supabaseClient";
 import Nav from "./components/Navbar";
 import LoadingOverlay from "./components/LoadingOverlay";
-import Home from "./pages/Home";
-import Dashboard from "./pages/Dashboard";
-import Login from "./pages/Login";
-import ModifyUser from "./pages/ModifyUser";
-import CreateSchool from "./pages/CreateSchool";
-import Students from "./pages/Students";
-import AddAttempt from "./pages/AddAttempt";
-import AdminGlobal from "./pages/AdminGlobal";
-import ChangePassword from "./pages/ChangePassword";
-import Contact from "./pages/Contact";
-import Sessions from "./pages/Sessions";
-import SessionDetail from "./pages/SessionDetail";
-import NotFound from "./pages/NotFound";
+const Home = lazy(() => import("./pages/Home"));
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const Login = lazy(() => import("./pages/Login"));
+const ModifyUser = lazy(() => import("./pages/ModifyUser"));
+const CreateSchool = lazy(() => import("./pages/CreateSchool"));
+const Students = lazy(() => import("./pages/Students"));
+const AddAttempt = lazy(() => import("./pages/AddAttempt"));
+const AdminGlobal = lazy(() => import("./pages/AdminGlobal"));
+const ChangePassword = lazy(() => import("./pages/ChangePassword"));
+const Contact = lazy(() => import("./pages/Contact"));
+const Sessions = lazy(() => import("./pages/Sessions"));
+const SessionDetail = lazy(() => import("./pages/SessionDetail"));
+const NotFound = lazy(() => import("./pages/NotFound"));
 
 export default function App() {
     const [user, setUser] = useState(null);
@@ -56,8 +56,7 @@ function AnimatedRoutes({ user, setUser }) {
     return (
         <>
             <Nav user={user} onLogout={handleLogout} />
-            <AnimatePresence mode="wait" initial={false}>
-                <Routes location={location} key={location.pathname}>
+            <AnimatePresence mode="wait" initial={false}><Suspense fallback={<LoadingOverlay />}><Routes location={location} key={location.pathname}>
                     {/* Public pages */}
                     <Route path="/" element={<PageFade><Home /></PageFade>} />
                     <Route
@@ -166,8 +165,7 @@ function AnimatedRoutes({ user, setUser }) {
 
                     {/* Catch-all */}
                     <Route path="*" element={<PageFade><NotFound /></PageFade>} />
-                </Routes>
-            </AnimatePresence>
+                </Routes></Suspense></AnimatePresence>
         </>
     );
 }

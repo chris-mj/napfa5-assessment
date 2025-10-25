@@ -1,4 +1,4 @@
-﻿import { NavLink } from "react-router-dom";
+import { NavLink } from "react-router-dom";
 import { isPlatformOwner } from "../lib/roles";
 
 export default function Dashboard({ user }) {

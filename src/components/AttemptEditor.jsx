@@ -93,6 +93,13 @@ export default function AttemptEditor({ sessionId, studentId, onSaved }) {
 
   return (
     <form onSubmit={handleSave} className="border rounded p-3 space-y-3">
+
+  <div className="text-xs text-gray-700 bg-blue-50 border border-blue-200 rounded p-2">
+    Tip: Broad Jump and Sit & Reach keep the higher of two attempts; Shuttle Run keeps the lower time. Sit-ups and Pull-ups are single-attempt entries.
+  </div>
+
+
+
       {loading ? (
         <div className="text-sm">Loading...</div>
       ) : (
@@ -142,4 +149,3 @@ export default function AttemptEditor({ sessionId, studentId, onSaved }) {
     </form>
   );
 }
-

@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { isPlatformOwner } from "../lib/roles";
 
@@ -278,7 +278,7 @@ export default function ModifyUser({ user }) {
         // }
         setSubmitting(true)
         try {
-            // 1️⃣ try the RPC first
+            // 1?? try the RPC first
             const { data, error } = await supabase.rpc('create_or_link_user', {
                 p_email: form.email,
                 p_full_name: form.fullName,
@@ -286,13 +286,13 @@ export default function ModifyUser({ user }) {
                 p_role: form.role,
             })
 
-            // 2️⃣  AUTH_USER_MISSING → create the Auth user, then call RPC again
+            // 2??  AUTH_USER_MISSING ? create the Auth user, then call RPC again
             if (error?.message === "AUTH_USER_MISSING" || error?.code === "P0002") {
                 // Call /api/createUser and link user (as you already have)
                 setFeedback({ type: "info", text: "Creating new user..." });
                 // determine which API base to use
                 const apiBase = import.meta.env.DEV
-                    ? "https://napfa5-assessment.vercel.app" // 👈 replace with your actual deployed domain
+                    ? "https://napfa5-assessment.vercel.app" // ?? replace with your actual deployed domain
                     : "";
 
                 const response = await fetch(`${apiBase}/api/createUser`, {
@@ -333,7 +333,7 @@ export default function ModifyUser({ user }) {
                     return;
                 }
 
-                setFeedback({ type: "success", text: "✅ User created and linked successfully." });
+                setFeedback({ type: "success", text: "? User created and linked successfully." });
                 setForm(INITIAL_FORM);
                 await loadMembers(schoolId);
                 return;
@@ -410,6 +410,17 @@ export default function ModifyUser({ user }) {
 
     return (
         <div className="p-6 max-w-3xl space-y-6">
+    <div className="mb-4 text-sm text-gray-700 border rounded p-3 bg-gray-50">
+        <div className="font-medium mb-1">Role legend</div>
+        <div className="flex flex-wrap gap-3">
+            <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-800">admin/superadmin</span>
+            <span>manage students, enrollments, sessions and roster; record scores when Active; completed sessions are read-only</span>
+        </div>
+        <div className="flex flex-wrap gap-3 mt-2">
+            <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-800">score_taker</span>
+            <span>view students and scores; record scores only when session is Active; cannot manage roster</span>
+        </div>
+    </div>
             <div>
                 <h1 className="text-2xl font-bold mb-4">Modify Users</h1>
                 <div className="space-y-4">

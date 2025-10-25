@@ -23,6 +23,8 @@ export default function SessionDetail({ user }) {
     const [formState, setFormState] = useState({ title: "", session_date: "" });
     const [formSubmitting, setFormSubmitting] = useState(false);
     const [flash, setFlash] = useState("");
+    const [scoresCount, setScoresCount] = useState(0);
+    const [scoredSet, setScoredSet] = useState(new Set());
 
     const canManage = useMemo(() => ROLE_CAN_MANAGE.includes(membership?.role), [membership]);
 
@@ -74,6 +76,7 @@ export default function SessionDetail({ user }) {
     useEffect(() => {
         if (!id) return;
         loadRoster();
+        loadScoresCount();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [id]);
 
@@ -86,6 +89,20 @@ export default function SessionDetail({ user }) {
         if (err) return;
         const list = (data || []).map((r) => ({ id: r.students.id, student_identifier: r.students.student_identifier, name: r.students.name }));
         setRoster(list);
+    };
+
+    const loadScoresCount = async () => {
+        const { count } = await supabase
+            .from('scores')
+            .select('id', { count: 'exact', head: true })
+            .eq('session_id', id);
+        setScoresCount(count || 0);
+        const { data: scored } = await supabase
+            .from('scores')
+            .select('student_id')
+            .eq('session_id', id);
+        const set = new Set((scored || []).map(r => r.student_id));
+        setScoredSet(set);
     };
 
     useEffect(() => {
@@ -135,6 +152,21 @@ export default function SessionDetail({ user }) {
         navigate("/sessions");
     };
 
+    const handleRemoveFromRoster = async (studentId) => {
+        try {
+            const { error: err } = await supabase
+                .from('session_roster')
+                .delete()
+                .match({ session_id: id, student_id: studentId });
+            if (err) throw err;
+            setFlash('Removed from roster.');
+            await loadRoster();
+            await loadScoresCount();
+        } catch (err) {
+            setFlash(err.message || 'Failed to remove from roster.');
+        }
+    };
+
     if (!user) {
         return <div className="p-6">Please login.</div>;
     }
@@ -159,7 +191,7 @@ export default function SessionDetail({ user }) {
             <header className="space-y-2">
                 <div className="flex items-center gap-3">
                     <h1 className="text-3xl font-semibold text-gray-800">{session.title}</h1>
-                    <span className={`text-xs px-2 py-1 rounded border ${session.status === 'completed' ? 'bg-gray-200 text-gray-700' : session.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-800'}`}>
+                    <span className={"text-xs px-2 py-1 rounded border " + (session.status === "completed" ? "bg-gray-200 text-gray-700" : (session.status === "active" ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-800"))}>
                         {session.status}
                     </span>
                 </div>
@@ -247,6 +279,12 @@ export default function SessionDetail({ user }) {
                                     if (!err) { setSession(data); setFlash('Session completed.'); }
                                 }} className="px-4 py-2 bg-gray-800 text-white rounded hover:bg-gray-900">Mark Completed</button>
                             )}
+                            {session.status === 'completed' && (
+                                <button onClick={async ()=>{
+                                    const { data, error: err } = await supabase.from('sessions').update({ status: 'active' }).eq('id', session.id).select().single();
+                                    if (!err) { setSession(data); setFlash('Session reopened and set to Active.'); }
+                                }} className="px-4 py-2 bg-yellow-600 text-white rounded hover:bg-yellow-700">Reopen Session</button>
+                            )}
                             <button
                                 onClick={handleDelete}
                                 className="px-4 py-2 border border-red-300 text-red-600 rounded hover:bg-red-50"
@@ -262,12 +300,50 @@ export default function SessionDetail({ user }) {
 
             <section className="space-y-3">
                 <h2 className="text-xl font-semibold">Roster</h2>
-                {canManage && (
+                {canManage ? (
                     <div className="space-y-3">
-                        <RosterUpload sessionId={id} schoolId={membership?.school_id} onDone={loadRoster} />
-                        <RosterSelect sessionId={id} schoolId={membership?.school_id} onDone={loadRoster} />
+                        <RosterUpload sessionId={id} schoolId={membership?.school_id} onDone={() => { loadRoster(); loadScoresCount(); }} />
+                        <RosterSelect sessionId={id} schoolId={membership?.school_id} onDone={() => { loadRoster(); loadScoresCount(); }} />
                     </div>
+                ) : (
+                    <p className="text-sm text-gray-500">You do not have permission to modify the roster.</p>
                 )}
+                <div className="border rounded">
+                    <table className="w-full">
+                        <thead>
+                            <tr className="bg-gray-100 text-left">
+                                <th className="px-3 py-2 border">Student ID</th>
+                                <th className="px-3 py-2 border">Name</th>
+                                <th className="px-3 py-2 border w-40">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        {roster.length === 0 ? (
+                            <tr><td colSpan="3" className="px-3 py-4 text-center text-gray-500">No students in this session yet.</td></tr>
+                        ) : roster.map((s) => (
+                            <tr key={s.id}>
+                                <td className="px-3 py-2 border">{s.student_identifier}</td>
+                                <td className="px-3 py-2 border flex items-center gap-2">{s.name}{scoredSet.has(s.id) && <span title="Has scores" aria-label="Has scores">[scored]</span>}</td>
+                                <td className="px-3 py-2 border">
+                                    {canManage && (
+                                        <button
+                                            onClick={() => handleRemoveFromRoster(s.id)}
+                                            disabled={scoredSet.has(s.id)}
+                                            className="px-3 py-1.5 border rounded hover:bg-gray-100 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                            Remove
+                                        </button>
+                                    )}
+                                </td>
+                            </tr>
+                        ))}
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section className="space-y-3">
+                <h2 className="text-xl font-semibold">Scores</h2>
                 <div className="border rounded">
                     <table className="w-full">
                         <thead>
@@ -286,7 +362,7 @@ export default function SessionDetail({ user }) {
                                 s={s}
                                 sessionId={id}
                                 canRecord={session.status === 'active' && ['admin','superadmin','score_taker'].includes(membership?.role)}
-                                onSaved={loadRoster}
+                                onSaved={() => { loadRoster(); loadScoresCount(); }}
                             />
                         ))}
                         </tbody>
@@ -320,3 +396,4 @@ function RosterRow({ s, sessionId, canRecord, onSaved }) {
         </>
     );
 }
+
