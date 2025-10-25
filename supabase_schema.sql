@@ -145,22 +145,16 @@ create table if not exists stations (
   created_at timestamptz default now()
 );
 
--- Attempts: normalized history of per-station attempts
-create table if not exists attempts (
-  id uuid primary key default gen_random_uuid(),
-  session_id uuid not null references sessions(id) on delete cascade,
-  student_id uuid not null references students(id) on delete cascade,
-  station_id uuid not null references stations(id) on delete cascade,
-  attempt_number integer not null,
-  value_numeric numeric,
-  value_text text,
-  created_at timestamptz default now(),
-  unique (session_id, student_id, station_id, attempt_number)
-);
+-- Removed attempts table; using scores-only model
 
 -- =========================
 -- Role enum + migrations
 -- =========================
+
+-- Drop legacy attempts table if present (migrating to scores-only model)
+do $$ begin
+  drop table if exists attempts cascade;
+exception when others then null; end $$;
 
 -- Create enum role_type and migrate memberships.role text -> enum
 do $$ begin
@@ -343,6 +337,7 @@ do $$ begin
       select 1 from sessions s
       join memberships m on m.school_id = s.school_id
       where s.id = session_roster.session_id
+        and s.status <> 'completed'
         and m.user_id = auth.uid()
         and m.role in ('admin','superadmin')
     )
@@ -356,6 +351,7 @@ do $$ begin
       select 1 from sessions s
       join memberships m on m.school_id = s.school_id
       where s.id = session_roster.session_id
+        and s.status <> 'completed'
         and m.user_id = auth.uid()
         and m.role in ('admin','superadmin')
     )
@@ -364,6 +360,7 @@ do $$ begin
       select 1 from sessions s
       join memberships m on m.school_id = s.school_id
       where s.id = session_roster.session_id
+        and s.status <> 'completed'
         and m.user_id = auth.uid()
         and m.role in ('admin','superadmin')
     )
@@ -377,6 +374,7 @@ do $$ begin
       select 1 from sessions s
       join memberships m on m.school_id = s.school_id
       where s.id = session_roster.session_id
+        and s.status <> 'completed'
         and m.user_id = auth.uid()
         and m.role in ('admin','superadmin')
     )
@@ -471,4 +469,133 @@ select 'sessions.status_check' as label, conname from pg_constraint where connam
 select 'enrollments.active_unique_idx' as label, indexrelid::regclass from pg_index where indexrelid::regclass::text = 'idx_enrollments_unique_active_per_student';
 select 'scores.unique_idx' as label, indexrelid::regclass from pg_index where indexrelid::regclass::text = 'idx_scores_unique_per_session_student';
 
+-- =========================
+-- Admin/Superadmin export RPCs (idempotent)
+-- =========================
 
+-- Export raw fields for client-side CSV shaping
+do $$ begin
+create or replace function export_session_scores(p_session_id uuid)
+returns table (
+  student_identifier text,
+  name text,
+  class text,
+  gender text,
+  dob date,
+  situps integer,
+  broad_jump numeric,
+  sit_and_reach numeric,
+  pullups integer,
+  shuttle_run numeric
+)
+language sql
+security definer
+set search_path = public
+as $fn$
+  with allowed as (
+    select 1
+    from sessions s
+    join memberships m on m.school_id = s.school_id
+    where s.id = p_session_id
+      and m.user_id = auth.uid()
+      and m.role in ('admin','superadmin')
+    limit 1
+  )
+  select st.student_identifier,
+         st.name,
+         e.class,
+         st.gender,
+         st.dob,
+         sc.situps,
+         sc.broad_jump,
+         sc.sit_and_reach,
+         sc.pullups,
+         sc.shuttle_run
+  from sessions s
+  join session_roster r on r.session_id = s.id
+  join students st on st.id = r.student_id
+  left join enrollments e on e.student_id = st.id and e.is_active
+  left join scores sc on sc.session_id = s.id and sc.student_id = st.id
+  where s.id = p_session_id
+    and exists (select 1 from allowed)
+  order by st.student_identifier;
+$fn$;
+exception when others then null; end $$;
+
+do $$ begin
+  grant execute on function export_session_scores(uuid) to authenticated;
+  revoke execute on function export_session_scores(uuid) from anon;
+exception when others then null; end $$;
+
+-- Export shaped to PFT upload format (column names preserved)
+do $$ begin
+create or replace function export_session_scores_pft(p_session_id uuid)
+returns table (
+  "Sl.No" integer,
+  "Name" text,
+  "ID" text,
+  "Class" text,
+  "Gender" text,
+  "DOB" date,
+  "Attendance" text,
+  "Sit-ups" integer,
+  "Standing Broad Jump (cm)" numeric,
+  "Sit & Reach (cm)" numeric,
+  "Pull-ups" integer,
+  "Shuttle Run (sec)" numeric,
+  "1.6/2.4 Km Run MMSS" text,
+  "PFT Test Date" text
+)
+language sql
+security definer
+set search_path = public
+as $fn$
+  with allowed as (
+    select 1
+    from sessions s
+    join memberships m on m.school_id = s.school_id
+    where s.id = p_session_id
+      and m.user_id = auth.uid()
+      and m.role in ('admin','superadmin')
+    limit 1
+  ),
+  base as (
+    select st.student_identifier as id,
+           st.name,
+           coalesce(e.class, '') as class,
+           st.gender,
+           st.dob,
+           sc.situps,
+           sc.broad_jump,
+           sc.sit_and_reach,
+           sc.pullups,
+           sc.shuttle_run
+    from sessions s
+    join session_roster r on r.session_id = s.id
+    join students st on st.id = r.student_id
+    left join enrollments e on e.student_id = st.id and e.is_active
+    left join scores sc on sc.session_id = s.id and sc.student_id = st.id
+    where s.id = p_session_id
+      and exists (select 1 from allowed)
+  )
+  select row_number() over(order by id) as "Sl.No",
+         name as "Name",
+         id as "ID",
+         class as "Class",
+         gender as "Gender",
+         dob as "DOB",
+         '' as "Attendance",
+         situps as "Sit-ups",
+         broad_jump as "Standing Broad Jump (cm)",
+         sit_and_reach as "Sit & Reach (cm)",
+         pullups as "Pull-ups",
+         shuttle_run as "Shuttle Run (sec)",
+         '' as "1.6/2.4 Km Run MMSS",
+         '' as "PFT Test Date";
+$fn$;
+exception when others then null; end $$;
+
+do $$ begin
+  grant execute on function export_session_scores_pft(uuid) to authenticated;
+  revoke execute on function export_session_scores_pft(uuid) from anon;
+exception when others then null; end $$;

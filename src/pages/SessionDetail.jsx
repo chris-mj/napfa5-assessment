@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import AttemptEditor from "../components/AttemptEditor";
-import { useNavigate, useParams } from "react-router-dom";
+import { jsPDF } from "jspdf";
+import { drawCode39 } from "../utils/barcode39";
+import { drawQr } from "../utils/qrcode";
+import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
 import RosterUpload from "../components/SessionRosterUpload";
 import RosterSelect from "../components/SessionRosterSelect";
@@ -10,6 +13,7 @@ const ROLE_CAN_MANAGE = ["superadmin", "admin"];
 export default function SessionDetail({ user }) {
     const { id } = useParams();
     const navigate = useNavigate();
+    const location = useLocation();
 
     const [membership, setMembership] = useState(null);
     const [membershipLoading, setMembershipLoading] = useState(true);
@@ -25,8 +29,14 @@ export default function SessionDetail({ user }) {
     const [flash, setFlash] = useState("");
     const [scoresCount, setScoresCount] = useState(0);
     const [scoredSet, setScoredSet] = useState(new Set());
+    const [inProgressSet, setInProgressSet] = useState(new Set());
+    const [completedSet, setCompletedSet] = useState(new Set());
+    const [statusUpdating, setStatusUpdating] = useState(false);
+    const [summaryOpen, setSummaryOpen] = useState(false);
+    const [activeTab, setActiveTab] = useState(() => (location.hash === '#scores' ? 'scores' : 'roster'));
 
     const canManage = useMemo(() => ROLE_CAN_MANAGE.includes(membership?.role), [membership]);
+    const rosterEditable = canManage && session?.status !== 'completed';
 
     useEffect(() => {
         if (!user) return;
@@ -80,6 +90,20 @@ export default function SessionDetail({ user }) {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [id]);
 
+    // Keep tab state in sync with URL hash
+    useEffect(() => {
+        const fromHash = location.hash === '#scores' ? 'scores' : 'roster';
+        if (fromHash !== activeTab) setActiveTab(fromHash);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [location.hash]);
+
+    useEffect(() => {
+        const desiredHash = activeTab === 'scores' ? '#scores' : '#roster';
+        if (location.hash !== desiredHash) {
+            navigate({ hash: desiredHash }, { replace: true });
+        }
+    }, [activeTab, location.hash, navigate]);
+
     const loadRoster = async () => {
         const { data, error: err } = await supabase
             .from("session_roster")
@@ -92,17 +116,30 @@ export default function SessionDetail({ user }) {
     };
 
     const loadScoresCount = async () => {
-        const { count } = await supabase
+        // Pull all score rows for this session and derive status counts from non-null metrics
+        const { data: rows, error: err } = await supabase
             .from('scores')
-            .select('id', { count: 'exact', head: true })
+            .select('student_id, situps, shuttle_run, sit_and_reach, pullups, run_2400, broad_jump')
             .eq('session_id', id);
-        setScoresCount(count || 0);
-        const { data: scored } = await supabase
-            .from('scores')
-            .select('student_id')
-            .eq('session_id', id);
-        const set = new Set((scored || []).map(r => r.student_id));
-        setScoredSet(set);
+        if (err) return;
+        // For completion, run_2400 is not required
+        const requiredMetrics = ['situps','shuttle_run','sit_and_reach','pullups','broad_jump'];
+        const byStudent = new Map((rows || []).map(r => [r.student_id, r]));
+        const scored = new Set();
+        const inprog = new Set();
+        const completed = new Set();
+        (roster || []).forEach(s => {
+            const row = byStudent.get(s.id);
+            if (!row) return; // no row yet => not started
+            const nonNullCount = requiredMetrics.reduce((acc, k) => acc + (row[k] == null ? 0 : 1), 0);
+            if (nonNullCount > 0) scored.add(s.id);
+            if (nonNullCount === requiredMetrics.length) completed.add(s.id);
+            else if (nonNullCount > 0) inprog.add(s.id);
+        });
+        setScoredSet(scored);
+        setInProgressSet(inprog);
+        setCompletedSet(completed);
+        setScoresCount(completed.size);
     };
 
     useEffect(() => {
@@ -167,6 +204,132 @@ export default function SessionDetail({ user }) {
         }
     };
 
+    
+    const exportResults = async () => {
+        try {
+            const { data: rows, error } = await supabase
+                .rpc('export_session_scores_pft', { p_session_id: id });
+            if (error) throw error;
+            const headers = [
+                'Sl.No','Name','ID','Class','Gender','DOB','Attendance',
+                'Sit-ups','Standing Broad Jump (cm)','Sit & Reach (cm)','Pull-ups','Shuttle Run (sec)','1.6/2.4 Km Run MMSS','PFT Test Date'
+            ];
+            const csvRows = [headers.join(',')];
+            (rows || []).forEach(r => {
+                const ordered = [
+                    r["Sl.No"], r["Name"], r["ID"], r["Class"], r["Gender"], r["DOB"], r["Attendance"],
+                    r["Sit-ups"], r["Standing Broad Jump (cm)"], r["Sit & Reach (cm)"], r["Pull-ups"], r["Shuttle Run (sec)"], r["1.6/2.4 Km Run MMSS"], r["PFT Test Date"]
+                ];
+                csvRows.push(ordered.map(v => (v == null ? '' : (typeof v === 'string' ? '"' + v.replace(/"/g,'""') + '"' : v))).join(','));
+            });
+            const blob = new Blob(["\uFEFF" + csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `session_${id}_results_pft.csv`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        } catch (err) {
+            setFlash(err.message || 'Failed to export results.');
+        }
+    };
+    const handleStatusChange = async (nextStatus) => {
+        if (!session || session.status === nextStatus) return;
+        if (nextStatus === 'completed') {
+            const ok = window.confirm('Mark session as completed? Scores can no longer be recorded.');
+            if (!ok) return;
+        }
+        setStatusUpdating(true);
+        try {
+            const { data, error: err } = await supabase
+                .from('sessions')
+                .update({ status: nextStatus })
+                .eq('id', session.id)
+                .select()
+                .single();
+            if (err) throw err;
+            setSession(data);
+            setFlash(`Status set to ${nextStatus}.`);
+        } catch (err) {
+            setFlash(err.message || 'Failed to update status.');
+        } finally {
+            setStatusUpdating(false);
+        }
+    };
+
+    const downloadProfileCardsPdf = async () => {
+        try {
+            const { data, error } = await supabase
+                .from('session_roster')
+                .select('students!inner(id, student_identifier, name, enrollments!left(class, is_active))')
+                .eq('session_id', id)
+                .order('student_id', { ascending: true });
+            if (error) throw error;
+            const list = (data || []).map(r => {
+                const enr = r.students?.enrollments;
+                const activeClass = Array.isArray(enr) ? (enr.find(e => e?.is_active)?.class) : (enr?.class);
+                return { id: r.students.id, student_identifier: r.students.student_identifier, name: r.students.name, class: activeClass || '' };
+            });
+            if (!list.length) { setFlash('No students in roster.'); return; }
+
+            const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+            const pageW = 210, pageH = 297;
+            const margin = 8; // add small printer-safe margins
+            const cols = 2, rows = 4;
+            const usableW = pageW - margin * 2;
+            const usableH = pageH - margin * 2;
+            const cellW = usableW / cols;
+            const cellH = usableH / rows;
+            const qrSize = 28; // mm
+
+            // Helper canvases for barcode and QR
+            const bcCanvas = document.createElement('canvas');
+            const qrCanvas = document.createElement('canvas');
+
+            list.forEach((s, i) => {
+                const pageIndex = Math.floor(i / (cols * rows));
+                const idxInPage = i % (cols * rows);
+                const col = idxInPage % cols;
+                const row = Math.floor(idxInPage / cols);
+                if (i > 0 && idxInPage === 0) doc.addPage();
+                const x0 = margin + col * cellW;
+                const y0 = margin + row * cellH;
+
+                // Draw barcode and QR to canvases
+                drawCode39(bcCanvas, s.student_identifier, { module: 2, height: 40 });
+                drawQr(qrCanvas, s.student_identifier, Math.round((qrSize / 25.4) * 96));
+                const bcUrl = bcCanvas.toDataURL('image/png');
+                const qrUrl = qrCanvas.toDataURL('image/png');
+
+                // Card border
+                doc.setDrawColor(180);
+                doc.setLineWidth(0.3);
+                doc.rect(x0 + 2, y0 + 2, cellW - 4, cellH - 4);
+
+                // Text
+                doc.setFontSize(14);
+                doc.text(String(s.student_identifier), x0 + 6, y0 + 12);
+                doc.setFontSize(12);
+                doc.text(s.name || '', x0 + 6, y0 + 20);
+                doc.text((s.class || ''), x0 + 6, y0 + 26);
+
+                // Images
+                // QR on right
+                doc.addImage(qrUrl, 'PNG', x0 + cellW - qrSize - 6, y0 + 8, qrSize, qrSize);
+                // Barcode bottom spans width minus QR area
+                const bcW = cellW - qrSize - 12;
+                const bcH = 12;
+                doc.addImage(bcUrl, 'PNG', x0 + 6, y0 + cellH - bcH - 8, bcW, bcH);
+            });
+
+            doc.save(`session_${id}_profile_cards.pdf`);
+        } catch (err) {
+            setFlash(err.message || 'Failed to generate cards PDF.');
+        }
+    };
+
     if (!user) {
         return <div className="p-6">Please login.</div>;
     }
@@ -188,20 +351,118 @@ export default function SessionDetail({ user }) {
             <button onClick={() => navigate(-1)} className="text-sm text-blue-600 hover:underline">
                 Back
             </button>
-            <header className="space-y-2">
-                <div className="flex items-center gap-3">
-                    <h1 className="text-3xl font-semibold text-gray-800">{session.title}</h1>
-                    <span className={"text-xs px-2 py-1 rounded border " + (session.status === "completed" ? "bg-gray-200 text-gray-700" : (session.status === "active" ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-800"))}>
-                        {session.status}
-                    </span>
+            <div className="sticky top-0 z-30 -mx-6 px-6 bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60 border-b">
+                <header className="py-3 space-y-2">
+                    <div className="flex items-center gap-3 flex-wrap">
+                        <h1 className="text-3xl font-semibold text-gray-800">{session.title}</h1>
+                        <span className={"text-xs px-2 py-1 rounded border " + (session.status === "completed" ? "bg-gray-200 text-gray-700" : (session.status === "active" ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-800"))}>
+                            {session.status}
+                        </span>
+                        <div className="ml-auto flex items-center gap-2">
+                            <div className="text-xs text-gray-600 flex items-center gap-1">
+                                <span>Change status</span>
+                                <select
+                                    className="text-xs border rounded px-2 py-1 bg-white w-auto"
+                                    disabled={!canManage || statusUpdating}
+                                    value={session.status}
+                                    onChange={(e) => handleStatusChange(e.target.value)}
+                                >
+                                    <option value="draft">draft</option>
+                                    <option value="active">active</option>
+                                    <option value="completed">completed</option>
+                                </select>
+                            </div>
+                            {canManage && (
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        onClick={exportResults}
+                                        className="text-xs px-3 py-1.5 border rounded bg-white hover:bg-gray-50"
+                                    >
+                                        Export Results
+                                    </button>
+                                    <button onClick={downloadProfileCardsPdf} className="text-xs px-3 py-1.5 border rounded bg-white hover:bg-gray-50" title="Download profile cards (PDF)">Profile Cards</button>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </header>
+                {/* Mobile summary toggle */}
+                <div className="sm:hidden pb-1 flex items-center justify-between">
+                    <button onClick={() => setSummaryOpen(v => !v)} className="text-xs px-2 py-1 border rounded bg-white hover:bg-gray-50">
+                        {summaryOpen ? 'Hide summary' : 'Show summary'}
+                    </button>
                 </div>
-                <p className="text-gray-600">
-                    Session date: <span className="font-medium">{new Date(session.session_date).toLocaleDateString()}</span>
-                </p>
-                {session.created_at && (
-                    <p className="text-sm text-gray-400">Created {new Date(session.created_at).toLocaleString()}</p>
-                )}
-            </header>
+                {/* Summary (sticky). Visible on sm+, toggle on mobile */}
+                <div className={(summaryOpen ? '' : 'hidden ') + 'sm:block pb-3 space-y-2'}>
+                    {(() => {
+                        const total = roster?.length || 0;
+                        const completed = completedSet.size;
+                        const inProgress = inProgressSet.size;
+                        const notStarted = Math.max(0, total - completed - inProgress);
+                        const pct = (n) => total ? Math.round((n * 100) / total) : 0;
+                        return (
+                            <>
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                                    <div className="border rounded-lg bg-white px-3 py-2">
+                                        <div className="text-gray-500">Total</div>
+                                        <div className="text-base font-semibold">{total}</div>
+                                    </div>
+                                    <div className="border rounded-lg bg-white px-3 py-2">
+                                        <div className="text-gray-500">Not started</div>
+                                        <div className="text-base font-semibold">{notStarted}</div>
+                                    </div>
+                                    <div className="border rounded-lg bg-white px-3 py-2">
+                                        <div className="text-gray-500">In progress</div>
+                                        <div className="text-base font-semibold">{inProgress}</div>
+                                    </div>
+                                    <div className="border rounded-lg bg-white px-3 py-2">
+                                        <div className="text-gray-500">Completed</div>
+                                        <div className="text-base font-semibold">{completed}</div>
+                                    </div>
+                                </div>
+                                <div className="h-2 w-full bg-gray-200 rounded overflow-hidden">
+                                    <div className="h-2 bg-gray-400" style={{ width: `${pct(notStarted)}%` }} />
+                                    <div className="h-2 bg-amber-400" style={{ width: `${pct(inProgress)}%` }} />
+                                    <div className="h-2 bg-green-500" style={{ width: `${pct(completed)}%` }} />
+                                </div>
+                                <div className="flex justify-between text-[11px] text-gray-600">
+                                    <span>Not started {pct(notStarted)}%</span>
+                                    <span>In progress {pct(inProgress)}%</span>
+                                    <span>Completed {pct(completed)}%</span>
+                                </div>
+                            </>
+                        );
+                    })()}
+                </div>
+
+                {/* Sticky tabs inside header */}
+                <nav className="pb-2 overflow-x-auto">
+                    <div role="tablist" aria-label="Session sections" className="inline-flex rounded-lg bg-gray-100 p-1 text-sm">
+                        <button
+                            role="tab"
+                            aria-selected={activeTab === 'roster'}
+                            className={(activeTab === 'roster'
+                                ? 'bg-white text-blue-700 shadow border border-gray-200'
+                                : 'text-gray-600 hover:text-gray-800') + ' px-3 py-1.5 rounded-md transition-colors'}
+                            onClick={() => setActiveTab('roster')}
+                        >
+                            Roster
+                        </button>
+                        <button
+                            role="tab"
+                            aria-selected={activeTab === 'scores'}
+                            className={(activeTab === 'scores'
+                                ? 'bg-white text-blue-700 shadow border border-gray-200'
+                                : 'text-gray-600 hover:text-gray-800') + ' px-3 py-1.5 rounded-md transition-colors'}
+                            onClick={() => setActiveTab('scores')}
+                        >
+                            Scores
+                        </button>
+                    </div>
+                </nav>
+            </div>
+
+            
 
             {flash && <div className="text-sm text-blue-600">{flash}</div>}
 
@@ -267,24 +528,6 @@ export default function SessionDetail({ user }) {
                             >
                                 Edit Session
                             </button>
-                            {session.status === 'draft' && (
-                                <button onClick={async ()=>{
-                                    const { data, error: err } = await supabase.from('sessions').update({ status: 'active' }).eq('id', session.id).select().single();
-                                    if (!err) { setSession(data); setFlash('Session activated.'); }
-                                }} className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">Activate</button>
-                            )}
-                            {session.status === 'active' && (
-                                <button onClick={async ()=>{
-                                    const { data, error: err } = await supabase.from('sessions').update({ status: 'completed' }).eq('id', session.id).select().single();
-                                    if (!err) { setSession(data); setFlash('Session completed.'); }
-                                }} className="px-4 py-2 bg-gray-800 text-white rounded hover:bg-gray-900">Mark Completed</button>
-                            )}
-                            {session.status === 'completed' && (
-                                <button onClick={async ()=>{
-                                    const { data, error: err } = await supabase.from('sessions').update({ status: 'active' }).eq('id', session.id).select().single();
-                                    if (!err) { setSession(data); setFlash('Session reopened and set to Active.'); }
-                                }} className="px-4 py-2 bg-yellow-600 text-white rounded hover:bg-yellow-700">Reopen Session</button>
-                            )}
                             <button
                                 onClick={handleDelete}
                                 className="px-4 py-2 border border-red-300 text-red-600 rounded hover:bg-red-50"
@@ -298,77 +541,110 @@ export default function SessionDetail({ user }) {
                 )}
             </section>
 
-            <section className="space-y-3">
-                <h2 className="text-xl font-semibold">Roster</h2>
-                {canManage ? (
-                    <div className="space-y-3">
-                        <RosterUpload sessionId={id} schoolId={membership?.school_id} onDone={() => { loadRoster(); loadScoresCount(); }} />
-                        <RosterSelect sessionId={id} schoolId={membership?.school_id} onDone={() => { loadRoster(); loadScoresCount(); }} />
-                    </div>
-                ) : (
-                    <p className="text-sm text-gray-500">You do not have permission to modify the roster.</p>
-                )}
-                <div className="border rounded">
-                    <table className="w-full">
-                        <thead>
-                            <tr className="bg-gray-100 text-left">
-                                <th className="px-3 py-2 border">Student ID</th>
-                                <th className="px-3 py-2 border">Name</th>
-                                <th className="px-3 py-2 border w-40">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                        {roster.length === 0 ? (
-                            <tr><td colSpan="3" className="px-3 py-4 text-center text-gray-500">No students in this session yet.</td></tr>
-                        ) : roster.map((s) => (
-                            <tr key={s.id}>
-                                <td className="px-3 py-2 border">{s.student_identifier}</td>
-                                <td className="px-3 py-2 border flex items-center gap-2">{s.name}{scoredSet.has(s.id) && <span title="Has scores" aria-label="Has scores">[scored]</span>}</td>
-                                <td className="px-3 py-2 border">
-                                    {canManage && (
-                                        <button
-                                            onClick={() => handleRemoveFromRoster(s.id)}
-                                            disabled={scoredSet.has(s.id)}
-                                            className="px-3 py-1.5 border rounded hover:bg-gray-100 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                                        >
-                                            Remove
-                                        </button>
-                                    )}
-                                </td>
-                            </tr>
-                        ))}
-                        </tbody>
-                    </table>
-                </div>
-            </section>
+            {/*/!* Tabs *!/*/}
+            {/*<nav className="flex items-center justify-start">*/}
+            {/*    <div role="tablist" aria-label="Session sections" className="inline-flex rounded-lg bg-gray-100 p-1 text-sm">*/}
+            {/*        <button*/}
+            {/*            role="tab"*/}
+            {/*            aria-selected={activeTab === 'roster'}*/}
+            {/*            className={(activeTab === 'roster'*/}
+            {/*                ? 'bg-white text-blue-700 shadow border border-gray-200'*/}
+            {/*                : 'text-gray-600 hover:text-gray-800') + ' px-3 py-1.5 rounded-md transition-colors'}*/}
+            {/*            onClick={() => setActiveTab('roster')}*/}
+            {/*        >*/}
+            {/*            Roster*/}
+            {/*        </button>*/}
+            {/*        <button*/}
+            {/*            role="tab"*/}
+            {/*            aria-selected={activeTab === 'scores'}*/}
+            {/*            className={(activeTab === 'scores'*/}
+            {/*                ? 'bg-white text-blue-700 shadow border border-gray-200'*/}
+            {/*                : 'text-gray-600 hover:text-gray-800') + ' px-3 py-1.5 rounded-md transition-colors'}*/}
+            {/*            onClick={() => setActiveTab('scores')}*/}
+            {/*        >*/}
+            {/*            Scores*/}
+            {/*        </button>*/}
+            {/*    </div>*/}
+            {/*</nav>*/}
 
-            <section className="space-y-3">
-                <h2 className="text-xl font-semibold">Scores</h2>
-                <div className="border rounded">
-                    <table className="w-full">
-                        <thead>
-                            <tr className="bg-gray-100 text-left">
-                                <th className="px-3 py-2 border">Student ID</th>
-                                <th className="px-3 py-2 border">Name</th>
-                                <th className="px-3 py-2 border w-48">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                        {roster.length === 0 ? (
-                            <tr><td colSpan="3" className="px-3 py-4 text-center text-gray-500">No students in this session yet.</td></tr>
-                        ) : roster.map((s) => (
-                            <RosterRow
-                                key={s.id}
-                                s={s}
-                                sessionId={id}
-                                canRecord={session.status === 'active' && ['admin','superadmin','score_taker'].includes(membership?.role)}
-                                onSaved={() => { loadRoster(); loadScoresCount(); }}
-                            />
-                        ))}
-                        </tbody>
-                    </table>
-                </div>
-            </section>
+            {activeTab === 'roster' ? (
+                <section className="space-y-4">
+                    <div className="border rounded-lg p-4 bg-white">
+                        <h3 className="font-semibold mb-1">Manage Roster</h3>
+                        <p className="text-xs text-gray-500 mb-3">Add students to this session or remove them before scores are recorded.</p>
+                        {rosterEditable ? (
+                            <div className="space-y-3">
+                                <RosterUpload sessionId={id} schoolId={membership?.school_id} onDone={() => { loadRoster(); loadScoresCount(); }} />
+                                <RosterSelect sessionId={id} schoolId={membership?.school_id} onDone={() => { loadRoster(); loadScoresCount(); }} />
+                            </div>
+                        ) : (
+                            <p className="text-sm text-gray-500">{session.status === 'completed' ? 'Roster is locked because the session is completed.' : 'You do not have permission to modify the roster.'}</p>
+                        )}
+                    </div>
+                    <div className="h-px bg-gray-200" />
+                    <div className="border rounded-lg overflow-x-auto bg-white">
+                        <div className="px-3 py-2 border-b bg-gray-50 text-sm font-medium">Roster List</div>
+                        <table className="w-full">
+                            <thead>
+                                <tr className="bg-gray-100 text-left">
+                                    <th className="px-3 py-2 border">Student ID</th>
+                                    <th className="px-3 py-2 border">Name</th>
+                                    <th className="px-3 py-2 border w-40">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                            {roster.length === 0 ? (
+                                <tr><td colSpan="3" className="px-3 py-4 text-center text-gray-500">No students in this session yet.</td></tr>
+                            ) : roster.map((s) => (
+                                <tr key={s.id}>
+                                    <td className="px-3 py-2 border">{s.student_identifier}</td>
+                                    <td className="px-3 py-2 border flex items-center gap-2">{s.name}{scoredSet.has(s.id) && <span title="Has scores" aria-label="Has scores">[scored]</span>}</td>
+                                    <td className="px-3 py-2 border">
+                                        {canManage && (
+                                            <button
+                                                onClick={() => handleRemoveFromRoster(s.id)}
+                                                disabled={scoredSet.has(s.id) || session.status === 'completed'}
+                                                className="px-3 py-1.5 border rounded hover:bg-gray-100 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                                            >
+                                                Remove
+                                            </button>
+                                        )}
+                                    </td>
+                                </tr>
+                            ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            ) : (
+                <section className="space-y-4">
+                    <div className="border rounded-lg overflow-x-auto bg-white">
+                        <div className="px-3 py-2 border-b bg-gray-50 text-sm font-medium">Scores</div>
+                        <table className="w-full">
+                            <thead>
+                                <tr className="bg-gray-100 text-left">
+                                    <th className="px-3 py-2 border">Student ID</th>
+                                    <th className="px-3 py-2 border">Name</th>
+                                    <th className="px-3 py-2 border w-48">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                            {roster.length === 0 ? (
+                                <tr><td colSpan="3" className="px-3 py-4 text-center text-gray-500">No students in this session yet.</td></tr>
+                            ) : roster.map((s) => (
+                                <RosterRow
+                                    key={s.id}
+                                    s={s}
+                                    sessionId={id}
+                                    canRecord={session.status === 'active' && ['admin','superadmin','score_taker'].includes(membership?.role)}
+                                    onSaved={() => { loadRoster(); loadScoresCount(); }}
+                                />
+                            ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            )}
         </div>
     );
 }
@@ -396,4 +672,3 @@ function RosterRow({ s, sessionId, canRecord, onSaved }) {
         </>
     );
 }
-

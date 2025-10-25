@@ -26,7 +26,7 @@ export default function Sessions({ user }) {
       .eq("user_id", user.id)
       .maybeSingle()
       .then(({ data, error: err }) => {
-        if (err || !data) setMembershipError("Unable to determine school membership.");
+        if (err || !data) setMembershipError("Unable to determine school membership.")
         else setMembership(data);
       })
       .finally(() => setMembershipLoading(false));
@@ -49,6 +49,11 @@ export default function Sessions({ user }) {
 
   const setStatus = async (sessionId, status) => {
     try {
+      const current = sessions.find((s) => s.id === sessionId);
+      if (status === 'completed' && current?.status !== 'completed') {
+        const ok = window.confirm('Mark this session as completed? Scores and roster edits will be locked.');
+        if (!ok) return;
+      }
       const { data, error } = await supabase
         .from('sessions')
         .update({ status })
@@ -57,9 +62,9 @@ export default function Sessions({ user }) {
         .single();
       if (error) throw error;
       setSessions((prev) => prev.map((s) => (s.id === sessionId ? data : s)));
-      showToast?.(`Session set to ${status}.`, { type: 'success' });
+      showToast?.('success', `Session set to ${status}.`);
     } catch (err) {
-      showToast?.(err.message || 'Failed to update status.', { type: 'error' });
+      showToast?.('error', err.message || 'Failed to update status.');
     }
   };
 
@@ -114,6 +119,20 @@ export default function Sessions({ user }) {
                   <span className={`text-xs px-2 py-0.5 rounded border ${session.status === 'completed' ? 'bg-gray-200 text-gray-700' : session.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-800'}`}>
                     {session.status || "draft"}
                   </span>
+                  {canManage && (
+                    <label className="ml-2 text-xs text-gray-600 flex items-center gap-1">
+                      Status
+                      <select
+                        className="text-xs border rounded px-2 py-1 bg-white"
+                        value={session.status || 'draft'}
+                        onChange={(e) => setStatus(session.id, e.target.value)}
+                      >
+                        <option value="draft">draft</option>
+                        <option value="active">active</option>
+                        <option value="completed">completed</option>
+                      </select>
+                    </label>
+                  )}
                 </div>
                 <p className="text-sm text-gray-500">
                   Session Date: <span className="font-medium">{new Date(session.session_date).toLocaleDateString()}</span>
@@ -122,19 +141,6 @@ export default function Sessions({ user }) {
                   <p className="text-xs text-gray-400">Created {new Date(session.created_at).toLocaleString()}</p>
                 )}
                 <div className="flex flex-wrap gap-2">
-                  {canManage && (
-                    <>
-                      {session.status === 'draft' && (
-                        <button onClick={() => setStatus(session.id, 'active')} className="px-3 py-1.5 bg-green-600 text-white rounded hover:bg-green-700 text-sm">Activate</button>
-                      )}
-                      {session.status === 'active' && (
-                        <button onClick={() => setStatus(session.id, 'completed')} className="px-3 py-1.5 bg-gray-800 text-white rounded hover:bg-gray-900 text-sm">Mark Completed</button>
-                      )}
-                      {session.status === 'completed' && (
-                        <button onClick={() => setStatus(session.id, 'active')} className="px-3 py-1.5 bg-yellow-600 text-white rounded hover:bg-yellow-700 text-sm">Reopen</button>
-                      )}
-                    </>
-                  )}
                   <button
                     onClick={() => navigate(`/sessions/${session.id}`)}
                     className="px-3 py-1.5 border rounded hover:bg-gray-100 text-sm"
@@ -150,4 +156,3 @@ export default function Sessions({ user }) {
     </div>
   );
 }
-
