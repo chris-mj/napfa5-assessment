@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabaseClient'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '../components/ui/select'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '../components/ui/card'
 import { Tabs, TabsList, TabsTrigger } from '../components/ui/tabs'
+import { AnimatePresence, motion } from 'framer-motion'
 
 export default function AddAttempt({ user }) {
   const [sessionId, setSessionId] = useState('')
@@ -18,6 +19,8 @@ export default function AddAttempt({ user }) {
   ]), [])
   const [activeStation, setActiveStation] = useState('situps')
   const [studentId, setStudentId] = useState('')
+  const [student, setStudent] = useState(null)
+  const [attemptValue, setAttemptValue] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [scannerOpen, setScannerOpen] = useState(false)
@@ -52,26 +55,11 @@ export default function AddAttempt({ user }) {
     if (!sessionId) { setError('Please select a session.'); return }
     if (!studentId.trim()) { setError('Please enter a Student ID.'); return }
     setLoading(true)
-    try {
-      const { data, error: err } = await supabase
-        .from('session_roster')
-        .select('students!inner(id, student_identifier, name)')
-        .eq('session_id', sessionId)
-        .eq('students.student_identifier', studentId.trim())
-        .maybeSingle()
-      if (err) throw err
-      if (!data?.students?.id) {
-        setError('Student not found in this session roster.');
-        setLoading(false)
-        return
-      }
-      // Navigate to the session Scores tab for quick entry
-      navigate(`/sessions/${sessionId}#scores`)
-    } catch (e2) {
-      setError(e2.message || 'Search failed.')
-    } finally {
-      setLoading(false)
-    }
+    // Simulate: show a sample student card instead of navigating away
+    await new Promise((r) => setTimeout(r, 400))
+    const id = studentId.trim().toUpperCase()
+    setStudent({ id, name: 'Alex Tan Wei Ming', className: '2A' })
+    setLoading(false)
   }
 
   const openScanner = () => setScannerOpen(true)
@@ -233,6 +221,54 @@ export default function AddAttempt({ user }) {
                 {error && <div className="text-sm text-red-600 mt-1">{error}</div>}
               </div>
             </form>
+            {/* Expand student info and attempt form after a match */}
+            <AnimatePresence initial={false}>
+              {student && (
+                <motion.div
+                  key="student-section"
+                  initial={{ opacity: 0, height: 0, y: -8 }}
+                  animate={{ opacity: 1, height: 'auto', y: 0 }}
+                  exit={{ opacity: 0, height: 0, y: -8 }}
+                  transition={{ duration: 0.25, ease: 'easeOut' }}
+                  className="mt-4"
+                >
+                  <div className="border rounded-lg p-3 bg-gray-50">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+                      <div className="text-gray-800">
+                        <div className="text-sm text-gray-500">Student</div>
+                        <div className="text-lg font-semibold">{student.name}</div>
+                      </div>
+                      <div className="text-gray-800">
+                        <div className="text-sm text-gray-500">ID</div>
+                        <div className="font-medium">{student.id}</div>
+                      </div>
+                      <div className="text-gray-800">
+                        <div className="text-sm text-gray-500">Class</div>
+                        <div className="font-medium">{student.className}</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-3">
+                    <label htmlFor="attemptInput" className="text-gray-700 text-sm">{active?.name || 'Attempt'} value</label>
+                    <div className="flex gap-2 mt-1">
+                      <input
+                        id="attemptInput"
+                        inputMode="numeric"
+                        value={attemptValue}
+                        onChange={(e)=> setAttemptValue(e.target.value.replace(/[^0-9.]/g, ''))}
+                        placeholder="0"
+                        className="bg-white border rounded-md px-3 py-2 w-32"
+                      />
+                      <button type="button" className="border rounded-md px-3 py-2 hover:bg-gray-50" onClick={()=> setAttemptValue(v=> String((Number(v)||0)+1))}>+1</button>
+                      <button type="button" className="border rounded-md px-3 py-2 hover:bg-gray-50" onClick={()=> setAttemptValue(v=> String(Math.max(0,(Number(v)||0)-1)))}>-1</button>
+                      <button type="button" className="border rounded-md px-3 py-2 hover:bg-gray-50" onClick={()=> setAttemptValue('')}>Clear</button>
+                    </div>
+                    <div className="text-xs text-gray-500 mt-2">Tip: Confirm values with the scorer before saving.</div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </CardContent>
           <CardFooter className="text-xs text-gray-500 flex items-center justify-between">
             <div>
