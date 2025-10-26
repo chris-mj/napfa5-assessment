@@ -1,4 +1,5 @@
 ﻿import { useCallback, useEffect, useMemo, useState } from "react";
+import { NavLink } from 'react-router-dom';
 import { supabase } from "../lib/supabaseClient";
 import { isPlatformOwner } from "../lib/roles";
 import { useToast } from "../components/ToastProvider";
@@ -589,7 +590,7 @@ export default function ModifyUser({ user }) {
                       <div className="text-xs text-gray-600 mt-1">Email changes are managed via account settings.</div>
                     </div>
                     <div className="flex items-center justify-between pt-2">
-                      <a className="text-sm text-blue-700 underline" href="/change-password">Change password</a>
+                      <NavLink className="text-sm text-blue-700 underline" to="/change-password">Change password</NavLink>
                       <div className="flex items-center gap-2">
                         <button type="button" onClick={()=>setProfileOpen(false)} className="px-3 py-2 border rounded hover:bg-gray-50">Cancel</button>
                         <button type="submit" className="px-3 py-2 bg-blue-600 text-white rounded disabled:opacity-50" disabled={profileSaving}>{profileSaving ? 'Saving...' : 'Save changes'}</button>
@@ -603,6 +604,7 @@ export default function ModifyUser({ user }) {
         </main>
     );
 }
+
 
 
 

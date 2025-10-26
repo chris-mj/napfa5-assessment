@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { NavLink } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
 import { useToast } from "../components/ToastProvider";
 
@@ -81,7 +82,7 @@ export default function Profile({ user }) {
               <div className="text-xs text-gray-600 mt-1">To change email, contact an administrator.</div>
             </label>
             <div className="flex items-center justify-between">
-              <a className="text-sm text-blue-700 underline" href="/change-password">Change password</a>
+              <NavLink className="text-sm text-blue-700 underline" to="/change-password">Change password</NavLink>
               <button type="submit" disabled={saving} className="px-3 py-2 bg-blue-600 text-white rounded disabled:opacity-50">{saving ? 'Saving…' : 'Save changes'}</button>
             </div>
           </form>
@@ -90,4 +91,3 @@ export default function Profile({ user }) {
     </main>
   );
 }
-
