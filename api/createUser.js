@@ -1,4 +1,4 @@
-// api/createUser.js
+﻿// api/createUser.js
 import { createClient } from "@supabase/supabase-js";
 
 const supabaseAdmin = createClient(
@@ -7,7 +7,7 @@ const supabaseAdmin = createClient(
 );
 
 export default async function handler(req, res) {
-    // ✅ Always include CORS headers
+    // Always include CORS headers
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
@@ -42,3 +42,4 @@ export default async function handler(req, res) {
     if (error) res.status(400).json({ error: error.message });
     else res.status(200).json({ user_id: data.user.id });
 }
+

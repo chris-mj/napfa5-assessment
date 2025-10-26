@@ -13,11 +13,11 @@ export default function ChangePassword() {
         e.preventDefault();
         setMessage("");
         if (password !== confirm) {
-            setMessage("❌ Passwords do not match.");
+            setMessage("Passwords do not match.");
             return;
         }
         if (password.length < 8) {
-            setMessage("❌ Password must be at least 8 characters.");
+            setMessage("Password must be at least 8 characters.");
             return;
         }
 
@@ -25,9 +25,9 @@ export default function ChangePassword() {
         const { error } = await supabase.auth.updateUser({ password });
         setLoading(false);
 
-        if (error) setMessage("❌ " + error.message);
+        if (error) setMessage(error.message);
         else {
-            setMessage("✅ Password updated successfully.");
+            setMessage("Password updated successfully.");
             setTimeout(() => navigate("/"), 1000);
         }
     };
@@ -45,6 +45,8 @@ export default function ChangePassword() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     className="border rounded p-2 w-full"
+                    minLength={8}
+                    required
                 />
                 <input
                     type="password"
@@ -52,13 +54,15 @@ export default function ChangePassword() {
                     value={confirm}
                     onChange={(e) => setConfirm(e.target.value)}
                     className="border rounded p-2 w-full"
+                    minLength={8}
+                    required
                 />
                 <button
                     type="submit"
                     disabled={loading}
                     className="bg-blue-600 text-white w-full py-2 rounded hover:bg-blue-700"
                 >
-                    {loading ? "Updating…" : "Change Password"}
+                    {loading ? "Updating..." : "Change Password"}
                 </button>
                 {message && (
                     <p className="text-sm text-center text-gray-700 whitespace-pre-wrap">

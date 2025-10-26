@@ -1,10 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 
 export default function Students() {
     const [students, setStudents] = useState([])
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState(null)
+    const [page, setPage] = useState(1)
+    const [pageSize, setPageSize] = useState(100)
 
     useEffect(() => {
         const load = async () => {
@@ -21,6 +23,32 @@ export default function Students() {
         }
         load()
     }, [])
+
+    useEffect(() => {
+        const calc = () => setPageSize(window.innerWidth < 768 ? 40 : 100)
+        calc()
+        window.addEventListener('resize', calc)
+        return () => window.removeEventListener('resize', calc)
+    }, [])
+
+    const paged = useMemo(() => {
+        const total = students.length
+        const totalPages = Math.max(1, Math.ceil(total / pageSize))
+        const cur = Math.min(page, totalPages)
+        const start = (cur - 1) * pageSize
+        return { cur, totalPages, items: students.slice(start, start + pageSize), total }
+    }, [students, page, pageSize])
+
+    const formatDob = (d) => {
+        if (!d) return '-'
+        try {
+            const dt = new Date(d)
+            const dd = String(dt.getDate()).padStart(2,'0')
+            const mm = String(dt.getMonth()+1).padStart(2,'0')
+            const yyyy = dt.getFullYear()
+            return `${dd}/${mm}/${yyyy}`
+        } catch { return '-' }
+    }
 
     return (
         <div className="p-6">
@@ -41,14 +69,12 @@ export default function Students() {
                         </tr>
                         </thead>
                         <tbody>
-                        {students.map(s => (
+                        {paged.items.map(s => (
                             <tr key={s.id}>
                                 <td className="border px-3 py-2">{s.student_identifier}</td>
                                 <td className="border px-3 py-2">{s.name}</td>
                                 <td className="border px-3 py-2">{s.gender}</td>
-                                <td className="border px-3 py-2">
-                                    {new Date(s.dob).toLocaleDateString('en-SG')}
-                                </td>
+                                <td className="border px-3 py-2">{formatDob(s.dob)}</td>
                             </tr>
                         ))}
                         {students.length === 0 && (
@@ -65,6 +91,16 @@ export default function Students() {
                         )}
                         </tbody>
                     </table>
+                </div>
+            )}
+            {!!students.length && (
+                <div className="flex items-center justify-between text-sm mt-2">
+                    <div>Showing {(paged.cur-1)*pageSize + 1}–{Math.min(paged.cur*pageSize, paged.total)} of {paged.total}</div>
+                    <div className="flex items-center gap-2">
+                        <button className="px-2 py-1 border rounded disabled:opacity-50" disabled={paged.cur<=1} onClick={()=>setPage(p=>Math.max(1, p-1))}>Prev</button>
+                        <div>Page {paged.cur} / {paged.totalPages}</div>
+                        <button className="px-2 py-1 border rounded disabled:opacity-50" disabled={paged.cur>=paged.totalPages} onClick={()=>setPage(p=>Math.min(paged.totalPages, p+1))}>Next</button>
+                    </div>
                 </div>
             )}
         </div>

@@ -464,7 +464,10 @@ export default function SessionDetail({ user }) {
 
             
 
-            {flash && <div className="text-sm text-blue-600">{flash}</div>}
+            {/* Animated flash */}
+            <div>
+                {flash && <div className="text-sm text-blue-600 transition-all duration-200">{flash}</div>}
+            </div>
 
             {/* Status/role banner */}
             <div className="text-sm">

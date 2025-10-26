@@ -599,3 +599,44 @@ do $$ begin
   grant execute on function export_session_scores_pft(uuid) to authenticated;
   revoke execute on function export_session_scores_pft(uuid) from anon;
 exception when others then null; end $$;
+
+-- =========================
+-- RPC helpers
+-- =========================
+
+do $$ begin
+  create or replace function move_membership_to_school(
+    p_email text,
+    p_school uuid,
+    p_role role_type
+  ) returns void
+  language plpgsql
+  security definer
+as $$
+declare
+  v_user uuid;
+  v_keep uuid;
+begin
+  select user_id into v_user from profiles where email = p_email;
+  if v_user is null then
+    raise exception 'AUTH_USER_MISSING' using errcode='P0002';
+  end if;
+
+  -- If already in target school, update role and remove others
+  select id into v_keep from memberships where user_id = v_user and school_id = p_school limit 1;
+  if v_keep is not null then
+    update memberships set role = p_role where id = v_keep;
+    delete from memberships where user_id = v_user and id <> v_keep;
+    return;
+  end if;
+
+  -- Move one existing membership if any; otherwise insert new
+  select id into v_keep from memberships where user_id = v_user limit 1;
+  if v_keep is not null then
+    update memberships set school_id = p_school, role = p_role where id = v_keep;
+    delete from memberships where user_id = v_user and id <> v_keep;
+  else
+    insert into memberships(user_id, school_id, role) values (v_user, p_school, p_role);
+  end if;
+end $$;
+exception when others then null; end $$;

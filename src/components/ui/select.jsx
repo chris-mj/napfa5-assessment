@@ -34,7 +34,13 @@ export function SelectContent({ className = "", children }) {
   const { open } = useRequiredCtx();
   if (!open) return null;
   return (
-    <div className={"mt-1 border rounded-md bg-white shadow-sm p-1 z-50 " + className} role="listbox">
+    <div
+      className={
+        "absolute left-0 mt-1 border rounded-md bg-white shadow-sm p-1 z-50 w-full " +
+        className
+      }
+      role="listbox"
+    >
       {children}
     </div>
   );
@@ -70,4 +76,3 @@ function useRequiredCtx() {
   if (!ctx) throw new Error("Select components must be used within <Select>");
   return ctx;
 }
-

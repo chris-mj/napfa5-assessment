@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { isPlatformOwner } from "../lib/roles";
+import { useToast } from "../components/ToastProvider";
 
 async function createOrLinkUserRPC({ email, fullName, schoolId, role, supabase }) {
     const { data, error } = await supabase.rpc("create_or_link_user", {
@@ -31,6 +32,18 @@ export default function ModifyUser({ user }) {
     const [submitting, setSubmitting] = useState(false);
     const [pendingMemberId, setPendingMemberId] = useState(null);
     const [feedback, setFeedback] = useState(null);
+    const [query, setQuery] = useState("");
+    const [roleFilter, setRoleFilter] = useState("");
+    const [page, setPage] = useState(1);
+    const [pageSize, setPageSize] = useState(100);
+    const [addOpen, setAddOpen] = useState(false);
+    const [profileOpen, setProfileOpen] = useState(false);
+    const [profileSaving, setProfileSaving] = useState(false);
+    const [profileForm, setProfileForm] = useState({ fullName: "", email: "" });
+    const [profileFeedback, setProfileFeedback] = useState(null);
+    
+
+    const { showToast } = useToast();
 
     const platformOwner = isPlatformOwner(user);
 
@@ -51,9 +64,9 @@ export default function ModifyUser({ user }) {
             } else {
                 const { data, error } = await supabase
                     .from("memberships")
-                    .select("schools!inner(id, name)")
+                    .select("role, schools!inner(id, name)")
                     .eq("user_id", user.id)
-                    .eq("role", "superadmin");
+                    .in("role", ["admin", "superadmin"]);
                 if (error) {
                     console.error("Failed to load schools:", error.message);
                     setFeedback({ type: "error", text: "Unable to load schools." });
@@ -63,6 +76,13 @@ export default function ModifyUser({ user }) {
             }
         })();
     }, [platformOwner, user]);
+
+    useEffect(() => {
+        const calc = () => setPageSize(window.innerWidth < 768 ? 40 : 100);
+        calc();
+        window.addEventListener("resize", calc);
+        return () => window.removeEventListener("resize", calc);
+    }, []);
 
     useEffect(() => {
         if (!schools.length) {
@@ -75,11 +95,23 @@ export default function ModifyUser({ user }) {
         }
     }, [schools, schoolId]);
 
+    const [currentRole, setCurrentRole] = useState("");
+
     const loadMembers = useCallback(
         async (targetSchoolId) => {
             const resolvedSchoolId = targetSchoolId || schoolId;
             if (!resolvedSchoolId) return;
             setMembersLoading(true);
+            // Determine current user's role for this school
+            try {
+                const { data: mymem } = await supabase
+                  .from('memberships')
+                  .select('role')
+                  .eq('user_id', user.id)
+                  .eq('school_id', resolvedSchoolId)
+                  .maybeSingle();
+                setCurrentRole(String(mymem?.role || ''));
+            } catch {}
             const { data, error } = await supabase
                 .from("memberships")
                 .select("id, role, user_id, profiles:profiles!inner(full_name, email)")
@@ -138,6 +170,44 @@ export default function ModifyUser({ user }) {
         setForm((prev) => ({ ...prev, [field]: event.target.value }));
     };
 
+    const openOwnProfile = (member) => {
+        if (!member) return;
+        setProfileFeedback(null);
+        setProfileForm({ fullName: member.fullName || "", email: member.email || "" });
+        setProfileOpen(true);
+    };
+
+    const handleProfileInput = (field) => (e) => {
+        setProfileFeedback(null);
+        setProfileForm((p) => ({ ...p, [field]: e.target.value }));
+    };
+
+    const saveOwnProfile = async (e) => {
+        e?.preventDefault?.();
+        setProfileFeedback(null);
+        if (!profileForm.fullName?.trim()) {
+            setProfileFeedback({ type: 'error', text: 'Full name is required.' });
+            return;
+        }
+        setProfileSaving(true);
+        try {
+            const { error } = await supabase
+                .from('profiles')
+                .update({ full_name: profileForm.fullName.trim() })
+                .eq('user_id', user.id);
+            if (error) {
+                setProfileFeedback({ type: 'error', text: error.message || 'Failed to update profile.' });
+                showToast('error', error.message || 'Failed to update profile');
+                return;
+            }
+            showToast('success', 'Profile updated');
+            setProfileOpen(false);
+            await loadMembers(schoolId);
+        } finally {
+            setProfileSaving(false);
+        }
+    };
+
     const handleAddUser = async (event) => {
         event.preventDefault();
         setFeedback(null);
@@ -157,172 +227,46 @@ export default function ModifyUser({ user }) {
             return;
         }
 
-        // setSubmitting(true);
-        // try {
-            // let targetUserId = null;
-            // // See if the profile already exists; if so, reuse that user id.
-            // const { data: existingProfile, error: lookupError } = await supabase
-            //     .from("profiles")
-            //     .select("user_id, full_name")
-            //     .eq("email", form.email)
-            //     .maybeSingle();
-            //
-            // if (lookupError) {
-            //     setFeedback({
-            //         type: "error",
-            //         text: lookupError.message || "Failed to look up existing profile.",
-            //     });
-            //     return;
-            // }
-            //
-            // if (existingProfile?.user_id) {
-            //     targetUserId = existingProfile.user_id;
-            // } else {
-            //     // No profile, so create an auth user + profile.
-            //     const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-            //         email: form.email,
-            //         password: form.password,
-            //         options: { data: { full_name: form.fullName } },
-            //     });
-            //
-            //     if (signUpError) {
-            //         if (signUpError.message?.toLowerCase().includes("already registered")) {
-            //             // Auth user exists but profile might not; try fetching the profile again to continue.
-            //             const { data: retryProfile, error: retryError } = await supabase
-            //                 .from("profiles")
-            //                 .select("user_id")
-            //                 .eq("email", form.email)
-            //                 .maybeSingle();
-            //             if (retryError || !retryProfile?.user_id) {
-            //                 setFeedback({
-            //                     type: "error",
-            //                     text: "This email already has an account. Ask them to reset their password.",
-            //                 });
-            //                 return;
-            //             }
-            //             targetUserId = retryProfile.user_id;
-            //         } else {
-            //             setFeedback({
-            //                 type: "error",
-            //                 text: signUpError.message || "Failed to sign up the user.",
-            //             });
-            //             return;
-            //         }
-            //     } else {
-            //         const newUser = signUpData?.user;
-            //         if (!newUser) {
-            //             setFeedback({ type: "error", text: "User account was not created." });
-            //             return;
-            //         }
-            //         targetUserId = newUser.id;
-            //     }
-            // }
-            //
-            // const { error: profileError } = await supabase.from("profiles").upsert({
-            //     user_id: targetUserId,
-            //     full_name: form.fullName,
-            //     email: form.email,
-            // });
-            // if (profileError) {
-            //     setFeedback({
-            //         type: "error",
-            //         text: profileError.message || "Failed to save profile.",
-            //     });
-            //     return;
-            // }
-            //
-            // const { data: existingMemberships, error: membershipLookupError } = await supabase
-            //     .from("memberships")
-            //     .select("id, school_id")
-            //     .eq("user_id", targetUserId);
-            //
-            // if (membershipLookupError) {
-            //     setFeedback({
-            //         type: "error",
-            //         text: membershipLookupError.message || "Unable to check existing membership.",
-            //     });
-            //     return;
-            // }
-            //
-            // if (existingMemberships && existingMemberships.length > 0) {
-            //     const alreadyInSchool = existingMemberships.some(
-            //         (membership) => membership.school_id === schoolId
-            //     );
-            //     setFeedback({
-            //         type: "error",
-            //         text: alreadyInSchool
-            //             ? "This user is already linked to this school."
-            //             : "This user has been registered to another school.",
-            //     });
-            //     return;
-            // }
-            //
-            // const { error: membershipError } = await supabase.from("memberships").insert({
-            //     user_id: targetUserId,
-            //     school_id: schoolId,
-            //     role: form.role,
-            // });
-        //     if (membershipError) {
-        //         setFeedback({
-        //             type: "error",
-        //             text: membershipError.message || "Failed to link user to school.",
-        //         });
-        //         return;
-        //     }
-        //     setFeedback({ type: "success", text: "User added and linked to the school." });
-        //
-        //     setForm(INITIAL_FORM);
-        //     await loadMembers();
-        // } finally {
-        //     setSubmitting(false);
-        // }
-        setSubmitting(true)
-        try {
-            // 1?? try the RPC first
+        // Role restriction: admin can only create score_taker/viewer
+        const targetRole = String(form.role || '').toLowerCase();
+        if (currentRole === 'admin' && !(targetRole === 'score_taker' || targetRole === 'viewer')) {
+            setFeedback({ type: 'error', text: 'Admins may only add score_taker or viewer roles.' });
+            return;
+        }
+        // Proceed with add; backend will error if user belongs to another school
+        await doAddUser();
+        return;
+    };
+
+
+    // Perform add/link flow and enforce single-school membership
+    async function doAddUser() {
+        setSubmitting(true);
+        try  {
+            
+            // Attempt RPC; if user already belongs to another school, backend returns an error
             const { data, error } = await supabase.rpc('create_or_link_user', {
                 p_email: form.email,
                 p_full_name: form.fullName,
                 p_school: schoolId,
                 p_role: form.role,
-            })
+            });
 
-            // 2??  AUTH_USER_MISSING ? create the Auth user, then call RPC again
             if (error?.message === "AUTH_USER_MISSING" || error?.code === "P0002") {
-                // Call /api/createUser and link user (as you already have)
                 setFeedback({ type: "info", text: "Creating new user..." });
-                // determine which API base to use
-                const apiBase = import.meta.env.DEV
-                    ? "https://napfa5-assessment.vercel.app" // ?? replace with your actual deployed domain
-                    : "";
-
+                const apiBase = import.meta.env.DEV ? "https://napfa5-assessment.vercel.app" : "";
                 const response = await fetch(`${apiBase}/api/createUser`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        email: form.email,
-                        password: form.password || "test1234",
-                        fullName: form.fullName,
-                    }),
+                    body: JSON.stringify({ email: form.email, password: form.password || "test1234", fullName: form.fullName }),
                 });
-
-                // const response = await fetch("/api/createUser", {
-                //     method: "POST",
-                //     headers: { "Content-Type": "application/json" },
-                //     body: JSON.stringify({
-                //         email: form.email,
-                //         password: form.password || "test1234",
-                //         fullName: form.fullName,
-                //     }),
-                // });
                 const result = await response.json();
-
                 if (!response.ok) {
                     setFeedback({ type: "error", text: "User creation failed: " + result.error });
+                    showToast('error', "User creation failed: " + (result.error || ''));
                     return;
                 }
-
-                // Then link via RPC
-                const { data: linkData, error: linkError } = await supabase.rpc("create_or_link_user", {
+                const { error: linkError } = await supabase.rpc("create_or_link_user", {
                     p_email: form.email,
                     p_full_name: form.fullName,
                     p_school: schoolId,
@@ -330,34 +274,53 @@ export default function ModifyUser({ user }) {
                 });
                 if (linkError) {
                     setFeedback({ type: "error", text: "Linking failed: " + linkError.message });
+                    showToast('error', "Linking failed: " + linkError.message);
                     return;
                 }
-
-                setFeedback({ type: "success", text: "? User created and linked successfully." });
+                setFeedback({ type: "success", text: "User created and linked successfully." });
+                showToast('success', 'User created and linked successfully');
                 setForm(INITIAL_FORM);
+                setAddOpen(false);
                 await loadMembers(schoolId);
                 return;
             }
 
-
             if (error) {
-                setFeedback({ type: 'error', text: error.message })
-                return
+                setFeedback({ type: 'error', text: error.message });
+                showToast('error', error.message || 'Failed to link user');
+                return;
             }
 
             setFeedback({ type: 'success', text: 'User linked or updated successfully.' });
+            showToast('success', 'User linked or updated successfully');
             setForm(INITIAL_FORM);
+            setAddOpen(false);
             await loadMembers(schoolId);
-
         } finally {
-            setSubmitting(false)
+            setSubmitting(false);
         }
-
-    };
+    }
 
     const handleRoleUpdate = async (member, newRole) => {
         if (member.role === newRole) return;
         setFeedback(null);
+        // Restrict admin actions
+        const curr = String(currentRole || '').toLowerCase();
+        const targetNew = String(newRole || '').toLowerCase();
+        const targetExisting = String(member.role || '').toLowerCase();
+        if (curr === 'admin') {
+            // Cannot change admins/superadmins or set any role outside allowed
+            if (!(targetExisting === 'score_taker' || targetExisting === 'viewer')) {
+                setFeedback({ type: 'error', text: 'Admins may only modify score_taker or viewer.' });
+                showToast('error', 'Admins may only modify score_taker or viewer');
+                return;
+            }
+            if (!(targetNew === 'score_taker' || targetNew === 'viewer')) {
+                setFeedback({ type: 'error', text: 'Admins may only set role to score_taker or viewer.' });
+                showToast('error', 'Admins may only set role to score_taker or viewer');
+                return;
+            }
+        }
         setPendingMemberId(member.id);
         try {
             const { error } = await supabase
@@ -366,19 +329,30 @@ export default function ModifyUser({ user }) {
                 .eq("id", member.id);
             if (error) {
                 setFeedback({ type: "error", text: error.message || "Unable to update role." });
+                showToast('error', error.message || 'Unable to update role')
                 return;
             }
             setFeedback({ type: "success", text: "Role updated." });
+            showToast('success', 'Role updated')
             await loadMembers();
         } finally {
             setPendingMemberId(null);
         }
     };
 
+
     const handleRemoveMember = async (member) => {
         if (member.userId === user?.id) {
             setFeedback({ type: "error", text: "You cannot remove your own membership." });
             return;
+        }
+        if (String(currentRole||'').toLowerCase() === 'admin') {
+            const r = String(member.role||'').toLowerCase();
+            if (!(r === 'score_taker' || r === 'viewer')) {
+                setFeedback({ type: 'error', text: 'Admins may only remove score_taker or viewer.' });
+                showToast('error', 'Admins may only remove score_taker or viewer');
+                return;
+            }
         }
         const confirmed = window.confirm(
             `Remove ${member.fullName || member.email} from this school?`
@@ -394,114 +368,67 @@ export default function ModifyUser({ user }) {
                 .eq("id", member.id);
             if (error) {
                 setFeedback({ type: "error", text: error.message || "Unable to remove user." });
+                showToast('error', error.message || 'Unable to remove user')
                 return;
             }
             setFeedback({ type: "success", text: "User removed from the school." });
+            showToast('success', 'User removed from the school')
             await loadMembers();
         } finally {
             setPendingMemberId(null);
         }
     };
 
-    const canAccess = platformOwner || schools.length > 0;
+    const canAccess = platformOwner || schools.length > 0; // schools pre-filtered to admin/superadmin for non-owner
 
     if (!user) return <div className="p-6">Please login.</div>;
     if (!canAccess) return <div className="p-6 text-red-600">Access denied.</div>;
 
     return (
-        <div className="p-6 max-w-3xl space-y-6">
-    <div className="mb-4 text-sm text-gray-700 border rounded p-3 bg-gray-50">
-        <div className="font-medium mb-1">Role legend</div>
-        <div className="flex flex-wrap gap-3">
-            <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-800">admin/superadmin</span>
-            <span>manage students, enrollments, sessions and roster; record scores when Active; completed sessions are read-only</span>
-        </div>
-        <div className="flex flex-wrap gap-3 mt-2">
-            <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-800">score_taker</span>
-            <span>view students and scores; record scores only when session is Active; cannot manage roster</span>
-        </div>
-    </div>
-            <div>
-                <h1 className="text-2xl font-bold mb-4">Modify Users</h1>
-                <div className="space-y-4">
-                    <div>
-                        <label className="block text-sm mb-1">School</label>
-                        <select
-                            value={schoolId}
-                            onChange={(event) => setSchoolId(event.target.value)}
-                            className="border rounded p-2 w-full"
-                        >
-                            <option value="">Select a school</option>
-                            {schools.map((school) => (
-                                <option key={school.id} value={school.id}>
-                                    {school.name}
-                                </option>
-                            ))}
-                        </select>
-                    </div>
-                </div>
-            </div>
+        <main className="w-full">
+          <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+            <header className="space-y-1">
+              <h1 className="text-2xl font-semibold">Manage Users</h1>
+              <p className="text-sm text-gray-600">Add users to your school, update roles, and remove access. UI aligned with Manage Students and Score Entry.</p>
+            </header>
 
-            <form
-                onSubmit={handleAddUser}
-                className="border rounded p-4 space-y-3 bg-white shadow-sm"
-            >
-                <h2 className="text-lg font-semibold">Add User To School</h2>
-                <div>
-                    <label className="block text-sm mb-1">Role</label>
-                    <select
-                        value={form.role}
-                        onChange={handleInputChange("role")}
-                        className="border rounded p-2 w-full"
-                    >
-                        {ROLES.map((role) => (
-                            <option key={role} value={role}>
-                                {role}
-                            </option>
-                        ))}
-                    </select>
+            <section className="border rounded-lg p-4 bg-white shadow-sm">
+              <h2 className="text-lg font-semibold mb-3">Context</h2>
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="text-sm">
+                  School
+                  <select value={schoolId} onChange={(e)=>{ setSchoolId(e.target.value); setPage(1) }} className="border rounded p-2 w-full mt-1">
+                    <option value="">Select a school</option>
+                    {schools.map((s) => (<option key={s.id} value={s.id}>{s.name}</option>))}
+                  </select>
+                </label>
+                <div className="text-sm text-gray-700 border rounded p-3 bg-gray-50">
+                  <div className="font-medium mb-1">Role legend</div>
+                  <div className="flex flex-wrap gap-3">
+                    <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-800">admin/superadmin</span>
+                    <span>Manage students, enrollments, sessions & roster; record scores.</span>
+                  </div>
+                  <div className="flex flex-wrap gap-3 mt-2">
+                    <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-800">score_taker</span>
+                    <span>Record scores when session is Active; cannot manage roster.</span>
+                  </div>
                 </div>
-                <div>
-                    <label className="block text-sm mb-1">Full Name</label>
-                    <input
-                        value={form.fullName}
-                        onChange={handleInputChange("fullName")}
-                        className="border rounded p-2 w-full"
-                        required
-                    />
-                </div>
-                <div>
-                    <label className="block text-sm mb-1">Email</label>
-                    <input
-                        type="email"
-                        value={form.email}
-                        onChange={handleInputChange("email")}
-                        className="border rounded p-2 w-full"
-                        required
-                    />
-                </div>
-                <div>
-                    <label className="block text-sm mb-1">Password</label>
-                    <input
-                        type="password"
-                        value={form.password}
-                        onChange={handleInputChange("password")}
-                        className="border rounded p-2 w-full"
-                        required
-                    />
-                </div>
-                <button
-                    type="submit"
-                    className="bg-green-600 text-white px-4 py-2 rounded disabled:opacity-50"
-                    disabled={submitting || !schoolId}
-                >
-                    {submitting ? "Processing..." : "Add / Link User"}
-                </button>
+              </div>
+            </section>
 
-            </form>
+            {/* Add user moved to modal; use button in list header */}
 
             <div className="border rounded p-4 bg-white shadow-sm">
-                <h2 className="text-lg font-semibold mb-3">Existing Users</h2>
+                <div className="flex items-center justify-between mb-3">
+                  <h2 className="text-lg font-semibold">Existing Users</h2>
+                  {(currentRole === 'superadmin' || currentRole === 'admin') && (
+                    <button onClick={()=>setAddOpen(true)} disabled={!schoolId} className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50">Add User</button>
+                  )}
+                </div>
+                <div className="flex flex-wrap items-center gap-2 mb-2">
+                    <input value={query} onChange={(e)=>{ setQuery(e.target.value); setPage(1) }} placeholder="Search by name or email" className="p-2 border rounded w-full md:max-w-sm" />
+                    <select value={roleFilter} onChange={(e)=>{ setRoleFilter(e.target.value); setPage(1) }} className="p-2 border rounded"><option value="">All roles</option>{ROLES.map(r => (<option key={r} value={r}>{r}</option>))}</select>
+                </div>
                 {membersLoading ? (
                     <p>Loading users...</p>
                 ) : members.length === 0 ? (
@@ -517,10 +444,24 @@ export default function ModifyUser({ user }) {
                             </tr>
                         </thead>
                         <tbody>
-                            {members.map((member) => (
+                            {(() => {
+                                const q = query.trim().toLowerCase();
+                                const filtered = members.filter(m => (!q || (m.fullName||"").toLowerCase().includes(q) || (m.email||"").toLowerCase().includes(q)) && (!roleFilter || m.role === roleFilter));
+                                const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+                                const cur = Math.min(page, totalPages);
+                                const start = (cur - 1) * pageSize;
+                                const items = filtered.slice(start, start + pageSize);
+                                // render
+                                return items.map((member) => (
                                 <tr key={member.id}>
                                     <td className="border px-3 py-2">{member.fullName || "--"}</td>
-                                    <td className="border px-3 py-2">{member.email}</td>
+                                    <td
+                                        className={`border px-3 py-2 ${member.userId === user.id ? 'cursor-pointer underline decoration-dotted' : ''}`}
+                                        title={member.userId === user.id ? 'View/edit your profile' : ''}
+                                        onClick={() => { if (member.userId === user.id) openOwnProfile(member); }}
+                                    >
+                                        {member.email}
+                                    </td>
                                     <td className="border px-3 py-2">
                                         <select
                                             value={member.role}
@@ -529,6 +470,7 @@ export default function ModifyUser({ user }) {
                                             }
                                             className="border rounded p-1 w-full"
                                             disabled={pendingMemberId === member.id}
+                                            onClick={(e)=>e.stopPropagation()}
                                         >
                                             {ROLES.map((roleOption) => (
                                                 <option key={roleOption} value={roleOption}>
@@ -548,21 +490,135 @@ export default function ModifyUser({ user }) {
                                         </button>
                                     </td>
                                 </tr>
-                            ))}
+                                ))
+                            })()}
                         </tbody>
                     </table>
+                )}
+                {/* Pagination footer */}
+                {!membersLoading && members.length > 0 && (
+                  <div className="flex items-center justify-between text-sm mt-2">
+                    <div>
+                      {(() => {
+                        const q = query.trim().toLowerCase();
+                        const total = members.filter(m => (!q || (m.fullName||"").toLowerCase().includes(q) || (m.email||"").toLowerCase().includes(q)) && (!roleFilter || m.role === roleFilter)).length;
+                        const totalPages = Math.max(1, Math.ceil(total / pageSize));
+                        const cur = Math.min(page, totalPages);
+                        const start = (cur-1)*pageSize + (total?1:0);
+                        const end = Math.min(cur*pageSize, total);
+                        return `Showing ${start}-${end} of ${total}`;
+                      })()}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {(() => {
+                        const q = query.trim().toLowerCase();
+                        const total = members.filter(m => (!q || (m.fullName||"").toLowerCase().includes(q) || (m.email||"").toLowerCase().includes(q)) && (!roleFilter || m.role === roleFilter)).length;
+                        const totalPages = Math.max(1, Math.ceil(total / pageSize));
+                        const cur = Math.min(page, totalPages);
+                        return (
+                          <>
+                            <button className="px-2 py-1 border rounded disabled:opacity-50" disabled={cur<=1} onClick={()=>setPage(p=>Math.max(1,p-1))}>Prev</button>
+                            <div>Page {cur} / {totalPages}</div>
+                            <button className="px-2 py-1 border rounded disabled:opacity-50" disabled={cur>=totalPages} onClick={()=>setPage(p=>Math.min(totalPages,p+1))}>Next</button>
+                          </>
+                        )
+                      })()}
+                    </div>
+                  </div>
                 )}
             </div>
 
             {feedback && (
-                <p
-                    className={`text-sm ${
-                        feedback.type === "error" ? "text-red-600" : "text-green-600"
-                    }`}
-                >
-                    {feedback.text}
-                </p>
+                <p className={`text-sm ${feedback.type === 'error' ? 'text-red-600' : 'text-green-600'}`}>{feedback.text}</p>
             )}
-        </div>
+
+            {addOpen && (
+              <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+                <div className="bg-white rounded shadow-xl w-full max-w-xl" onClick={(e)=>e.stopPropagation()}>
+                  <div className="px-4 py-2 border-b flex items-center justify-between">
+                    <div className="font-medium">Add User to School</div>
+                    <button className="px-2 py-1 border rounded" onClick={()=>setAddOpen(false)}>Close</button>
+                  </div>
+                  <form onSubmit={(e)=>{ handleAddUser(e); }} className="p-4 space-y-3">
+                    <div className="text-xs text-gray-600">School: {schools.find(s=>s.id===schoolId)?.name || '-'} { !schoolId && '(select a school first)'}</div>
+                    <div>
+                      <label className="block text-sm mb-1">Role</label>
+                      <select value={form.role} onChange={handleInputChange('role')} className="border rounded p-2 w-full">
+                        {ROLES.filter(r => currentRole === 'superadmin' ? true : (r === 'score_taker' || r === 'viewer')).map((role) => (<option key={role} value={role}>{role}</option>))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm mb-1">Full Name</label>
+                      <input value={form.fullName} onChange={handleInputChange('fullName')} className="border rounded p-2 w-full" required />
+                    </div>
+                    <div>
+                      <label className="block text-sm mb-1">Email</label>
+                      <input type="email" value={form.email} onChange={handleInputChange('email')} className="border rounded p-2 w-full" required />
+                    </div>
+                    <div>
+                      <label className="block text-sm mb-1">Password</label>
+                      <input type="password" value={form.password} onChange={handleInputChange('password')} className="border rounded p-2 w-full" required />
+                    </div>
+                    <div className="flex items-center justify-end gap-2 pt-2">
+                      <button type="button" onClick={()=>setAddOpen(false)} className="px-3 py-2 border rounded hover:bg-gray-50">Cancel</button>
+                      <button type="submit" className="px-3 py-2 bg-green-600 text-white rounded disabled:opacity-50" disabled={submitting || !schoolId || !(currentRole==='superadmin' || currentRole==='admin')}>{submitting ? 'Processing...' : 'Add / Link User'}</button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
+
+            {profileOpen && (
+              <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+                <div className="bg-white rounded shadow-xl w-full max-w-xl" onClick={(e)=>e.stopPropagation()}>
+                  <div className="px-4 py-2 border-b flex items-center justify-between">
+                    <div className="font-medium">Your Profile</div>
+                    <button className="px-2 py-1 border rounded" onClick={()=>setProfileOpen(false)}>Close</button>
+                  </div>
+                  <form onSubmit={saveOwnProfile} className="p-4 space-y-3">
+                    {profileFeedback && (
+                      <p className={`text-sm ${profileFeedback.type === 'error' ? 'text-red-600' : 'text-green-600'}`}>{profileFeedback.text}</p>
+                    )}
+                    <div>
+                      <label className="block text-sm mb-1">Full Name</label>
+                      <input value={profileForm.fullName} onChange={handleProfileInput('fullName')} className="border rounded p-2 w-full" required />
+                    </div>
+                    <div>
+                      <label className="block text-sm mb-1">Email</label>
+                      <input type="email" value={profileForm.email} onChange={handleProfileInput('email')} className="border rounded p-2 w-full opacity-70" disabled />
+                      <div className="text-xs text-gray-600 mt-1">Email changes are managed via account settings.</div>
+                    </div>
+                    <div className="flex items-center justify-between pt-2">
+                      <a className="text-sm text-blue-700 underline" href="/change-password">Change password</a>
+                      <div className="flex items-center gap-2">
+                        <button type="button" onClick={()=>setProfileOpen(false)} className="px-3 py-2 border rounded hover:bg-gray-50">Cancel</button>
+                        <button type="submit" className="px-3 py-2 bg-blue-600 text-white rounded disabled:opacity-50" disabled={profileSaving}>{profileSaving ? 'Saving...' : 'Save changes'}</button>
+                      </div>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
+          </div>
+        </main>
     );
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

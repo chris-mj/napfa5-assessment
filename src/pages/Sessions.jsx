@@ -110,7 +110,7 @@ export default function Sessions({ user }) {
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {sessions.map((session) => (
-              <article key={session.id} className="border rounded p-4 space-y-3 shadow-sm">
+              <article key={session.id} className="border rounded p-4 space-y-3 shadow-sm transition-all duration-200 hover:shadow">
                 <div className="flex items-center gap-2">
                   <span className="text-lg" title={session.status || "draft"} aria-label={session.status || "draft"}>
                     {session.status === 'active' ? '🟢' : session.status === 'completed' ? '✅' : '⏳'}

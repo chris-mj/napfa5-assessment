@@ -18,6 +18,8 @@ const Sessions = lazy(() => import("./pages/Sessions"));
 const SessionDetail = lazy(() => import("./pages/SessionDetail"));
 const SessionCards = lazy(() => import("./pages/SessionCards"));
 const NotFound = lazy(() => import("./pages/NotFound"));
+const Profile = lazy(() => import("./pages/Profile"));
+const ManageStudents = lazy(() => import("./pages/ManageStudents"));
 
 export default function App() {
     const [user, setUser] = useState(null);
@@ -42,6 +44,30 @@ export default function App() {
             <AnimatedRoutes user={user} setUser={setUser} />
         </Router>
     );
+}
+
+function AdminGuard({ user, children }) {
+    const [allowed, setAllowed] = useState(null);
+    useEffect(() => {
+        let ignore = false;
+        async function check() {
+            if (!user?.id) { if (!ignore) setAllowed(false); return; }
+            try {
+                const { data } = await supabase
+                    .from('memberships')
+                    .select('role')
+                    .eq('user_id', user.id);
+                const roles = (data||[]).map(r => String(r.role||'').toLowerCase());
+                if (!ignore) setAllowed(roles.includes('admin') || roles.includes('superadmin'));
+            } catch {
+                if (!ignore) setAllowed(false);
+            }
+        }
+        check();
+        return () => { ignore = true };
+    }, [user?.id]);
+    if (allowed === null) return <LoadingOverlay />;
+    return allowed ? children : <Navigate to="/dashboard" replace />;
 }
 
 function AnimatedRoutes({ user, setUser }) {
@@ -114,10 +140,24 @@ function AnimatedRoutes({ user, setUser }) {
                         }
                     />
                     <Route
+                        path="/manage-students"
+                        element={
+                            user ? (
+                                <PageFade>
+                                  <AdminGuard user={user}><ManageStudents user={user} /></AdminGuard>
+                                </PageFade>
+                            ) : (
+                                <Navigate to="/login" replace />
+                            )
+                        }
+                    />
+                    <Route
                         path="/sessions"
                         element={
                             user ? (
-                                <PageFade><Sessions user={user} /></PageFade>
+                                <PageFade>
+                                  <AdminGuard user={user}><Sessions user={user} /></AdminGuard>
+                                </PageFade>
                             ) : (
                                 <Navigate to="/login" replace />
                             )
@@ -127,22 +167,36 @@ function AnimatedRoutes({ user, setUser }) {
                          path="/sessions/:id"
                          element={
                              user ? (
-                                 <PageFade><SessionDetail user={user} /></PageFade>
+                                 <PageFade>
+                                   <AdminGuard user={user}><SessionDetail user={user} /></AdminGuard>
+                                 </PageFade>
                              ) : (
                                  <Navigate to="/login" replace />
                              )
                          }
                      />
                      <Route
-                        path="/sessions/:id/cards"
+                         path="/sessions/:id/cards"
                         element={
                             user ? (
-                                <PageFade><SessionCards /></PageFade>
+                                <PageFade>
+                                  <AdminGuard user={user}><SessionCards /></AdminGuard>
+                                </PageFade>
                             ) : (
                                 <Navigate to="/login" replace />
                             )
                         }
-                     />
+                      />
+                    <Route
+                        path="/profile"
+                        element={
+                            user ? (
+                                <PageFade><Profile user={user} /></PageFade>
+                            ) : (
+                                <Navigate to="/login" replace />
+                            )
+                        }
+                    />
                     <Route
                         path="/add-attempt"
                         element={
