@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
 import { useToast } from "../components/ToastProvider";
@@ -10,6 +10,9 @@ export default function Profile({ user }) {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const { showToast } = useToast();
+  const [memberships, setMemberships] = useState([]);
+  const [memLoading, setMemLoading] = useState(true);
+  const [memOpId, setMemOpId] = useState(null);
 
   useEffect(() => {
     let ignore = false;
@@ -59,9 +62,31 @@ export default function Profile({ user }) {
     }
   };
 
-  if (loading) return <div className="p-6">Loading profile…</div>;
+  if (loading) return <div className="p-6">Loading profile...</div>;
 
-  return (
+  
+  const deactivateMembership = async (m) => {
+    if (!m?.id) return;
+    if (!window.confirm(`Deactivate membership at "${m.schoolName}"? You will lose access tied to this school.`)) return;
+    setMemOpId(m.id);
+    try {
+      const { error } = await supabase.from('memberships').delete().eq('id', m.id);
+      if (error) {
+        showToast('error', error.message || 'Unable to deactivate membership');
+        return;
+      }
+      showToast('success', 'Membership deactivated');
+      const { data } = await supabase
+        .from('memberships')
+        .select('id, role, schools:schools!inner(id, name)')
+        .eq('user_id', user.id)
+        .order('role');
+      setMemberships((data||[]).map(r => ({ id: r.id, role: r.role, schoolName: r.schools?.name || r.schools?.id })));
+    } finally {
+      setMemOpId(null);
+    }
+  };
+return (
     <main className="w-full">
       <div className="max-w-xl mx-auto px-4 sm:px-6 py-6 space-y-6">
         <header className="space-y-1">
@@ -83,11 +108,63 @@ export default function Profile({ user }) {
             </label>
             <div className="flex items-center justify-between">
               <NavLink className="text-sm text-blue-700 underline" to="/change-password">Change password</NavLink>
-              <button type="submit" disabled={saving} className="px-3 py-2 bg-blue-600 text-white rounded disabled:opacity-50">{saving ? 'Saving…' : 'Save changes'}</button>
+              <button type="submit" disabled={saving} className="px-3 py-2 bg-blue-600 text-white rounded disabled:opacity-50">{saving ? 'Saving...' : 'Save changes'}</button>
             </div>
           </form>
         </section>
-      </div>
+
+        <section className="border rounded-lg p-4 bg-white shadow-sm">
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-lg font-semibold">Memberships</h2>
+          </div>
+          {memLoading ? (
+            <div className="text-sm text-gray-600">Loading memberships...</div>
+          ) : memberships.length === 0 ? (
+            <div className="text-sm text-gray-600">No active memberships.</div>
+          ) : (
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr className="bg-gray-100 text-left">
+                  <th className="px-3 py-2 border">School</th>
+                  <th className="px-3 py-2 border">Role</th>
+                  <th className="px-3 py-2 border w-40">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {memberships.map(m => (
+                  <tr key={m.id}>
+                    <td className="px-3 py-2 border">{m.schoolName}</td>
+                    <td className="px-3 py-2 border">{m.role}</td>
+                    <td className="px-3 py-2 border">
+                      <button
+                        className="px-2 py-1 border rounded text-red-600 disabled:opacity-50"
+                        onClick={() => deactivateMembership(m)}
+                        disabled={memOpId === m.id}
+                      >
+                        {memOpId === m.id ? 'Processing...' : 'Deactivate'}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </section>
+        </div>
     </main>
   );
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+

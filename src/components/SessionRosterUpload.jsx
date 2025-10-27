@@ -199,7 +199,7 @@ export default function SessionRosterUpload({ sessionId, schoolId, onDone }) {
               <div className="border rounded p-2 bg-gray-50 max-h-40 overflow-auto text-xs">
                 <div className="font-medium mb-1">Planned changes (first 30):</div>
                 {diffs.slice(0,30).map((d,i)=> (
-                  <div key={i}>{d.id} — {d.name || '-'}: {d.action} ({d.detail})</div>
+                  <div key={i}>{d.id} - {d.name || '-'}: {d.action} ({d.detail})</div>
                 ))}
               </div>
             </>

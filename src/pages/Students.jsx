@@ -54,7 +54,7 @@ export default function Students() {
         <div className="p-6">
             <h1 className="text-2xl font-bold mb-4">Students</h1>
 
-            {loading && <div className="text-sm">Loading…</div>}
+            {loading && <div className="text-sm">Loading...</div>}
             {error && <div className="text-sm text-red-600">Error: {error}</div>}
 
             {!loading && !error && (
@@ -95,7 +95,7 @@ export default function Students() {
             )}
             {!!students.length && (
                 <div className="flex items-center justify-between text-sm mt-2">
-                    <div>Showing {(paged.cur-1)*pageSize + 1}–{Math.min(paged.cur*pageSize, paged.total)} of {paged.total}</div>
+                    <div>Showing {(paged.cur-1)*pageSize + 1}-{Math.min(paged.cur*pageSize, paged.total)} of {paged.total}</div>
                     <div className="flex items-center gap-2">
                         <button className="px-2 py-1 border rounded disabled:opacity-50" disabled={paged.cur<=1} onClick={()=>setPage(p=>Math.max(1, p-1))}>Prev</button>
                         <div>Page {paged.cur} / {paged.totalPages}</div>

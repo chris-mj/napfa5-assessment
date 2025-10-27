@@ -28,7 +28,7 @@ export default function AdminGlobal({ user }) {
                 <h1 className="text-2xl font-bold">Global Admin</h1>
                 <div className="flex gap-2">
                     <Link to="/create-school" className="bg-blue-600 text-white px-3 py-2 rounded hover:bg-blue-700">
-                        + Create School
+                        + Modify Schools
                     </Link>
                     <Link to="/modify-user" className="bg-green-600 text-white px-3 py-2 rounded hover:bg-green-700">
                         + Modify Users
@@ -37,7 +37,7 @@ export default function AdminGlobal({ user }) {
             </div>
 
             {loading ? (
-                <div>Loading…</div>
+                <div>Loading...</div>
             ) : (
                 <table className="min-w-full border rounded">
                     <thead>

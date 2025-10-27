@@ -14,11 +14,11 @@ export default function AddAttempt({ user }) {
   const [sessionId, setSessionId] = useState('')
   const [sessions, setSessions] = useState([])
   const stations = useMemo(() => ([
-    { key: 'situps', name: 'Sit-ups', Icon: Activity, description: 'Count repetitions â€“ 1 attempt' },
-    { key: 'broad_jump', name: 'Broad Jump', Icon: Ruler, description: 'Measure distance (cm) â€“ 2 attempts, record best' },
-    { key: 'sit_and_reach', name: 'Sit & Reach', Icon: Ruler, description: 'Measure distance (cm) â€“ 2 attempts, record best' },
-    { key: 'pullups', name: 'Pull-ups', Icon: Hand, description: 'Count repetitions â€“ 1 attempt' },
-    { key: 'shuttle_run', name: 'Shuttle Run', Icon: Timer, description: 'Record time (sec, 1dp) â€“ 1 attempt' },
+    { key: 'situps', name: 'Sit-ups', Icon: Activity, description: 'Count repetitions | 1 attempt' },
+    { key: 'broad_jump', name: 'Broad Jump', Icon: Ruler, description: 'Measure distance (cm) | 2 attempts, record best' },
+    { key: 'sit_and_reach', name: 'Sit & Reach', Icon: Ruler, description: 'Measure distance (cm) | 2 attempts, record best' },
+    { key: 'pullups', name: 'Pull-ups', Icon: Hand, description: 'Count repetitions | 1 attempt' },
+    { key: 'shuttle_run', name: 'Shuttle Run', Icon: Timer, description: 'Record time (sec, 1dp) | 1 attempt' },
   ]), [])
   const [activeStation, setActiveStation] = useState('situps')
   const [studentId, setStudentId] = useState('')
@@ -275,7 +275,7 @@ export default function AddAttempt({ user }) {
                     if (!sessionId) return 'Select session';
                     const se = sessions?.find(s => s.id === sessionId);
                     if (!se) return sessionId;
-                    try { return `${se.title} â€” ${new Date(se.session_date).toLocaleDateString()}` } catch { return se.title }
+                    try { return `${se.title} | ${new Date(se.session_date).toLocaleDateString()}` } catch { return se.title }
                   })()}
                 </span>
               </SelectTrigger>
@@ -283,7 +283,7 @@ export default function AddAttempt({ user }) {
                 {sessions?.length ? (
                   sessions.map((se) => (
                     <SelectItem key={se.id} value={se.id}>
-                      {se.title} â€” {new Date(se.session_date).toLocaleDateString()}
+                      {se.title} | {new Date(se.session_date).toLocaleDateString()}
                     </SelectItem>
                   ))
                 ) : (

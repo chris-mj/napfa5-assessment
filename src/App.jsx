@@ -75,9 +75,21 @@ function AnimatedRoutes({ user, setUser }) {
     const navigate = useNavigate();
 
     const handleLogout = async () => {
-        await supabase.auth.signOut();
+        try {
+            // Clear local session first
+            await supabase.auth.signOut({ scope: 'local' });
+        } catch {}
+        try {
+            // Remove any persisted Supabase auth tokens from storage (defensive)
+            if (typeof window !== 'undefined') {
+                const keys = Object.keys(window.localStorage || {});
+                keys.forEach((k) => { if (k.startsWith('sb-') && k.endsWith('-auth-token')) localStorage.removeItem(k); });
+            }
+        } catch {}
         setUser(null);
         navigate("/", { replace: true });
+        // Best-effort global revoke in background; ignore 403/session_not_found
+        supabase.auth.signOut({ scope: 'global' }).catch(() => {});
     };
 
     return (

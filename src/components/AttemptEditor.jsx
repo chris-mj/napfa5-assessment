@@ -149,27 +149,27 @@ export default function AttemptEditor({ sessionId, studentId, onSaved }) {
               <input className="border rounded p-2 w-full" type="number" step="1" placeholder="e.g., 8" value={values.pullups} onChange={set("pullups")} />
             </div>
             <div>
-              <label className="block text-sm mb-1">Broad Jump (cm) — Attempt 1</label>
+              <label className="block text-sm mb-1">Broad Jump (cm) - Attempt 1</label>
               <input className="border rounded p-2 w-full" type="number" step="1" placeholder="e.g., 190" value={values.broad1} onChange={set("broad1")} />
             </div>
             <div>
-              <label className="block text-sm mb-1">Broad Jump (cm) — Attempt 2</label>
+              <label className="block text-sm mb-1">Broad Jump (cm) - Attempt 2</label>
               <input className="border rounded p-2 w-full" type="number" step="1" placeholder="e.g., 195" value={values.broad2} onChange={set("broad2")} />
             </div>
             <div>
-              <label className="block text-sm mb-1">Sit & Reach (cm) — Attempt 1</label>
+              <label className="block text-sm mb-1">Sit & Reach (cm) - Attempt 1</label>
               <input className="border rounded p-2 w-full" type="number" step="1" placeholder="e.g., 32" value={values.reach1} onChange={set("reach1")} />
             </div>
             <div>
-              <label className="block text-sm mb-1">Sit & Reach (cm) — Attempt 2</label>
+              <label className="block text-sm mb-1">Sit & Reach (cm) - Attempt 2</label>
               <input className="border rounded p-2 w-full" type="number" step="1" placeholder="e.g., 34" value={values.reach2} onChange={set("reach2")} />
             </div>
             <div>
-              <label className="block text-sm mb-1">Shuttle Run (sec) — Attempt 1</label>
+              <label className="block text-sm mb-1">Shuttle Run (sec) - Attempt 1</label>
               <input className="border rounded p-2 w-full" type="number" step="0.1" placeholder="e.g., 10.3" value={values.shuttle1} onChange={set("shuttle1")} />
             </div>
             <div>
-              <label className="block text-sm mb-1">Shuttle Run (sec) — Attempt 2</label>
+              <label className="block text-sm mb-1">Shuttle Run (sec) - Attempt 2</label>
               <input className="border rounded p-2 w-full" type="number" step="0.1" placeholder="e.g., 10.2" value={values.shuttle2} onChange={set("shuttle2")} />
             </div>
           </div>

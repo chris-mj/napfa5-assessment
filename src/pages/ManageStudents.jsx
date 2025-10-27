@@ -468,7 +468,7 @@ export default function ManageStudents({ user }) {
 
           {/* Pagination */}
           <div className="flex items-center justify-between text-sm mt-2">
-            <div>Showing {(paged.cur-1)*pageSize + (filtered.length?1:0)}–{Math.min(paged.cur*pageSize, filtered.length)} of {filtered.length}</div>
+            <div>Showing {(paged.cur-1)*pageSize + (filtered.length?1:0)}-{Math.min(paged.cur*pageSize, filtered.length)} of {filtered.length}</div>
             <div className="flex items-center gap-2">
               <button className="px-2 py-1 border rounded disabled:opacity-50" disabled={paged.cur<=1} onClick={()=>setPage(p=>Math.max(1,p-1))}>Prev</button>
               <div>Page {paged.cur} / {paged.totalPages}</div>
@@ -483,7 +483,7 @@ export default function ManageStudents({ user }) {
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={()=>setHistoryOpen(false)}>
           <div className="bg-white rounded shadow-xl w-full max-w-2xl" onClick={(e)=>e.stopPropagation()}>
             <div className="px-4 py-2 border-b flex items-center justify-between">
-              <div className="font-medium">Enrollment History {historyFor ? `— ${historyFor.name} (${historyFor.student_identifier})` : ''}</div>
+              <div className="font-medium">Enrollment History {historyFor ? `- ${historyFor.name} (${historyFor.student_identifier})` : ''}</div>
               <button className="px-2 py-1 border rounded" onClick={()=>setHistoryOpen(false)}>Close</button>
             </div>
             <div className="p-4">
@@ -560,7 +560,7 @@ export default function ManageStudents({ user }) {
                 <div className="max-h-48 overflow-auto border rounded p-2 bg-gray-50 text-xs">
                   <div className="font-medium mb-1">Planned changes (first 30):</div>
                   {(importDiffs || []).slice(0,30).map((d,i)=> (
-                    <div key={i} className="py-0.5">{d.id} — {d.name || '-'}: {d.action} ({d.detail})</div>
+                    <div key={i} className="py-0.5">{d.id} - {d.name || '-'}: {d.action} ({d.detail})</div>
                   ))}
                 </div>
                 {importResult && (
@@ -576,7 +576,7 @@ export default function ManageStudents({ user }) {
               {importPreview?.errors?.length ? (
                 <div className="max-h-40 overflow-auto border rounded p-2 bg-red-50 text-sm">
                   {importPreview.errors.slice(0,50).map((e, i)=> (<div key={i}>• {e.message || JSON.stringify(e)}</div>))}
-                  {importPreview.errors.length > 50 && <div>…and more</div>}
+                  {importPreview.errors.length > 50 && <div>...and more</div>}
                 </div>
               ) : null}
             </div>
