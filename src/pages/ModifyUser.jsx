@@ -4,15 +4,7 @@ import { supabase } from "../lib/supabaseClient";
 import { isPlatformOwner } from "../lib/roles";
 import { useToast } from "../components/ToastProvider";
 
-async function createOrLinkUserRPC({ email, fullName, schoolId, role, supabase }) {
-    const { data, error } = await supabase.rpc("create_or_link_user", {
-        p_email: email,
-        p_full_name: fullName,
-        p_school: schoolId,
-        p_role: role,
-    });
-    return { data, error };
-}
+// (unused helper removed)
 
 
 const ROLES = ["superadmin", "admin", "score_taker", "viewer"];
@@ -53,24 +45,24 @@ export default function ModifyUser({ user }) {
         (async () => {
             if (platformOwner) {
                 const { data, error } = await supabase
-                    .from("schools")
-                    .select("id, name")
-                    .order("name");
+                    .from('schools')
+                    .select('id, name')
+                    .order('name');
                 if (error) {
-                    console.error("Failed to load schools:", error.message);
-                    setFeedback({ type: "error", text: "Unable to load schools." });
+                    console.error('Failed to load schools:', error.message);
+                    setFeedback({ type: 'error', text: 'Unable to load schools.' });
                     return;
                 }
                 setSchools(data || []);
             } else {
                 const { data, error } = await supabase
-                    .from("memberships")
-                    .select("role, schools!inner(id, name)")
-                    .eq("user_id", user.id)
-                    .in("role", ["admin", "superadmin"]);
+                    .from('memberships')
+                    .select('role, schools:schools!inner(id, name)')
+                    .eq('user_id', user.id)
+                    .in('role', ['admin','superadmin']);
                 if (error) {
-                    console.error("Failed to load schools:", error.message);
-                    setFeedback({ type: "error", text: "Unable to load schools." });
+                    console.error('Failed to load schools:', error.message);
+                    setFeedback({ type: 'error', text: 'Unable to load schools.' });
                     return;
                 }
                 setSchools((data || []).map((record) => record.schools));
@@ -113,22 +105,13 @@ export default function ModifyUser({ user }) {
                   .maybeSingle();
                 setCurrentRole(String(mymem?.role || ''));
             } catch {}
-            const { data, error } = await supabase
-                .from("memberships")
-                .select("id, role, user_id, profiles:profiles!inner(full_name, email)")
-                .eq("school_id", resolvedSchoolId);
+            const { data, error } = await supabase.rpc('list_school_memberships', { p_school: resolvedSchoolId });
             if (error) {
                 console.error("Failed to fetch members:", error.message);
                 setFeedback({ type: "error", text: "Unable to load users for the selected school." });
                 setMembers([]);
             } else {
-                const rows = (data || []).map((row) => ({
-                    id: row.id,
-                    role: row.role,
-                    userId: row.user_id,
-                    fullName: row.profiles?.full_name || "",
-                    email: row.profiles?.email || "",
-                }));
+                const rows = (data || []).map((row) => ({ id: row.membership_id, role: row.role, userId: row.user_id, fullName: row.full_name || '', email: row.email || '' }));
                 rows.sort((a, b) => (a.fullName || "").localeCompare(b.fullName || ""));
                 setMembers(rows);
             }
@@ -228,10 +211,10 @@ export default function ModifyUser({ user }) {
             return;
         }
 
-        // Role restriction: admin can only create score_taker/viewer
+        // Role restriction: platform owner bypasses; admin may add admin/score_taker/viewer
         const targetRole = String(form.role || '').toLowerCase();
-        if (currentRole === 'admin' && !(targetRole === 'score_taker' || targetRole === 'viewer')) {
-            setFeedback({ type: 'error', text: 'Admins may only add score_taker or viewer roles.' });
+        if (!platformOwner && currentRole === 'admin' && !(targetRole === 'admin' || targetRole === 'score_taker' || targetRole === 'viewer')) {
+            setFeedback({ type: 'error', text: 'Admins may only add admin, score_taker or viewer roles.' });
             return;
         }
         // Proceed with add; backend will error if user belongs to another school
@@ -242,65 +225,58 @@ export default function ModifyUser({ user }) {
 
     // Perform add/link flow and enforce single-school membership
     async function doAddUser() {
-        setSubmitting(true);
-        try  {
-            
-            // Attempt RPC; if user already belongs to another school, backend returns an error
-            const { data, error } = await supabase.rpc('create_or_link_user', {
-                p_email: form.email,
-                p_full_name: form.fullName,
-                p_school: schoolId,
-                p_role: form.role,
-            });
-
-            if (error?.message === "AUTH_USER_MISSING" || error?.code === "P0002") {
-                setFeedback({ type: "info", text: "Creating new user..." });
-                const apiBase = import.meta.env.DEV ? "https://napfa5-assessment.vercel.app" : "";
-                const response = await fetch(`${apiBase}/api/createUser`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ email: form.email, password: form.password || "test1234", fullName: form.fullName }),
-                });
-                const result = await response.json();
-                if (!response.ok) {
-                    setFeedback({ type: "error", text: "User creation failed: " + result.error });
-                    showToast('error', "User creation failed: " + (result.error || ''));
-                    return;
-                }
-                const { error: linkError } = await supabase.rpc("create_or_link_user", {
-                    p_email: form.email,
-                    p_full_name: form.fullName,
-                    p_school: schoolId,
-                    p_role: form.role,
-                });
-                if (linkError) {
-                    setFeedback({ type: "error", text: "Linking failed: " + linkError.message });
-                    showToast('error', "Linking failed: " + linkError.message);
-                    return;
-                }
-                setFeedback({ type: "success", text: "User created and linked successfully." });
-                showToast('success', 'User created and linked successfully');
-                setForm(INITIAL_FORM);
-                setAddOpen(false);
-                await loadMembers(schoolId);
-                return;
-            }
-
-            if (error) {
-                setFeedback({ type: 'error', text: error.message });
-                showToast('error', error.message || 'Failed to link user');
-                return;
-            }
-
-            setFeedback({ type: 'success', text: 'User linked or updated successfully.' });
-            showToast('success', 'User linked or updated successfully');
-            setForm(INITIAL_FORM);
-            setAddOpen(false);
-            await loadMembers(schoolId);
-        } finally {
-            setSubmitting(false);
-        }
+  setSubmitting(true);
+  try {
+    const { error } = await supabase.rpc('create_membership', {
+      p_email: form.email,
+      p_school: schoolId,
+      p_role: form.role,
+    });
+    if (error?.code === 'P0002' || error?.message === 'AUTH_USER_MISSING') {
+      setFeedback({ type: 'info', text: 'Creating new user...' });
+      const apiBase = import.meta.env.DEV ? 'https://napfa5-assessment.vercel.app' : '';
+      const response = await fetch(`${apiBase}/api/createUser`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: form.email, password: form.password || 'test1234', fullName: form.fullName }),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        setFeedback({ type: 'error', text: 'User creation failed: ' + (result.error || '') });
+        showToast('error', 'User creation failed: ' + (result.error || ''));
+        return;
+      }
+      const { error: addErr } = await supabase.rpc('create_membership', {
+        p_email: form.email,
+        p_school: schoolId,
+        p_role: form.role,
+      });
+      if (addErr) {
+        setFeedback({ type: 'error', text: addErr.message || 'Failed to link user' });
+        showToast('error', addErr.message || 'Failed to link user');
+        return;
+      }
+      setFeedback({ type: 'success', text: 'User created and linked successfully.' });
+      showToast('success', 'User created and linked successfully');
+      setForm(INITIAL_FORM);
+      setAddOpen(false);
+      await loadMembers(schoolId);
+      return;
     }
+    if (error) {
+      setFeedback({ type: 'error', text: error.message || 'Failed to link user' });
+      showToast('error', error.message || 'Failed to link user');
+      return;
+    }
+    setFeedback({ type: 'success', text: 'User linked successfully.' });
+    showToast('success', 'User linked successfully');
+    setForm(INITIAL_FORM);
+    setAddOpen(false);
+    await loadMembers(schoolId);
+  } finally {
+    setSubmitting(false);
+  }
+}
 
     const handleRoleUpdate = async (member, newRole) => {
         if (member.role === newRole) return;
@@ -310,7 +286,6 @@ export default function ModifyUser({ user }) {
         const targetNew = String(newRole || '').toLowerCase();
         const targetExisting = String(member.role || '').toLowerCase();
         if (curr === 'admin') {
-            // Cannot change admins/superadmins or set any role outside allowed
             if (!(targetExisting === 'score_taker' || targetExisting === 'viewer')) {
                 setFeedback({ type: 'error', text: 'Admins may only modify score_taker or viewer.' });
                 showToast('error', 'Admins may only modify score_taker or viewer');
@@ -324,16 +299,13 @@ export default function ModifyUser({ user }) {
         }
         setPendingMemberId(member.id);
         try {
-            const { error } = await supabase
-                .from("memberships")
-                .update({ role: newRole })
-                .eq("id", member.id);
+            const { error } = await supabase.rpc('update_membership_role', { p_membership_id: member.id, p_role: newRole });
             if (error) {
-                setFeedback({ type: "error", text: error.message || "Unable to update role." });
-                showToast('error', error.message || 'Unable to update role')
+                setFeedback({ type: 'error', text: error.message || 'Unable to update role.' });
+                showToast('error', error.message || 'Unable to update role');
                 return;
             }
-            setFeedback({ type: "success", text: "Role updated." });
+            setFeedback({ type: 'success', text: 'Role updated.' });
             showToast('success', 'Role updated')
             await loadMembers();
         } finally {
@@ -364,9 +336,7 @@ export default function ModifyUser({ user }) {
         setPendingMemberId(member.id);
         try {
             const { error } = await supabase
-                .from("memberships")
-                .delete()
-                .eq("id", member.id);
+                .rpc('delete_membership', { p_membership_id: member.id });
             if (error) {
                 setFeedback({ type: "error", text: error.message || "Unable to remove user." });
                 showToast('error', error.message || 'Unable to remove user')
@@ -422,7 +392,7 @@ export default function ModifyUser({ user }) {
             <div className="border rounded p-4 bg-white shadow-sm">
                 <div className="flex items-center justify-between mb-3">
                   <h2 className="text-lg font-semibold">Existing Users</h2>
-                  {(currentRole === 'superadmin' || currentRole === 'admin') && (
+                  {(platformOwner || currentRole === 'superadmin' || currentRole === 'admin') && (
                     <button onClick={()=>setAddOpen(true)} disabled={!schoolId} className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50">Add User</button>
                   )}
                 </div>
@@ -545,7 +515,7 @@ export default function ModifyUser({ user }) {
                     <div>
                       <label className="block text-sm mb-1">Role</label>
                       <select value={form.role} onChange={handleInputChange('role')} className="border rounded p-2 w-full">
-                        {ROLES.filter(r => currentRole === 'superadmin' ? true : (r === 'score_taker' || r === 'viewer')).map((role) => (<option key={role} value={role}>{role}</option>))}
+                        {ROLES.filter(r => platformOwner ? true : (currentRole === 'superadmin' ? true : (currentRole === 'admin' ? (r === 'admin' || r === 'score_taker' || r === 'viewer') : (r === 'score_taker' || r === 'viewer')))).map((role) => (<option key={role} value={role}>{role}</option>))}
                       </select>
                     </div>
                     <div>
@@ -562,7 +532,7 @@ export default function ModifyUser({ user }) {
                     </div>
                     <div className="flex items-center justify-end gap-2 pt-2">
                       <button type="button" onClick={()=>setAddOpen(false)} className="px-3 py-2 border rounded hover:bg-gray-50">Cancel</button>
-                      <button type="submit" className="px-3 py-2 bg-green-600 text-white rounded disabled:opacity-50" disabled={submitting || !schoolId || !(currentRole==='superadmin' || currentRole==='admin')}>{submitting ? 'Processing...' : 'Add / Link User'}</button>
+                      <button type="submit" className="px-3 py-2 bg-green-600 text-white rounded disabled:opacity-50" disabled={submitting || !schoolId || !(platformOwner || currentRole==='superadmin' || currentRole==='admin')}>{submitting ? 'Processing...' : 'Add / Link User'}</button>
                     </div>
                   </form>
                 </div>
@@ -604,6 +574,10 @@ export default function ModifyUser({ user }) {
         </main>
     );
 }
+
+
+
+
 
 
 

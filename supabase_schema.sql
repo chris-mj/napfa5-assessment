@@ -1,4 +1,4 @@
--- Run this in Supabase SQL editor (Postgres)
+﻿-- Run this in Supabase SQL editor (Postgres)
 -- Idempotent schema + RLS policies for sessions, roster, scores
 
 create extension if not exists pgcrypto;
@@ -216,6 +216,7 @@ alter table if exists enrollments enable row level security;
 alter table if exists sessions enable row level security;
 alter table if exists session_roster enable row level security;
 alter table if exists scores enable row level security;
+alter table if exists memberships enable row level security;
 
 -- Students: select by membership via enrollments; CUD by admin/superadmin
 do $$ begin
@@ -227,6 +228,43 @@ do $$ begin
       join memberships m on m.school_id = e.school_id
       where e.student_id = students.id
         and m.user_id = auth.uid()
+    )
+  );
+exception when duplicate_object then null; end $$;
+
+-- Memberships: user can see and delete their own memberships; admins/superadmins can manage within same school
+do $$ begin
+  create policy memberships_select_self
+  on memberships for select
+  using (
+    user_id = auth.uid()
+  );
+exception when duplicate_object then null; end $$;
+
+do $$ begin
+  create policy memberships_delete_self
+  on memberships for delete
+  using (
+    user_id = auth.uid()
+  );
+exception when duplicate_object then null; end $$;
+
+do $$ begin
+  create policy memberships_admin_cud
+  on memberships for all
+  using (
+    exists (
+      select 1 from memberships m2
+      where m2.user_id = auth.uid()
+        and m2.school_id = memberships.school_id
+        and m2.role in ('admin','superadmin')
+    )
+  ) with check (
+    exists (
+      select 1 from memberships m2
+      where m2.user_id = auth.uid()
+        and m2.school_id = memberships.school_id
+        and m2.role in ('admin','superadmin')
     )
   );
 exception when duplicate_object then null; end $$;
@@ -604,22 +642,113 @@ exception when others then null; end $$;
 -- RPC helpers
 -- =========================
 
-do $$ begin
-  create or replace function move_membership_to_school(
-    p_email text,
-    p_school uuid,
-    p_role role_type
-  ) returns void
+-- List memberships for a school (admin/superadmin only) without RLS recursion
+do $do$
+begin
+  create or replace function list_school_memberships(p_school uuid)
+  returns table (
+    membership_id uuid,
+    user_id uuid,
+    role role_type,
+    full_name text,
+    email text
+  )
+  language sql
+  security definer
+  set search_path = public
+  as $fn$
+    with allowed as (
+      select 1
+      from memberships m
+      where m.user_id = auth.uid()
+        and m.school_id = p_school
+        and m.role in ('admin','superadmin')
+      limit 1
+    )
+    select m.id, m.user_id, m.role, p.full_name, p.email
+    from memberships m
+    join profiles p on p.user_id = m.user_id
+    where m.school_id = p_school
+      and exists (select 1 from allowed)
+    order by p.full_name nulls last, p.email;
+  $fn$;
+exception when others then null; end
+$do$;
+
+-- Update a membership role with admin/superadmin check
+do $do$
+begin
+  create or replace function update_membership_role(p_membership_id uuid, p_role role_type)
+  returns void
   language plpgsql
   security definer
-as $$
+  set search_path = public
+  as $fn$
+  declare v_school uuid;
+  begin
+    select school_id into v_school from memberships where id = p_membership_id;
+    if v_school is null then
+      raise exception 'MEMBERSHIP_NOT_FOUND' using errcode = 'P0002';
+    end if;
+    if not exists (
+      select 1 from memberships m
+      where m.user_id = auth.uid()
+        and m.school_id = v_school
+        and m.role in ('admin','superadmin')\n  ) or exists (select 1 from memberships gm where gm.user_id = auth.uid() and gm.role = 'superadmin') then
+      raise exception 'NOT_AUTHORIZED' using errcode = 'P0001';
+    end if;
+    update memberships set role = p_role where id = p_membership_id;
+  end;
+  $fn$;
+exception when others then null; end
+$do$;
+
+-- Delete a membership (self or admin/superadmin in same school)
+do $do$
+begin
+  create or replace function delete_membership(p_membership_id uuid)
+  returns void
+  language plpgsql
+  security definer
+  set search_path = public
+  as $fn$
+  declare v_school uuid; v_user uuid;
+  begin
+    select school_id, user_id into v_school, v_user from memberships where id = p_membership_id;
+    if v_school is null then
+      raise exception 'MEMBERSHIP_NOT_FOUND' using errcode = 'P0002';
+    end if;
+    if not (
+    exists (
+      select 1 from memberships m
+      where m.user_id = auth.uid()
+        and m.school_id = v_school
+        and m.role in ('admin','superadmin')
+    ) or lower((auth.jwt()->>'email')) = lower('christopher_teo_ming_jian@moe.edu.sg')
+  ) then
+      raise exception 'NOT_AUTHORIZED' using errcode = 'P0001';
+    end if;
+    delete from memberships where id = p_membership_id;
+  end;
+  $fn$;
+exception when others then null; end
+$do$;
+create or replace function move_membership_to_school(
+  p_email text,
+  p_school uuid,
+  p_role role_type
+)
+returns void
+language plpgsql
+security definer
+as $func$
 declare
   v_user uuid;
   v_keep uuid;
 begin
   select user_id into v_user from profiles where email = p_email;
   if v_user is null then
-    raise exception 'AUTH_USER_MISSING' using errcode='P0002';
+    raise exception ''AUTH_USER_MISSING'' using errcode=''P0002'';
   end if;
 
   -- If already in target school, update role and remove others
@@ -638,5 +767,8 @@ begin
   else
     insert into memberships(user_id, school_id, role) values (v_user, p_school, p_role);
   end if;
-end $$;
-exception when others then null; end $$;
+end;
+$func$;
+
+
+

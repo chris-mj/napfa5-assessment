@@ -40,6 +40,32 @@ export default function Profile({ user }) {
     return () => { ignore = true };
   }, [user?.id]);
 
+  useEffect(() => {
+    let ignore = false;
+    const loadMems = async () => {
+      setMemLoading(true);
+      try {
+        const { data, error } = await supabase
+          .from('memberships')
+          .select('id, role, schools:schools!inner(id, name)')
+          .eq('user_id', user.id)
+          .order('role');
+        if (!ignore) {
+          if (error) {
+            showToast('error', error.message || 'Failed to load memberships');
+            setMemberships([]);
+          } else {
+            setMemberships((data || []).map(r => ({ id: r.id, role: r.role, schoolName: r.schools?.name || r.schools?.id })));
+          }
+        }
+      } finally {
+        if (!ignore) setMemLoading(false);
+      }
+    };
+    if (user?.id) loadMems();
+    return () => { ignore = true };
+  }, [user?.id, showToast]);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setMessage("");
@@ -120,7 +146,7 @@ return (
           {memLoading ? (
             <div className="text-sm text-gray-600">Loading memberships...</div>
           ) : memberships.length === 0 ? (
-            <div className="text-sm text-gray-600">No active memberships.</div>
+            <div className="text-sm text-gray-600">No school membership found. Ask your school administrator to add you in.</div>
           ) : (
             <table className="min-w-full text-sm">
               <thead>
@@ -154,6 +180,7 @@ return (
     </main>
   );
 }
+
 
 
 
