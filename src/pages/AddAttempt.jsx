@@ -473,14 +473,14 @@ export default function AddAttempt({ user }) {
                     {['situps','pullups'].includes(activeStation) && (
                       <>
                         <label htmlFor="attempt1" className="text-gray-700 text-sm">Repetitions</label>
-                        <div className="text-xs text-gray-600">Unit: reps â€¢ Example: 25</div>
+                        <div className="text-xs text-gray-600">Unit: reps | Example: 25</div>
                         <Input id="attempt1" inputMode="numeric" value={attempt1} onChange={(e)=> setAttempt1(onlyInt(e.target.value))} placeholder="e.g., 25" className="w-full" />
                       </>
                     )}
                     {['broad_jump','sit_and_reach'].includes(activeStation) && (
                       <>
                         <label className="text-gray-700 text-sm">Scores (2 attempts, best kept)</label>
-                        <div className="text-xs text-gray-600">Unit: cm â€¢ Example: 190</div>
+                        <div className="text-xs text-gray-600">Unit: cm | Example: 190</div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                           <Input inputMode="numeric" value={attempt1} onChange={(e)=> setAttempt1(onlyInt(e.target.value))} placeholder="Attempt 1" />
                           <Input inputMode="numeric" value={attempt2} onChange={(e)=> setAttempt2(onlyInt(e.target.value))} placeholder="Attempt 2" />
@@ -490,7 +490,7 @@ export default function AddAttempt({ user }) {
                     {activeStation === 'shuttle_run' && (
                       <>
                         <label className="text-gray-700 text-sm">Times (2 attempts, lower kept)</label>
-                        <div className="text-xs text-gray-600">Unit: seconds (1 d.p.) â€¢ Example: 10.3</div>
+                        <div className="text-xs text-gray-600">Unit: seconds (1 d.p.) | Example: 10.3</div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                           <Input inputMode="decimal" value={attempt1} onChange={(e)=> setAttempt1(oneDecimal(e.target.value))} placeholder="Attempt 1 (e.g., 10.3)" />
                           <Input inputMode="decimal" value={attempt2} onChange={(e)=> setAttempt2(oneDecimal(e.target.value))} placeholder="Attempt 2 (e.g., 10.2)" />

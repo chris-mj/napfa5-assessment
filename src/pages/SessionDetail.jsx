@@ -1,12 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import AttemptEditor from "../components/AttemptEditor";
 import { jsPDF } from "jspdf";
 import { drawCode39 } from "../utils/barcode39";
 import { drawQr } from "../utils/qrcode";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
+import { isPlatformOwner } from "../lib/roles";
 import { supabase } from "../lib/supabaseClient";
-import RosterUpload from "../components/SessionRosterUpload";
-import RosterSelect from "../components/SessionRosterSelect";
+import RosterDualList from "../components/RosterDualList";
 
 const ROLE_CAN_MANAGE = ["superadmin", "admin"];
 
@@ -35,7 +35,8 @@ export default function SessionDetail({ user }) {
     const [summaryOpen, setSummaryOpen] = useState(false);
     const [activeTab, setActiveTab] = useState(() => (location.hash === '#scores' ? 'scores' : 'roster'));
 
-    const canManage = useMemo(() => ROLE_CAN_MANAGE.includes(membership?.role), [membership]);
+    const platformOwner = isPlatformOwner(user);
+    const canManage = useMemo(() => platformOwner || ROLE_CAN_MANAGE.includes(membership?.role), [platformOwner, membership]);
     const rosterEditable = canManage && session?.status !== 'completed';
 
     useEffect(() => {
@@ -372,17 +373,9 @@ export default function SessionDetail({ user }) {
                                     <option value="completed">completed</option>
                                 </select>
                             </div>
-                            {canManage && (
-                                <div className="flex items-center gap-2">
-                                    <button
-                                        onClick={exportResults}
-                                        className="text-xs px-3 py-1.5 border rounded bg-white hover:bg-gray-50"
-                                    >
-                                        Export Results
-                                    </button>
-                                    <button onClick={downloadProfileCardsPdf} className="text-xs px-3 py-1.5 border rounded bg-white hover:bg-gray-50" title="Download profile cards (PDF)">Profile Cards</button>
-                                </div>
-                            )}
+            
+
+                            {/* header actions intentionally minimal; profile cards moved to roster tab */}
                         </div>
                     </div>
                 </header>
@@ -435,31 +428,7 @@ export default function SessionDetail({ user }) {
                     })()}
                 </div>
 
-                {/* Sticky tabs inside header */}
-                <nav className="pb-2 overflow-x-auto">
-                    <div role="tablist" aria-label="Session sections" className="inline-flex rounded-lg bg-gray-100 p-1 text-sm">
-                        <button
-                            role="tab"
-                            aria-selected={activeTab === 'roster'}
-                            className={(activeTab === 'roster'
-                                ? 'bg-white text-blue-700 shadow border border-gray-200'
-                                : 'text-gray-600 hover:text-gray-800') + ' px-3 py-1.5 rounded-md transition-colors'}
-                            onClick={() => setActiveTab('roster')}
-                        >
-                            Roster
-                        </button>
-                        <button
-                            role="tab"
-                            aria-selected={activeTab === 'scores'}
-                            className={(activeTab === 'scores'
-                                ? 'bg-white text-blue-700 shadow border border-gray-200'
-                                : 'text-gray-600 hover:text-gray-800') + ' px-3 py-1.5 rounded-md transition-colors'}
-                            onClick={() => setActiveTab('scores')}
-                        >
-                            Scores
-                        </button>
-                    </div>
-                </nav>
+                {/* Tabs moved out of sticky header */}
             </div>
 
             
@@ -468,6 +437,7 @@ export default function SessionDetail({ user }) {
             <div>
                 {flash && <div className="text-sm text-blue-600 transition-all duration-200">{flash}</div>}
             </div>
+
 
             {/* Status/role banner */}
             <div className="text-sm">
@@ -543,6 +513,31 @@ export default function SessionDetail({ user }) {
                     <p className="text-sm text-gray-500">You have view-only access to this session.</p>
                 )}
             </section>
+            {/* Tabs (outside sticky header) */}
+            <nav className="pb-2 overflow-x-auto">
+                <div role="tablist" aria-label="Session sections" className="inline-flex rounded-lg bg-gray-100 p-1 text-sm">
+                    <button
+                        role="tab"
+                        aria-selected={activeTab === 'roster'}
+                        className={(activeTab === 'roster'
+                            ? 'bg-white text-blue-700 shadow border border-gray-200'
+                            : 'text-gray-600 hover:text-gray-800') + ' px-3 py-1.5 rounded-md transition-colors'}
+                        onClick={() => setActiveTab('roster')}
+                    >
+                        Roster
+                    </button>
+                    <button
+                        role="tab"
+                        aria-selected={activeTab === 'scores'}
+                        className={(activeTab === 'scores'
+                            ? 'bg-white text-blue-700 shadow border border-gray-200'
+                            : 'text-gray-600 hover:text-gray-800') + ' px-3 py-1.5 rounded-md transition-colors'}
+                        onClick={() => setActiveTab('scores')}
+                    >
+                        Scores
+                    </button>
+                </div>
+            </nav>
 
             {/*/!* Tabs *!/*/}
             {/*<nav className="flex items-center justify-start">*/}
@@ -571,58 +566,27 @@ export default function SessionDetail({ user }) {
             {/*</nav>*/}
 
             {activeTab === 'roster' ? (
-                <section className="space-y-4">
-                    <div className="border rounded-lg p-4 bg-white">
-                        <h3 className="font-semibold mb-1">Manage Roster</h3>
-                        <p className="text-xs text-gray-500 mb-3">Add students to this session or remove them before scores are recorded.</p>
-                        {rosterEditable ? (
-                            <div className="space-y-3">
-                                <RosterUpload sessionId={id} schoolId={membership?.school_id} onDone={() => { loadRoster(); loadScoresCount(); }} />
-                                <RosterSelect sessionId={id} schoolId={membership?.school_id} onDone={() => { loadRoster(); loadScoresCount(); }} />
-                            </div>
-                        ) : (
-                            <p className="text-sm text-gray-500">{session.status === 'completed' ? 'Roster is locked because the session is completed.' : 'You do not have permission to modify the roster.'}</p>
-                        )}
-                    </div>
-                    <div className="h-px bg-gray-200" />
-                    <div className="border rounded-lg overflow-x-auto bg-white">
-                        <div className="px-3 py-2 border-b bg-gray-50 text-sm font-medium">Roster List</div>
-                        <table className="w-full">
-                            <thead>
-                                <tr className="bg-gray-100 text-left">
-                                    <th className="px-3 py-2 border">Student ID</th>
-                                    <th className="px-3 py-2 border">Name</th>
-                                    <th className="px-3 py-2 border w-40">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                            {roster.length === 0 ? (
-                                <tr><td colSpan="3" className="px-3 py-4 text-center text-gray-500">No students in this session yet.</td></tr>
-                            ) : roster.map((s) => (
-                                <tr key={s.id}>
-                                    <td className="px-3 py-2 border">{s.student_identifier}</td>
-                                    <td className="px-3 py-2 border flex items-center gap-2">{s.name}{scoredSet.has(s.id) && <span title="Has scores" aria-label="Has scores">[scored]</span>}</td>
-                                    <td className="px-3 py-2 border">
-                                        {canManage && (
-                                            <button
-                                                onClick={() => handleRemoveFromRoster(s.id)}
-                                                disabled={scoredSet.has(s.id) || session.status === 'completed'}
-                                                className="px-3 py-1.5 border rounded hover:bg-gray-100 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                                            >
-                                                Remove
-                                            </button>
-                                        )}
-                                    </td>
-                                </tr>
-                            ))}
-                            </tbody>
-                        </table>
-                    </div>
-                </section>
+                <RosterDualList
+                  user={user}
+                  session={session}
+                  canManage={rosterEditable}
+                  membership={membership}
+                  onProfileCards={downloadProfileCardsPdf}
+                />
             ) : (
                 <section className="space-y-4">
                     <div className="border rounded-lg overflow-x-auto bg-white">
-                        <div className="px-3 py-2 border-b bg-gray-50 text-sm font-medium">Scores</div>
+                        <div className="px-3 py-2 border-b bg-gray-50 text-sm font-medium flex items-center justify-between">
+                            <span>Scores</span>
+                            {canManage && (
+                                <button
+                                    onClick={exportResults}
+                                    className="text-xs px-3 py-1.5 border rounded bg-white hover:bg-gray-50"
+                                >
+                                    Export Results
+                                </button>
+                            )}
+                        </div>
                         <table className="w-full">
                             <thead>
                                 <tr className="bg-gray-100 text-left">
@@ -675,3 +639,13 @@ function RosterRow({ s, sessionId, canRecord, onSaved }) {
         </>
     );
 }
+
+
+
+
+
+
+
+
+
+
