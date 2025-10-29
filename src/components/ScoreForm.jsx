@@ -2,7 +2,7 @@
 import React, {useState} from 'react'
 import { supabase } from '../lib/supabaseClient'
 
-export default function ScoreForm({student, onSaved}){
+export default function ScoreForm({student, sessionId, onSaved}){
   const [form, setForm] = useState({
     test_date: new Date().toISOString().slice(0,10),
     situps: '', shuttle_run: '', sit_and_reach: '', pullups: '', run_2400: '', broad_jump: ''
@@ -13,6 +13,7 @@ export default function ScoreForm({student, onSaved}){
   const save = async () =>{
     setSaving(true)
     const payload = {
+      session_id: sessionId,
       student_id: student.id,
       test_date: form.test_date,
       situps: form.situps ? parseInt(form.situps) : null,
