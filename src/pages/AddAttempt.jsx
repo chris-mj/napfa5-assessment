@@ -51,8 +51,9 @@ export default function AddAttempt({ user }) {
         if (mErr || !mem?.school_id) return
         const { data: sess } = await supabase
           .from('sessions')
-          .select('id, title, session_date')
+          .select('id, title, session_date, status')
           .eq('school_id', mem.school_id)
+          .eq('status', 'active')
           .order('session_date', { ascending: true })
         setSessions(sess || [])
       } catch {}
