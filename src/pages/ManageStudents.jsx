@@ -398,8 +398,8 @@ export default function ManageStudents({ user }) {
               <input type="checkbox" checked={includeInactive} onChange={(e)=>{ setIncludeInactive(e.target.checked); setPage(1) }} /> Include inactive
             </label>
             <div className="ml-auto flex items-center gap-2">
-              <a href="/pft_template.csv" download className="px-3 py-2 border rounded hover:bg-gray-50">Download CSV template</a>
-              <button onClick={()=> setImportOpen(true)} className="px-3 py-2 border rounded hover:bg-gray-50">Import CSV</button>
+              <a href="/pft_template.csv" download className="px-3 py-2 border rounded hover:bg-gray-50">Download PFT template</a>
+              <button onClick={()=> setImportOpen(true)} className="px-3 py-2 border rounded hover:bg-gray-50">Import PFT</button>
             </div>
           </div>
 
