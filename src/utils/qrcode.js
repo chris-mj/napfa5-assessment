@@ -1,37 +1,23 @@
-/* Minimal QRCode generator import (davidshimjs QRCode.js API-compatible) */
-/* This is a trimmed build supporting Version auto and ECC level L for typical short IDs. */
-/* eslint-disable */
-// Due to size, this is a compacted implementation adapted for local use.
-// Public API: new QRCode(canvasOrElement, { text, width, height, correctLevel })
+import QRCode from 'qrcode';
 
-(function(){
-var QRMode={MODE_NUMBER:1,MODE_ALPHA_NUM:2,MODE_8BIT_BYTE:4,MODE_KANJI:8};
-var QRErrorCorrectLevel={L:1,M:0,Q:3,H:2};
-var QRMaskPattern={PATTERN000:0,PATTERN001:1,PATTERN010:2,PATTERN011:3,PATTERN100:4,PATTERN101:5,PATTERN110:6,PATTERN111:7};
-function QR8bitByte(data){this.mode=QRMode.MODE_8BIT_BYTE;this.data=data}
-QR8bitByte.prototype={getLength:function(){return this.data.length},write:function(buffer){for(var i=0;i<this.data.length;i++){buffer.put(this.data.charCodeAt(i),8)}}};
-function QRBitBuffer(){this.buffer=[];this.length=0}
-QRBitBuffer.prototype={get:function(i){return((this.buffer[Math.floor(i/8)]>>> (7-i%8))&1)==1},put:function(num,length){for(var i=0;i<length;i++){this.putBit(((num>>> (length-i-1))&1)==1)}},putBit:function(bit){this.buffer[Math.floor(this.length/8)]|=(bit?1:0)<<(7-this.length%8);this.length++}};
-// Polynomial and RS blocks
-function QRPolynomial(num,shift){if(num.length==undefined)throw new Error(num.length+'/'+shift);var offset=0;while(offset<num.length&&num[offset]==0)offset++;this.num=new Array(num.length-offset+shift);for(var i=0;i<num.length-offset;i++)this.num[i]=num[i+offset]}
-QRPolynomial.prototype={get:function(i){return this.num[i]},getLength:function(){return this.num.length},multiply:function(e){var num=new Array(this.getLength()+e.getLength()-1);for(var i=0;i<this.getLength();i++)for(var j=0;j<e.getLength();j++)num[i+j]^=QRMath.gexp(QRMath.glog(this.get(i))+QRMath.glog(e.get(j)));return new QRPolynomial(num,0)},mod:function(e){if(this.getLength()-e.getLength()<0)return this;var ratio=QRMath.glog(this.get(0))-QRMath.glog(e.get(0));var num=new Array(this.getLength());for(var i=0;i<this.getLength();i++)num[i]=this.get(i);for(var i=0;i<e.getLength();i++)num[i]^=QRMath.gexp(QRMath.glog(e.get(i))+ratio);return new QRPolynomial(num,0).mod(e)}};
-var QRMath={glog:function(n){if(n<1)throw new Error('glog('+n+')');return QRMath.LOG_TABLE[n]},gexp:function(n){while(n<0)n+=255;while(n>=256)n-=255;return QRMath.EXP_TABLE[n]},EXP_TABLE:new Array(256),LOG_TABLE:new Array(256)};
-for(var i=0;i<256;i++)QRMath.EXP_TABLE[i]=i<8?1<<i:QRMath.EXP_TABLE[i-4]^QRMath.EXP_TABLE[i-5]^QRMath.EXP_TABLE[i-6]^QRMath.EXP_TABLE[i-8];for(var i=0;i<256;i++)for(var j=0;j<256;j++)if(QRMath.EXP_TABLE[j]==i){QRMath.LOG_TABLE[i]=j;break}
-var QRUtil={PATTERN_POSITION_TABLE:[[],[6,18],[6,22],[6,26],[6,30],[6,34],[6,22,38]],getBCHTypeInfo:function(data){var bits=data<<10;while(QRUtil.getBCHDigit(bits)-QRUtil.getBCHDigit(1335)>=0)bits^=(1335<<(QRUtil.getBCHDigit(bits)-QRUtil.getBCHDigit(1335)));return((data<<10)|bits)^21522},getBCHDigit:function(data){var digit=0;while(data!=0){digit>>>=0;data>>>=1;digit++;}return digit},getMask:function(maskPattern,i,j){switch(maskPattern){case QRMaskPattern.PATTERN000:return (i+j)%2==0;case QRMaskPattern.PATTERN001:return i%2==0;case QRMaskPattern.PATTERN010:return j%3==0;case QRMaskPattern.PATTERN011:return (i+j)%3==0;case QRMaskPattern.PATTERN100:return (Math.floor(i/2)+Math.floor(j/3))%2==0;case QRMaskPattern.PATTERN101:return (i*j)%2+(i*j)%3==0;case QRMaskPattern.PATTERN110:return ((i*j)%3+(i+j)%2)%2==0;case QRMaskPattern.PATTERN111:return ((i*j)%3+(i+j)%2)%2==0;default:throw new Error('bad maskPattern:'+maskPattern)}},getErrorCorrectPolynomial:function(ecLength){var a=new QRPolynomial([1],0);for(var i=0;i<ecLength;i++)a=a.multiply(new QRPolynomial([1,QRMath.gexp(i)],0));return a}};
-function QRRSBlock(totalCount,dataCount){this.totalCount=totalCount;this.dataCount=dataCount}
-QRRSBlock.getRSBlocks=function(typeNumber,errorCorrectLevel){if(typeNumber<1||typeNumber>7)typeNumber=1;var rs=[[1,19,7]];return [new QRRSBlock(rs[0][1],rs[0][1]-rs[0][2])]};// simplified for v1-L
-function QRCodeModel(typeNumber,ecLevel){this.typeNumber=1;this.ecLevel=QRErrorCorrectLevel.L;this.modules=null;this.moduleCount=0;this.dataList=[]}
-QRCodeModel.prototype={addData:function(data){this.dataList.push(new QR8bitByte(data))},isDark:function(row,col){return this.modules[row][col]},getModuleCount:function(){return this.moduleCount},make:function(){this.moduleCount=21;this.modules=new Array(this.moduleCount);for(var r=0;r<this.moduleCount;r++){this.modules[r]=new Array(this.moduleCount);for(var c=0;c<this.moduleCount;c++)this.modules[r][c]=null}this.setupPositionProbePattern(0,0);this.setupPositionProbePattern(this.moduleCount-7,0);this.setupPositionProbePattern(0,this.moduleCount-7);this.setupTimingPattern();this.mapData(this.createData())},setupPositionProbePattern:function(row,col){for(var r=-1;r<=7;r++)for(var c=-1;c<=7;c++){if(row+r<=-1||this.moduleCount<=row+r||col+c<=-1||this.moduleCount<=col+c)continue;if((0<=r&&r<=6&&(c==0||c==6))||(0<=c&&c<=6&&(r==0||r==6))||(2<=r&&r<=4&&2<=c&&c<=4))this.modules[row+r][col+c]=true;else this.modules[row+r][col+c]=false}},setupTimingPattern:function(){for(var r=8;r<this.moduleCount-8;r++)if(this.modules[r][6]==null)this.modules[r][6]=r%2==0;for(var c=8;c<this.moduleCount-8;c++)if(this.modules[6][c]==null)this.modules[6][c]=c%2==0},mapData:function(data){var inc=-1,row=this.moduleCount-1,bitIndex=7,byteIndex=0,mask=QRMaskPattern.PATTERN000;for(var col=this.moduleCount-1;col>0;col-=2){if(col==6)col--;for(;;){for(var c=0;c<2;c++){if(this.modules[row][col-c]==null){var dark=false;if(byteIndex<data.length)dark=((data[byteIndex]>>> bitIndex)&1)==1;var maskTest=QRUtil.getMask(mask,row,col-c);this.modules[row][col-c]=maskTest? !dark:dark;bitIndex--;if(bitIndex==-1){byteIndex++;bitIndex=7}}}row+=inc;if(row<0||this.moduleCount<=row){row-=inc;inc=-inc;break}}}},createData:function(){var buffer=new QRBitBuffer();for(var i=0;i<this.dataList.length;i++){var data=this.dataList[i];buffer.put(4,4);buffer.put(data.getLength(),8);data.write(buffer)}buffer.put(0,4);while(buffer.length%8!=0)buffer.putBit(false);var totalDataCount=19;var bytes=[];for(var i=0;i<totalDataCount&&i*8<buffer.length;i++){bytes.push((buffer.buffer[i]||0)&255)}while(bytes.length<totalDataCount)bytes.push(bytes.length%2?17:236);var ecCount=7;var rsPoly=QRUtil.getErrorCorrectPolynomial(ecCount);var raw=new QRPolynomial(bytes,0);var mod=raw.mod(rsPoly);var ecData=new Array(ecCount);for(var i=0;i<ecCount;i++)ecData[i]=mod.get(i);return bytes.concat(ecData)}};
+export function drawQr(canvas, text, size = 128, ecc = 'M', margin = 1) {
+  // Returns a Promise that resolves when the canvas is drawn
+  return new Promise((resolve, reject) => {
+    QRCode.toCanvas(canvas, String(text ?? ''), {
+      errorCorrectionLevel: ecc,
+      width: size,
+      margin
+    }, (err) => {
+      if (err) reject(err); else resolve();
+    });
+  });
+}
 
-function QRCode(el,opts){this._el=el;this._opts=opts||{};this._opts.width=this._opts.width||128;this._opts.height=this._opts.height||128;this._opts.correctLevel=QRErrorCorrectLevel.L;this.makeCode(this._opts.text||'')}
-QRCode.prototype.makeCode=function(text){if(!text){this.clear();return}var qr=new QRCodeModel(1,QRErrorCorrectLevel.L);qr.addData(text);qr.make();this._el.width=this._opts.width;this._el.height=this._opts.height;var ctx=this._el.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,this._opts.width,this._opts.height);var tileW=this._opts.width/qr.getModuleCount();var tileH=this._opts.height/qr.getModuleCount();ctx.fillStyle='#000';for(var r=0;r<qr.getModuleCount();r++){for(var c=0;c<qr.getModuleCount();c++){if(qr.isDark(r,c)){var w=Math.ceil((c+1)*tileW)-Math.floor(c*tileW);var h=Math.ceil((r+1)*tileH)-Math.floor(r*tileH);ctx.fillRect(Math.round(c*tileW),Math.round(r*tileH),w,h)}}}}
-QRCode.prototype.clear=function(){var ctx=this._el.getContext('2d');ctx.clearRect(0,0,this._el.width,this._el.height)}
-
-window.SimpleQRCode=QRCode;
-window.QRErrorCorrectLevel=QRErrorCorrectLevel;
-})();
-
-export function drawQr(canvas, text, size=96){
-  new window.SimpleQRCode(canvas, { text, width: size, height: size, correctLevel: window.QRErrorCorrectLevel.L });
+export async function drawQrDataUrl(text, size = 256, ecc = 'M', margin = 1) {
+  return QRCode.toDataURL(String(text ?? ''), {
+    errorCorrectionLevel: ecc,
+    width: size,
+    margin
+  });
 }
 

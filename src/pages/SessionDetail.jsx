@@ -1,8 +1,8 @@
 ﻿import { useEffect, useMemo, useState } from "react";
 import AttemptEditor from "../components/AttemptEditor";
 import { jsPDF } from "jspdf";
-import { drawCode39 } from "../utils/barcode39";
-import { drawQr } from "../utils/qrcode";
+import { drawBarcode } from "../utils/barcode";
+import { drawQrDataUrl } from "../utils/qrcode";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { isPlatformOwner } from "../lib/roles";
 import { supabase } from "../lib/supabaseClient";
@@ -290,7 +290,8 @@ export default function SessionDetail({ user }) {
                 const enr = r.students?.enrollments;
                 const activeClass = Array.isArray(enr) ? (enr.find(e => e?.is_active)?.class) : (enr?.class);
                 return { id: r.students.id, student_identifier: r.students.student_identifier, name: r.students.name, class: activeClass || '' };
-            });
+            }).sort((a, b) => (String(a.class||'').localeCompare(String(b.class||''), undefined, { numeric: true, sensitivity: 'base' })
+                || String(a.name||'').localeCompare(String(b.name||''), undefined, { sensitivity: 'base' })));
             if (!list.length) { setFlash('No students in roster.'); return; }
 
             const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
@@ -307,7 +308,8 @@ export default function SessionDetail({ user }) {
             const bcCanvas = document.createElement('canvas');
             const qrCanvas = document.createElement('canvas');
 
-            list.forEach((s, i) => {
+            for (let i = 0; i < list.length; i++) {
+                const s = list[i];
                 const pageIndex = Math.floor(i / (cols * rows));
                 const idxInPage = i % (cols * rows);
                 const col = idxInPage % cols;
@@ -316,11 +318,18 @@ export default function SessionDetail({ user }) {
                 const x0 = margin + col * cellW;
                 const y0 = margin + row * cellH;
 
-                // Draw barcode and QR to canvases
-                drawCode39(bcCanvas, s.student_identifier, { module: 2, height: 40 });
-                drawQr(qrCanvas, s.student_identifier, Math.round((qrSize / 25.4) * 96));
+                // Draw barcode and QR to canvases with high resolution for print
+                const pxPerMm = 300 / 25.4; // 300 DPI target
+                const targetQrPx = Math.round(qrSize * pxPerMm);
+                // Compute intended barcode width in mm to match layout then convert to px
+                const intendedBcWmm = cellW - qrSize - 12;
+                const targetBcWpx = Math.max(300, Math.round(intendedBcWmm * pxPerMm));
+                const targetBcHpx = Math.round(14 * pxPerMm); // slightly taller for better reads
+                // Render CODE128 with generous quiet zone
+                drawBarcode(bcCanvas, s.student_identifier, { format: 'CODE128', width: 2, height: targetBcHpx, margin: 24 });
+                // If generated width is smaller/larger than target, it's OK; PDF scales the image retaining resolution
                 const bcUrl = bcCanvas.toDataURL('image/png');
-                const qrUrl = qrCanvas.toDataURL('image/png');
+                const qrUrl = await drawQrDataUrl(s.student_identifier, targetQrPx, 'M', 1);
 
                 // Card border
                 doc.setDrawColor(180);
@@ -339,9 +348,9 @@ export default function SessionDetail({ user }) {
                 doc.addImage(qrUrl, 'PNG', x0 + cellW - qrSize - 6, y0 + 8, qrSize, qrSize);
                 // Barcode bottom spans width minus QR area
                 const bcW = cellW - qrSize - 12;
-                const bcH = 12;
+                const bcH = 14;
                 doc.addImage(bcUrl, 'PNG', x0 + 6, y0 + cellH - bcH - 8, bcW, bcH);
-            });
+            }
 
             doc.save(`session_${id}_profile_cards.pdf`);
         } catch (err) {

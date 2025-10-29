@@ -1,9 +1,9 @@
 // Simple Code39 barcode drawer for uppercase A-Z, 0-9 and - . space $ / + %
 export function drawCode39(canvas, text, opts = {}) {
   const ctx = canvas.getContext('2d');
-  const module = opts.module || 2; // bar width
-  const height = opts.height || 40;
-  const quiet = opts.quiet || module * 10;
+  let module = opts.module || 2; // bar width in px per narrow bar
+  let height = opts.height || 40; // output height in px (for canvas drawing)
+  const quietModules = opts.quietModules || 10; // quiet zone in modules
   const gap = module; // inter-character gap
   const map = {
     '0':'101001101101','1':'110100101011','2':'101100101011','3':'110110010101','4':'101001101011','5':'110100110101','6':'101100110101','7':'101001011011','8':'110100101101','9':'101100101101',
@@ -21,6 +21,14 @@ export function drawCode39(canvas, text, opts = {}) {
     if (i < input.length-1) pattern.push('0'.repeat(7)); // inter-character gap as narrow space
   }
   const totalModules = pattern.reduce((acc, seg)=> acc + seg.length, 0);
+  if (opts.targetWidthPx) {
+    // Compute module size to fit desired pixel width including quiet zones
+    module = Math.max(1, Math.floor(opts.targetWidthPx / (totalModules + 2 * quietModules)));
+  }
+  if (opts.targetHeightPx) {
+    height = opts.targetHeightPx;
+  }
+  const quiet = module * quietModules;
   const width = quiet + totalModules * module + quiet;
   canvas.width = width; canvas.height = height;
   ctx.fillStyle = '#fff'; ctx.fillRect(0,0,width,height);

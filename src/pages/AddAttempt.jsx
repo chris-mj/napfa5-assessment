@@ -60,29 +60,25 @@ export default function AddAttempt({ user }) {
     load()
   }, [user?.id])
 
-  const onSubmit = async (e) => {
-    e.preventDefault()
+  const doSearch = async (idValue) => {
     setError('')
     if (!sessionId) { setError('Please select a session.'); return }
-    if (!studentId.trim()) { setError('Please enter a Student ID.'); return }
+    const sid = (idValue || '').trim()
+    if (!sid) { setError('Please enter a Student ID.'); return }
     setLoading(true)
     try {
-      // Look up student in this session's roster by student_identifier
       const { data, error: err } = await supabase
         .from('session_roster')
         .select('students!inner(id, student_identifier, name, gender, dob, enrollments!left(class, is_active))')
         .eq('session_id', sessionId)
-        .eq('students.student_identifier', studentId.trim())
+        .eq('students.student_identifier', sid)
         .maybeSingle()
       if (err) throw err
       if (!data?.students?.id) {
         setError('Student not found in this session roster.')
-        // Close student + attempt section if previously open
         setStudent(null)
-        setLoading(false)
         return
       }
-      // derive active class if present
       let className = ''
       const enr = data.students?.enrollments
       if (Array.isArray(enr)) {
@@ -91,7 +87,6 @@ export default function AddAttempt({ user }) {
         className = enr.class || ''
       }
       const id = (data.students.student_identifier || '').toUpperCase()
-      // force exit/enter for animation even when already expanded
       setStudent(null)
       setStudent({ id, name: data.students.name, className, gender: data.students.gender, dob: data.students.dob })
       setRevealKey((k)=>k+1)
@@ -99,11 +94,15 @@ export default function AddAttempt({ user }) {
       setAttempt2('')
     } catch (e2) {
       setError(e2.message || 'Search failed.')
-      // Close section on error as well
       setStudent(null)
     } finally {
       setLoading(false)
     }
+  }
+
+  const onSubmit = async (e) => {
+    e.preventDefault()
+    await doSearch(studentId)
   }
 
   const openScanner = () => setScannerOpen(true)
@@ -515,7 +514,7 @@ export default function AddAttempt({ user }) {
         </Card>
       </section>
       {scannerOpen && (
-        <ScannerModal onClose={() => setScannerOpen(false)} onDetected={(code) => { setStudentId(code); setScannerOpen(false); }} />
+        <ScannerModal onClose={() => setScannerOpen(false)} onDetected={(code) => { setStudentId(code); setScannerOpen(false); doSearch(code); }} />
       )}
       {rosterOpen && (
         <RosterModal
@@ -534,28 +533,31 @@ export default function AddAttempt({ user }) {
 
 function ScannerModal({ onClose, onDetected }) {
   const videoRef = useRef(null)
-  const [supported, setSupported] = useState(false)
+  const streamRef = useRef(null)
+  const controlsRef = useRef(null)
+  const [supported, setSupported] = useState(true)
   const [err, setErr] = useState('')
   useEffect(() => {
-    let stream
+    let cleanupFn = null
     const hasBarcode = 'BarcodeDetector' in window
-    setSupported(hasBarcode)
     const start = async () => {
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+        streamRef.current = stream
         if (videoRef.current) {
           videoRef.current.srcObject = stream
           await videoRef.current.play()
         }
         if (hasBarcode) {
-          const detector = new window.BarcodeDetector({ formats: ['qr_code','code_39','code_128'] })
+          setSupported(true)
+          const detector = new window.BarcodeDetector({ formats: ['qr_code','code_128','code_39'] })
           let cancelled = false
           const tick = async () => {
             if (cancelled) return
             try {
               const frame = await detector.detect(videoRef.current)
               if (frame && frame.length > 0) {
-                const value = frame[0].rawValue || frame[0].rawValue
+                const value = frame[0].rawValue
                 if (value) { onDetected(value) }
                 return
               }
@@ -563,16 +565,43 @@ function ScannerModal({ onClose, onDetected }) {
             requestAnimationFrame(tick)
           }
           requestAnimationFrame(tick)
-          return () => { cancelled = true }
+          cleanupFn = () => { cancelled = true }
+        } else {
+          // Fallback: ZXing
+          try {
+            const { BrowserMultiFormatReader } = await import('@zxing/browser')
+            setSupported(true)
+            const codeReader = new BrowserMultiFormatReader()
+            const controls = await codeReader.decodeFromVideoDevice(null, videoRef.current, (result, _err, controls) => {
+              if (result) {
+                const v = result.getText()
+                if (v) { controls.stop(); onDetected(v) }
+              }
+            })
+            controlsRef.current = controls
+            cleanupFn = () => { try { controls.stop(); codeReader.reset() } catch {} }
+          } catch (e2) {
+            setSupported(false)
+          }
         }
       } catch (e) {
         setErr(e.message || 'Camera unavailable.')
       }
     }
-    const cleanup = start()
+    start()
     return () => {
-      if (stream) stream.getTracks().forEach(t => t.stop())
-      if (typeof cleanup === 'function') cleanup()
+      // Stop ZXing controls if active
+      if (controlsRef.current) { try { controlsRef.current.stop() } catch {} controlsRef.current = null }
+      // Stop camera tracks
+      if (streamRef.current) {
+        try { streamRef.current.getTracks().forEach(t => t.stop()) } catch {}
+        streamRef.current = null
+      }
+      // Clear video element
+      if (videoRef.current) {
+        try { videoRef.current.pause(); videoRef.current.srcObject = null } catch {}
+      }
+      if (typeof cleanupFn === 'function') cleanupFn()
     }
   }, [onDetected])
 
