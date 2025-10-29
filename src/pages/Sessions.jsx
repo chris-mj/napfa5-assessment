@@ -14,6 +14,16 @@ export default function Sessions({ user }) {
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [creating, setCreating] = useState(false);
+
+  const formatDDMMYYYY = (isoDate) => {
+    if (!isoDate) return '';
+    const d = new Date(isoDate);
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const yyyy = d.getFullYear();
+    return `${dd}/${mm}/${yyyy}`;
+  };
 
   const canManage = useMemo(() => ROLE_CAN_MANAGE.includes(membership?.role), [membership]);
 
@@ -46,6 +56,36 @@ export default function Sessions({ user }) {
       })
       .finally(() => setLoading(false));
   }, [membership?.school_id]);
+
+  const handleCreateSession = async () => {
+    if (!membership?.school_id) { showToast?.('error', 'No school context.'); return; }
+    setCreating(true);
+    try {
+      const today = new Date();
+      const yyyy = today.getFullYear();
+      const mm = String(today.getMonth() + 1).padStart(2, '0');
+      const dd = String(today.getDate()).padStart(2, '0');
+      // DB expects ISO date; display title uses DD/MM/YYYY
+      const dateISO = `${yyyy}-${mm}-${dd}`;
+      const dateDisplay = `${dd}/${mm}/${yyyy}`;
+      const title = `NAPFA Session ${dateDisplay}`;
+      // Avoid created_by to prevent PostgREST schema cache errors
+      const payload = { school_id: membership.school_id, title, session_date: dateISO, status: 'draft' };
+      const { data, error: err } = await supabase
+        .from('sessions')
+        .insert(payload)
+        .select()
+        .single();
+      if (err) throw err;
+      // optimistic update list
+      setSessions(prev => [data, ...prev]);
+      navigate(`/sessions/${data.id}`, { state: { edit: true } });
+    } catch (e) {
+      showToast?.('error', e.message || 'Failed to create session.');
+    } finally {
+      setCreating(false);
+    }
+  };
 
   const setStatus = async (sessionId, status) => {
     try {
@@ -81,10 +121,11 @@ export default function Sessions({ user }) {
         </div>
         {canManage && (
           <button
-            onClick={() => navigate("/sessions")}
-            className="self-start md:self-auto bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+            onClick={handleCreateSession}
+            disabled={creating}
+            className="self-start md:self-auto bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:opacity-60"
           >
-            New Session
+            {creating ? 'Creating…' : 'New Session'}
           </button>
         )}
       </header>
@@ -135,7 +176,7 @@ export default function Sessions({ user }) {
                   )}
                 </div>
                 <p className="text-sm text-gray-500">
-                  Session Date: <span className="font-medium">{new Date(session.session_date).toLocaleDateString()}</span>
+                  Session Date: <span className="font-medium">{formatDDMMYYYY(session.session_date)}</span>
                 </p>
                 {session.created_at && (
                   <p className="text-xs text-gray-400">Created {new Date(session.created_at).toLocaleString()}</p>

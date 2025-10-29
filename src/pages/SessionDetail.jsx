@@ -23,7 +23,7 @@ export default function SessionDetail({ user }) {
     const [roster, setRoster] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
-    const [editMode, setEditMode] = useState(false);
+    const [editMode, setEditMode] = useState(() => !!(location?.state && location.state.edit));
     const [formState, setFormState] = useState({ title: "", session_date: "" });
     const [formSubmitting, setFormSubmitting] = useState(false);
     const [flash, setFlash] = useState("");
@@ -38,6 +38,22 @@ export default function SessionDetail({ user }) {
     const platformOwner = isPlatformOwner(user);
     const canManage = useMemo(() => platformOwner || ROLE_CAN_MANAGE.includes(membership?.role), [platformOwner, membership]);
     const rosterEditable = canManage && session?.status !== 'completed';
+
+    const formatDDMMYYYY = (iso) => {
+        if (!iso) return "";
+        const d = new Date(iso);
+        const dd = String(d.getDate()).padStart(2, '0');
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        const yyyy = d.getFullYear();
+        return `${dd}/${mm}/${yyyy}`;
+    };
+    const parseDDMMYYYY = (val) => {
+        if (!val) return "";
+        const m = /^([0-3]\d)\/([0-1]\d)\/(\d{4})$/.exec(val.trim());
+        if (!m) return "";
+        const dd = m[1], mm = m[2], yyyy = m[3];
+        return `${yyyy}-${mm}-${dd}`;
+    };
 
     useEffect(() => {
         if (!user) return;
@@ -77,7 +93,7 @@ export default function SessionDetail({ user }) {
                     setSession(null);
                 } else {
                     setSession(data);
-                    setFormState({ title: data.title, session_date: data.session_date });
+                    setFormState({ title: data.title, session_date: formatDDMMYYYY(data.session_date) });
                     setError("");
                 }
             })
@@ -151,7 +167,7 @@ export default function SessionDetail({ user }) {
 
     const handleEditToggle = () => {
         if (!session) return;
-        setFormState({ title: session.title, session_date: session.session_date });
+        setFormState({ title: session.title, session_date: formatDDMMYYYY(session.session_date) });
         setEditMode((prev) => !prev);
         setFlash("");
     };
@@ -161,9 +177,11 @@ export default function SessionDetail({ user }) {
         if (!session) return;
         setFormSubmitting(true);
         try {
+            const isoDate = parseDDMMYYYY(formState.session_date);
+            if (!isoDate) throw new Error('Please enter date as DD/MM/YYYY');
             const { data, error: err } = await supabase
                 .from("sessions")
-                .update({ title: formState.title, session_date: formState.session_date })
+                .update({ title: formState.title, session_date: isoDate })
                 .eq("id", session.id)
                 .select()
                 .single();
@@ -356,6 +374,9 @@ export default function SessionDetail({ user }) {
                 <header className="py-3 space-y-2">
                     <div className="flex items-center gap-3 flex-wrap">
                         <h1 className="text-3xl font-semibold text-gray-800">{session.title}</h1>
+                        <span className="text-sm text-gray-600">
+                            {(() => { const d = new Date(session.session_date); const dd=String(d.getDate()).padStart(2,'0'); const mm=String(d.getMonth()+1).padStart(2,'0'); const yyyy=d.getFullYear(); return `${dd}/${mm}/${yyyy}`; })()}
+                        </span>
                         <span className={"text-xs px-2 py-1 rounded border " + (session.status === "completed" ? "bg-gray-200 text-gray-700" : (session.status === "active" ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-800"))}>
                             {session.status}
                         </span>
@@ -469,7 +490,8 @@ export default function SessionDetail({ user }) {
                             <div>
                                 <label className="block text-sm mb-1">Session Date</label>
                                 <input
-                                    type="date"
+                                    type="text"
+                                    placeholder="DD/MM/YYYY"
                                     value={formState.session_date}
                                     onChange={(e) => setFormState((prev) => ({ ...prev, session_date: e.target.value }))}
                                     className="border rounded p-2 w-full"
