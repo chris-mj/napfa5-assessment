@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
-import { drawCode39 } from "../utils/barcode39";
+import { drawBarcode } from "../utils/barcode";
 import { drawQr } from "../utils/qrcode";
 
 export default function SessionCards() {
@@ -30,7 +30,8 @@ export default function SessionCards() {
           name: r.students.name,
           class: activeClass || ''
         };
-      });
+      }).sort((a, b) => (String(a.class||'').localeCompare(String(b.class||''), undefined, { numeric: true, sensitivity: 'base' })
+        || String(a.name||'').localeCompare(String(b.name||''), undefined, { sensitivity: 'base' })));
       setRoster(list);
       setLoading(false);
     };
@@ -44,8 +45,8 @@ export default function SessionCards() {
         roster.forEach((s, idx) => {
           const bc = document.getElementById(`bc_${idx}`);
           const qc = document.getElementById(`qr_${idx}`);
-          if (bc) drawCode39(bc, s.student_identifier, { module: 2, height: 36 });
-          if (qc) drawQr(qc, s.student_identifier, 96);
+          if (bc) drawBarcode(bc, s.student_identifier, { format: 'CODE128', width: 2, height: 64, margin: 16 });
+          if (qc) drawQr(qc, s.student_identifier, 192);
         });
       }, 0);
     }
