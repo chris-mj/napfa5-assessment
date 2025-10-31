@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+﻿import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 
 export default function Students() {
@@ -71,7 +71,7 @@ export default function Students() {
                         <tbody>
                         {paged.items.map(s => (
                             <tr key={s.id}>
-                                <td className="border px-3 py-2">{s.student_identifier}</td>
+                                <td className="border px-3 py-2">{normalizeStudentId(s.student_identifier)}</td>
                                 <td className="border px-3 py-2">{s.name}</td>
                                 <td className="border px-3 py-2">{s.gender}</td>
                                 <td className="border px-3 py-2">{formatDob(s.dob)}</td>
@@ -106,3 +106,4 @@ export default function Students() {
         </div>
     )
 }
+

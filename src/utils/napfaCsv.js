@@ -114,7 +114,7 @@ export function parseNapfaCsv(csvText, options = {}) {
 
     const serial = cols[0] ?? '';
     const name = cols[1] ?? '';
-    const id = cols[2] ?? '';
+    const id = normalizeStudentId(cols[2] ?? '');
     const klass = cols[3] ?? '';
     const gender = normalizeGender(cols[4] ?? '');
     const dob = parseDob(cols[5] ?? '');
@@ -136,7 +136,7 @@ export function parseNapfaCsv(csvText, options = {}) {
       excelRow,
       serial,
       name: name?.trim() || null,
-      id: String(id).trim(),
+      id,
       class: klass?.trim() || null,
       gender,
       dob,
@@ -185,3 +185,4 @@ export function parseNapfaCsv(csvText, options = {}) {
 }
 
 export default parseNapfaCsv;
+import { normalizeStudentId } from './ids'

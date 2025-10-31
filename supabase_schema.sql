@@ -556,7 +556,10 @@ as $fn$
   left join scores sc on sc.session_id = s.id and sc.student_id = st.id
   where s.id = p_session_id
     and exists (select 1 from allowed)
-  order by st.student_identifier;
+  order by
+    case when e.class is null or e.class = '' then 1 else 0 end,
+    lower(coalesce(e.class, '')),
+    lower(st.name);
 $fn$;
 exception when others then null; end $$;
 
@@ -616,7 +619,11 @@ as $fn$
     where s.id = p_session_id
       and exists (select 1 from allowed)
   )
-  select row_number() over(order by id) as "Sl.No",
+  select row_number() over(order by
+           case when class is null or class = '' then 1 else 0 end,
+           lower(class),
+           lower(name)
+         ) as "Sl.No",
          name as "Name",
          id as "ID",
          class as "Class",
@@ -629,7 +636,12 @@ as $fn$
          pullups as "Pull-ups",
          shuttle_run as "Shuttle Run (sec)",
          '' as "1.6/2.4 Km Run MMSS",
-         '' as "PFT Test Date";
+         '' as "PFT Test Date"
+  from base
+  order by
+    case when class is null or class = '' then 1 else 0 end,
+    lower(class),
+    lower(name);
 $fn$;
 exception when others then null; end $$;
 

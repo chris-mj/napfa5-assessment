@@ -1,112 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import React from "react";
 import { supabase } from "../lib/supabaseClient";
-
-export default function SessionRosterSelect({ sessionId, schoolId, onDone }) {
-  const [year, setYear] = useState("");
-  const [klass, setKlass] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [rows, setRows] = useState([]);
-  const [selected, setSelected] = useState(new Set());
-  const [message, setMessage] = useState("");
-
-  const canApply = useMemo(() => selected.size > 0, [selected]);
-
-  const load = async () => {
-    setLoading(true);
-    setMessage("");
-    const q = supabase
-      .from("enrollments")
-      .select("id, class, academic_year, student_id, students!inner(id, student_identifier, name)")
-      .eq("school_id", schoolId)
-      .eq("is_active", true);
-    if (year) q.eq("academic_year", Number(year));
-    if (klass) q.ilike("class", `%${klass}%`);
-    const { data, error } = await q.order("class", { ascending: true });
-    if (error) setMessage(error.message);
-    setRows(
-      (data || []).map((r) => ({
-        student_id: r.students.id,
-        student_identifier: r.students.student_identifier,
-        name: r.students.name,
-        class: r.class,
-        academic_year: r.academic_year,
-      }))
-    );
-    setLoading(false);
-  };
-
-  useEffect(() => {
-    // initial load
-    if (schoolId) load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [schoolId]);
-
-  const toggle = (sid) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(sid)) next.delete(sid); else next.add(sid);
-      return next;
-    });
-  };
-
-  const addSelected = async () => {
-    setMessage("");
-    const list = Array.from(selected).map((sid) => ({ session_id: sessionId, student_id: sid }));
-    if (list.length === 0) return;
-    const { error } = await supabase.from("session_roster").upsert(list, { onConflict: "session_id,student_id" });
-    if (error) { setMessage(error.message); return; }
-    // create placeholder scores rows as needed
-    await supabase.from("scores").upsert(list, { onConflict: "session_id,student_id" });
-    setMessage(`Added ${list.length} students to roster.`);
-    setSelected(new Set());
-    onDone?.();
-  };
-
-  return (
-    <div className="border rounded p-4 space-y-3">
-      <h3 className="font-semibold">Select Active Enrollments</h3>
-      <div className="flex flex-wrap gap-3 items-end">
-        <div>
-          <label className="block text-sm mb-1">Academic Year</label>
-          <input value={year} onChange={(e) => setYear(e.target.value)} placeholder="e.g. 2025" className="border rounded p-2 w-32" />
-        </div>
-        <div>
-          <label className="block text-sm mb-1">Class</label>
-          <input value={klass} onChange={(e) => setKlass(e.target.value)} placeholder="e.g. 3A" className="border rounded p-2 w-32" />
-        </div>
-        <button onClick={load} disabled={loading} className="px-3 py-2 border rounded hover:bg-gray-100 disabled:opacity-60">{loading ? 'Loading...' : 'Load'}</button>
-        <button onClick={addSelected} disabled={!canApply} className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-60">Add Selected to Session</button>
-      </div>
-      {message && <div className="text-sm">{message}</div>}
-      <div className="max-h-72 overflow-auto border rounded">
-        <table className="w-full">
-          <thead>
-            <tr className="bg-gray-100 text-left">
-              <th className="px-3 py-2 border w-10"></th>
-              <th className="px-3 py-2 border">Student ID</th>
-              <th className="px-3 py-2 border">Name</th>
-              <th className="px-3 py-2 border">Class</th>
-              <th className="px-3 py-2 border">Year</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.length === 0 ? (
-              <tr><td colSpan="5" className="px-3 py-4 text-center text-gray-500">No active enrollments match.</td></tr>
-            ) : rows.map((r) => (
-              <tr key={r.student_id}>
-                <td className="px-3 py-2 border">
-                  <input type="checkbox" checked={selected.has(r.student_id)} onChange={() => toggle(r.student_id)} />
-                </td>
-                <td className="px-3 py-2 border">{r.student_identifier}</td>
-                <td className="px-3 py-2 border">{r.name}</td>
-                <td className="px-3 py-2 border">{r.class}</td>
-                <td className="px-3 py-2 border">{r.academic_year}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
+import { normalizeStudentId } from "../utils/ids";
+ export default function SessionRosterSelect({ sessionId, schoolId, onDone }) {   const [year, setYear] = useState("");   const [klass, setKlass] = useState("");   const [loading, setLoading] = useState(false);   const [rows, setRows] = useState([]);   const [selected, setSelected] = useState(new Set());   const [message, setMessage] = useState("");    const canApply = useMemo(() => selected.size > 0, [selected]);    const load = async () => {     setLoading(true);     setMessage("");     const q = supabase       .from("enrollments")       .select("id, class, academic_year, student_id, students!inner(id, student_identifier, name)")       .eq("school_id", schoolId)       .eq("is_active", true);     if (year) q.eq("academic_year", Number(year));     if (klass) q.ilike("class", `%${klass}%`);     const { data, error } = await q.order("class", { ascending: true });     if (error) setMessage(error.message);     setRows(       (data || []).map((r) => ({         student_id: r.students.id,         student_identifier: r.students.student_identifier,         name: r.students.name,         class: r.class,         academic_year: r.academic_year,       }))     );     setLoading(false);   };    useEffect(() => {     // initial load     if (schoolId) load();     // eslint-disable-next-line react-hooks/exhaustive-deps   }, [schoolId]);    const toggle = (sid) => {     setSelected((prev) => {       const next = new Set(prev);       if (next.has(sid)) next.delete(sid); else next.add(sid);       return next;     });   };    const addSelected = async () => {     setMessage("");     const list = Array.from(selected).map((sid) => ({ session_id: sessionId, student_id: sid }));     if (list.length === 0) return;     const { error } = await supabase.from("session_roster").upsert(list, { onConflict: "session_id,student_id" });     if (error) { setMessage(error.message); return; }     // create placeholder scores rows as needed     await supabase.from("scores").upsert(list, { onConflict: "session_id,student_id" });     setMessage(`Added ${list.length} students to roster.`);     setSelected(new Set());     onDone?.();   };    return (     <div className="border rounded p-4 space-y-3">       <h3 className="font-semibold">Select Active Enrollments</h3>       <div className="flex flex-wrap gap-3 items-end">         <div>           <label className="block text-sm mb-1">Academic Year</label>           <input value={year} onChange={(e) => setYear(e.target.value)} placeholder="e.g. 2025" className="border rounded p-2 w-32" />         </div>         <div>           <label className="block text-sm mb-1">Class</label>           <input value={klass} onChange={(e) => setKlass(e.target.value)} placeholder="e.g. 3A" className="border rounded p-2 w-32" />         </div>         <button onClick={load} disabled={loading} className="px-3 py-2 border rounded hover:bg-gray-100 disabled:opacity-60">{loading ? 'Loading...' : 'Load'}</button>         <button onClick={addSelected} disabled={!canApply} className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-60">Add Selected to Session</button>       </div>       {message && <div className="text-sm">{message}</div>}       <div className="max-h-72 overflow-auto border rounded">         <table className="w-full">           <thead>             <tr className="bg-gray-100 text-left">               <th className="px-3 py-2 border w-10"></th>               <th className="px-3 py-2 border">Student ID</th>               <th className="px-3 py-2 border">Name</th>               <th className="px-3 py-2 border">Class</th>               <th className="px-3 py-2 border">Year</th>             </tr>           </thead>           <tbody>             {rows.length === 0 ? (               <tr><td colSpan="5" className="px-3 py-4 text-center text-gray-500">No active enrollments match.</td></tr>             ) : rows.map((r) => (               <tr key={r.student_id}>                 <td className="px-3 py-2 border">                   <input type="checkbox" checked={selected.has(r.student_id)} onChange={() => toggle(r.student_id)} />                 </td>                 <td className="px-3 py-2 border">{normalizeStudentId(r.student_identifier)}</td>                 <td className="px-3 py-2 border">{r.name}</td>                 <td className="px-3 py-2 border">{r.class}</td>                 <td className="px-3 py-2 border">{r.academic_year}</td>               </tr>             ))}           </tbody>         </table>       </div>     </div>   ); }  

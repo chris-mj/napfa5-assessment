@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+﻿import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
 import { drawBarcode } from "../utils/barcode";
 import { drawQr } from "../utils/qrcode";
+import { normalizeStudentId } from "../utils/ids";
 
 export default function SessionCards() {
   const { id } = useParams();
@@ -45,8 +46,8 @@ export default function SessionCards() {
         roster.forEach((s, idx) => {
           const bc = document.getElementById(`bc_${idx}`);
           const qc = document.getElementById(`qr_${idx}`);
-          if (bc) drawBarcode(bc, s.student_identifier, { format: 'CODE128', width: 2, height: 64, margin: 16 });
-          if (qc) drawQr(qc, s.student_identifier, 192);
+          if (bc) drawBarcode(bc, normalizeStudentId(s.student_identifier), { format: 'CODE128', width: 2, height: 64, margin: 16 });
+          if (qc) drawQr(qc, normalizeStudentId(s.student_identifier), 192);
         });
       }, 0);
     }
@@ -83,7 +84,7 @@ export default function SessionCards() {
             <div key={s.id} className="border rounded-lg p-3 h-[360px] flex flex-col justify-between break-inside-avoid">
               <div>
                 <div className="text-sm text-gray-500">ID</div>
-                <div className="text-xl font-semibold tracking-wide">{s.student_identifier}</div>
+                <div className="text-xl font-semibold tracking-wide">{normalizeStudentId(s.student_identifier)}</div>
                 <div className="mt-1 text-sm text-gray-500">Name</div>
                 <div className="text-lg">{s.name}</div>
                 <div className="mt-1 text-sm text-gray-500">Class</div>
@@ -100,3 +101,4 @@ export default function SessionCards() {
     </div>
   );
 }
+

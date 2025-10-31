@@ -28,3 +28,6 @@ export function calcAge(dob) {
   if (m < 0 || (m === 0 && now.getDate() < birth.getDate())) age--
   return age
 }
+
+// Standards-based scoring helper (JSON-backed)
+export { evaluateNapfa } from './napfaStandards'

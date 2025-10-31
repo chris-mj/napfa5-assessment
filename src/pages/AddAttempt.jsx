@@ -2,6 +2,7 @@
 import { useMemo, useRef, useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
+import { normalizeStudentId } from '../utils/ids'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '../components/ui/select'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '../components/ui/card'
 import { Tabs, TabsList, TabsTrigger } from '../components/ui/tabs'
@@ -64,7 +65,7 @@ export default function AddAttempt({ user }) {
   const doSearch = async (idValue) => {
     setError('')
     if (!sessionId) { setError('Please select a session.'); return }
-    const sid = (idValue || '').trim()
+    const sid = normalizeStudentId(idValue || '')
     if (!sid) { setError('Please enter a Student ID.'); return }
     setLoading(true)
     try {
@@ -783,4 +784,5 @@ function UserCircle(props) {
     </IconBase>
   )
 }
+
 

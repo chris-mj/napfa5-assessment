@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+﻿import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { parseNapfaCsv } from '../utils/napfaCsv'
 import { useToast } from '../components/ToastProvider'
+import { normalizeStudentId } from '../utils/ids'
 
 export default function ManageStudents({ user }) {
   const [membership, setMembership] = useState(null)
@@ -11,7 +12,7 @@ export default function ManageStudents({ user }) {
   const [query, setQuery] = useState('')
   const [filterClass, setFilterClass] = useState('')
   const [filterYear, setFilterYear] = useState('')
-  const [includeInactive, setIncludeInactive] = useState(false)
+  const [showInactiveOnly, setShowInactiveOnly] = useState(false)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(100)
   const [form, setForm] = useState({
@@ -37,6 +38,7 @@ export default function ManageStudents({ user }) {
   const [importDiffs, setImportDiffs] = useState([])
   const [importResult, setImportResult] = useState(null)
   const [importSummaryUrl, setImportSummaryUrl] = useState('')
+  const [importProgress, setImportProgress] = useState(0)
   const { showToast } = useToast()
 
   useEffect(() => {
@@ -81,7 +83,7 @@ export default function ManageStudents({ user }) {
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
-    const base = includeInactive ? rows : rows.filter(r => r.is_active)
+    const base = showInactiveOnly ? rows.filter(r => !r.is_active) : rows.filter(r => r.is_active)
     const qFiltered = q ? base.filter(r => {
       const s = r.students || {}
       return (
@@ -92,8 +94,9 @@ export default function ManageStudents({ user }) {
     }) : base
     const classFiltered = filterClass ? qFiltered.filter(r => (r.class || '').toLowerCase() === filterClass.toLowerCase()) : qFiltered
     const yearFiltered = filterYear ? classFiltered.filter(r => String(r.academic_year || '') === String(filterYear)) : classFiltered
-    return yearFiltered
-  }, [rows, query, includeInactive, filterClass, filterYear])
+    const sorted = [...yearFiltered].sort((a,b)=>{ const y=(b.academic_year||0)-(a.academic_year||0); if(y) return y; const c=String(a.class||'').localeCompare(String(b.class||''), undefined, { numeric:true, sensitivity:'base' }); if(c) return c; return String(a.students?.name||'').localeCompare(String(b.students?.name||''), undefined, { sensitivity:'base' }); })
+    return sorted
+  }, [rows, query, showInactiveOnly, filterClass, filterYear])
 
   const distinctClasses = useMemo(() => {
     const set = new Set((rows || []).map(r => (r.class || '').trim()).filter(Boolean))
@@ -105,12 +108,92 @@ export default function ManageStudents({ user }) {
     return Array.from(set).sort((a,b)=>b-a)
   }, [rows])
 
+  const [selectedEnrollments, setSelectedEnrollments] = useState(new Set())
+  const headerSelectRef = useRef(null)
+
   const paged = useMemo(() => {
     const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
     const cur = Math.min(page, totalPages)
     const start = (cur - 1) * pageSize
     return { cur, totalPages, items: filtered.slice(start, start + pageSize) }
   }, [filtered, page])
+
+  const allOnPageSelected = useMemo(() => (
+    (paged.items || []).length > 0 && (paged.items || []).every(r => selectedEnrollments.has(r.id))
+  ), [paged.items, selectedEnrollments])
+  const someOnPageSelected = useMemo(() => (
+    (paged.items || []).some(r => selectedEnrollments.has(r.id)) && !allOnPageSelected
+  ), [paged.items, selectedEnrollments, allOnPageSelected])
+
+  useEffect(() => {
+    if (headerSelectRef.current) headerSelectRef.current.indeterminate = someOnPageSelected
+  }, [someOnPageSelected])
+
+  const toggleRowSelect = (id, checked) => {
+    setSelectedEnrollments(prev => {
+      const next = new Set(prev)
+      if (checked) next.add(id); else next.delete(id)
+      return next
+    })
+  }
+  const toggleSelectAllOnPage = (checked) => {
+    setSelectedEnrollments(prev => {
+      const next = new Set(prev)
+      for (const r of (paged.items || [])) {
+        if (checked) next.add(r.id); else next.delete(r.id)
+      }
+      return next
+    })
+  }
+
+  const bulkDeactivate = async () => {
+    const ids = Array.from(selectedEnrollments)
+    if (!ids.length) return
+    try {
+      const { error: uErr } = await supabase
+        .from('enrollments')
+        .update({ is_active: false })
+        .in('id', ids)
+        .eq('is_active', true)
+      if (uErr) throw uErr
+      const { data: latest } = await supabase
+        .from('enrollments')
+        .select('id, class, academic_year, is_active, created_at, students(id, student_identifier, name, gender, dob)')
+        .eq('school_id', membership.school_id)
+        .order('class', { ascending: true })
+        .order('academic_year', { ascending: false })
+      setRows(latest || [])
+      setSelectedEnrollments(new Set())
+      try { showToast('success', `Deactivated ${ids.length} enrollment(s).`) } catch {}
+    } catch (e) {
+      try { showToast('error', e?.message || 'Bulk deactivation failed.') } catch {}
+    }
+  }
+
+
+  const bulkActivate = async () => {
+    const ids = Array.from(selectedEnrollments)
+    if (!ids.length) return
+    try {
+      const { error: uErr } = await supabase
+        .from("enrollments")
+        .update({ is_active: true })
+        .in("id", ids)
+        .eq("is_active", false)
+      if (uErr) throw uErr
+      const { data: latest } = await supabase
+        .from("enrollments")
+        .select("id, class, academic_year, is_active, created_at, students(id, student_identifier, name, gender, dob)")
+        .eq("school_id", membership.school_id)
+        .order("class", { ascending: true })
+        .order("academic_year", { ascending: false })
+      setRows(latest || [])
+      setSelectedEnrollments(new Set())
+      try { showToast("success", `Activated ${ids.length} enrollment(s).`) } catch {}
+    } catch (e) {
+      try { showToast("error", e?.message || "Bulk activation failed.") } catch {}
+    }
+  }
 
   const handleForm = (e) => setForm(f => ({ ...f, [e.target.name]: e.target.value }))
 
@@ -133,7 +216,7 @@ export default function ManageStudents({ user }) {
     try {
       // 1) Upsert student by student_identifier (update profile fields if provided)
       const payloadStudent = {
-        student_identifier: (form.student_identifier || '').trim().toUpperCase(),
+        student_identifier: normalizeStudentId(form.student_identifier),
         name: form.name?.trim(),
         gender: form.gender?.trim() || null,
         dob: form.dob || null,
@@ -243,7 +326,8 @@ export default function ManageStudents({ user }) {
       setImportResult(null)
       if (importSummaryUrl) { try { URL.revokeObjectURL(importSummaryUrl) } catch {} setImportSummaryUrl('') }
       // Build diffs by comparing with current enrollments
-      const ids = Array.from(new Set(rows.map(r => (r.id || '').toUpperCase()).filter(Boolean)))
+      const ids = Array.from(new Set(rows.map(r => normalizeStudentId(r.id || "")).filter(Boolean)))
+      try { console.log('[Import][parse]', { parsed: rows.length, parseErrors: errors.length, ids: ids.length, headerIndex: summary?.headerIndex }) } catch {}
       if (!ids.length) { setImportDiffs([]); return }
       const { data: foundStudents } = await supabase.from('students').select('id, student_identifier').in('student_identifier', ids)
       const idMap = new Map((foundStudents||[]).map(s => [s.student_identifier.toUpperCase(), s.id]))
@@ -261,7 +345,7 @@ export default function ManageStudents({ user }) {
         const matchActive = eAll.find(e => e.school_id === tgt.school_id && (e.class||null) === tgt.class && e.academic_year === tgt.year && e.is_active)
         if (matchActive) return { id: r.id, name: r.name, action: 'no change', detail: `${tgt.class || '-'} / ${tgt.year}` }
         const sameYear = eAll.find(e => e.school_id === tgt.school_id && e.academic_year === tgt.year)
-        if (sameYear) return { id: r.id, name: r.name, action: `update class ${sameYear.class||'-'} → ${tgt.class||'-'}`, detail: `${tgt.year}` }
+        if (sameYear) return { id: r.id, name: r.name, action: `update class ${sameYear.class||'-'} â†’ ${tgt.class||'-'}`, detail: `${tgt.year}` }
         return { id: r.id, name: r.name, action: 'new enrollment', detail: `${tgt.class || '-'} / ${tgt.year}` }
       })
       setImportDiffs(diffs)
@@ -271,25 +355,32 @@ export default function ManageStudents({ user }) {
     } finally { setImportParsing(false) }
   }
   const runImport = async () => {
-    if (!importPreview?.rows?.length || !membership?.school_id) return
+    try { console.log('[Import][guard]', { rows: importPreview?.rows?.length || 0, school: membership?.school_id }) } catch {}
+    if (!importPreview?.rows?.length || !membership?.school_id) { try { showToast('error', `Import cannot start. Rows: ${importPreview?.rows?.length||0}, School: ${membership?.school_id||'-'}`) } catch {} ; return }
     setImportParsing(true)
+    setImportProgress(0)
+    try { showToast('info', `Starting import of ${importPreview?.rows?.length||0} rowsâ€¦`) } catch {}
+    try { console.log('[Import][start]', { rows: importPreview?.rows?.length||0, membership }) } catch {}
     let created = 0, updated = 0, exists = 0, failed = 0
     const details = []
-    for (const r of importPreview.rows) {
+    const total = importPreview.rows.length
+    for (let idx = 0; idx < importPreview.rows.length; idx++) {
+      const r = importPreview.rows[idx]
       try {
         const targetClass = r.class || null
         const targetYear = r.academic_year || Number(importYear)
         const targetSchool = membership.school_id
         // Upsert student
-        const payloadStudent = { student_identifier: r.id.toUpperCase(), name: r.name, gender: r.gender, dob: r.dob }
+        const payloadStudent = { student_identifier: normalizeStudentId(r.id), name: r.name, gender: r.gender, dob: r.dob }
         const { data: st, error: sErr } = await supabase.from('students').upsert(payloadStudent, { onConflict: 'student_identifier' }).select('id').maybeSingle()
-        if (sErr || !st?.id) throw sErr || new Error('no student id')
+        if (sErr || !st?.id) { try { console.error('[Import][student upsert][error]', { row: r, error: { code: sErr?.code, message: sErr?.message, details: sErr?.details, hint: sErr?.hint } }) } catch {} ; throw sErr || new Error('no student id') }
 
         // Fetch enrollments for this student
-        const { data: enrolls } = await supabase
+        const { data: enrolls, error: eFetchErr } = await supabase
           .from('enrollments')
           .select('id, school_id, class, academic_year, is_active')
           .eq('student_id', st.id)
+        if (eFetchErr) { try { console.error('[Import][enroll fetch][error]', { row: r, error: { code: eFetchErr?.code, message: eFetchErr?.message, details: eFetchErr?.details, hint: eFetchErr?.hint } }) } catch {} ; throw eFetchErr }
 
         const matchActive = (enrolls || []).find(e => e.school_id === targetSchool && (e.class || null) === targetClass && e.academic_year === targetYear && e.is_active)
         if (matchActive) { exists++; details.push({ id: r.id, name: r.name, result: 'already exists', detail: `${targetClass || '-'} / ${targetYear}` }); continue }
@@ -297,22 +388,41 @@ export default function ManageStudents({ user }) {
         // Try to reuse same school+year row if present (even if inactive or different class)
         const sameYearRow = (enrolls || []).find(e => e.school_id === targetSchool && e.academic_year === targetYear)
         if (sameYearRow) {
-          // Deactivate other active enrollments first
-          await supabase.from('enrollments').update({ is_active: false }).eq('student_id', st.id).eq('is_active', true).neq('id', sameYearRow.id)
+          // Deactivate other active enrollments first (skip if none active)
+          const hasOtherActive = (enrolls || []).some(e => e.is_active && e.id !== sameYearRow.id)
+          if (hasOtherActive) {
+            const { error: deactErr } = await supabase
+              .from('enrollments')
+              .update({ is_active: false })
+              .eq('student_id', st.id)
+              .eq('is_active', true)
+              .neq('id', sameYearRow.id)
+            if (deactErr) { try { console.error('[Import][enroll deactivate][error]', deactErr) } catch {} }
+          }
           // Update this row to target class and activate
           const { error: uErr } = await supabase.from('enrollments').update({ class: targetClass, is_active: true }).eq('id', sameYearRow.id)
-          if (uErr) throw uErr
+          if (uErr) { try { console.error('[Import][enroll update][error]', { row: r, error: { code: uErr?.code, message: uErr?.message, details: uErr?.details, hint: uErr?.hint } }) } catch {} ; throw uErr }
           updated++
-          details.push({ id: r.id, name: r.name, result: `updated`, detail: `class ${sameYearRow.class||'-'} → ${targetClass||'-'} @ ${targetYear}` })
+          details.push({ id: r.id, name: r.name, result: `updated`, detail: `class ${sameYearRow.class||'-'} â†’ ${targetClass||'-'} @ ${targetYear}` })
         } else {
-          // Deactivate any active enrollments; then insert new
-          await supabase.from('enrollments').update({ is_active: false }).eq('student_id', st.id).eq('is_active', true)
-          const { error: iErr } = await supabase.from('enrollments').insert({ student_id: st.id, school_id: targetSchool, class: targetClass, academic_year: targetYear, is_active: true })
-          if (iErr) throw iErr
+          // Deactivate any active enrollments; then insert new (skip if none active)
+            const hasActive = (enrolls || []).some(e => e.is_active)
+            if (hasActive) {
+              const { error: deact2Err } = await supabase
+                .from('enrollments')
+                .update({ is_active: false })
+                .eq('student_id', st.id)
+                .eq('is_active', true)
+              if (deact2Err) { try { console.error('[Import][enroll deactivate2][error]', deact2Err) } catch {} }
+            }
+            const { error: iErr } = await supabase.from('enrollments').insert({ student_id: st.id, school_id: targetSchool, class: targetClass, academic_year: targetYear, is_active: true })
+            if (iErr) { try { console.error('[Import][enroll insert][error]', { row: r, error: { code: iErr?.code, message: iErr?.message, details: iErr?.details, hint: iErr?.hint } }) } catch {} ; throw iErr }
           created++
           details.push({ id: r.id, name: r.name, result: 'created', detail: `${targetClass || '-'} / ${targetYear}` })
         }
-      } catch { failed++; details.push({ id: r.id, name: r.name, result: 'failed', detail: '-' }) }
+      } catch (e) { failed++; details.push({ id: r.id, name: r.name, result: 'failed', detail: e?.message || '-' }) }
+      // progress update
+      try { setImportProgress((idx + 1) / total) } catch {}
     }
     // refresh list
     const { data: latest } = await supabase
@@ -394,10 +504,31 @@ export default function ManageStudents({ user }) {
               <option value="">All years</option>
               {distinctYears.map(y => (<option key={y} value={y}>{y}</option>))}
             </select>
-            <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={includeInactive} onChange={(e)=>{ setIncludeInactive(e.target.checked); setPage(1) }} /> Include inactive
-            </label>
+            <div class="inline-flex items-center rounded border overflow-hidden">
+  <button
+    type="button"
+    aria-pressed={!showInactiveOnly}
+    onClick={() => { if (showInactiveOnly) { setShowInactiveOnly(false); setPage(1) } }}
+    class={(!showInactiveOnly)
+      ? "px-3 py-2 bg-green-600 text-white"
+      : "px-3 py-2 bg-white text-gray-700 hover:bg-gray-50"}
+  >
+    Active
+  </button>
+  <button
+    type="button"
+    aria-pressed={showInactiveOnly}
+    onClick={() => { if (!showInactiveOnly) { setShowInactiveOnly(true); setPage(1) } }}
+    class={(showInactiveOnly)
+      ? "px-3 py-2 bg-gray-600 text-white"
+      : "px-3 py-2 bg-white text-gray-700 hover:bg-gray-50"}
+  >
+    Inactive
+  </button>
+</div>
             <div className="ml-auto flex items-center gap-2">
+              <button onClick={bulkActivate} disabled={selectedEnrollments.size===0} className="px-3 py-2 border rounded bg-white hover:bg-gray-50 disabled:opacity-60">Activate Selected</button>
+              <button onClick={bulkDeactivate} disabled={selectedEnrollments.size===0} className="px-3 py-2 border rounded bg-white hover:bg-gray-50 disabled:opacity-60">Deactivate Selected</button>
               <a href="/pft_template.csv" download className="px-3 py-2 border rounded hover:bg-gray-50">Download PFT template</a>
               <button onClick={()=> setImportOpen(true)} className="px-3 py-2 border rounded hover:bg-gray-50">Import PFT</button>
             </div>
@@ -407,6 +538,7 @@ export default function ManageStudents({ user }) {
             <table className="min-w-[1050px] w-full">
               <thead>
                 <tr className="bg-gray-100 text-left">
+                  <th className="border px-2 py-2 w-10"><input ref={headerSelectRef} type="checkbox" checked={allOnPageSelected} onChange={(e)=>toggleSelectAllOnPage(e.target.checked)} /></th>
                   <th className="border px-3 py-2">Student ID</th>
                   <th className="border px-3 py-2">Name</th>
                   <th className="border px-3 py-2">Gender</th>
@@ -419,11 +551,12 @@ export default function ManageStudents({ user }) {
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan="7" className="px-3 py-3 text-sm">Loading...</td></tr>
+                  <tr><td colSpan="9" className="px-3 py-3 text-sm">Loading...</td></tr>
                 ) : paged.items.length ? (
                   paged.items.map((r) => (
-                    <tr key={r.id} className="odd:bg-white even:bg-gray-50">
-                      <td className="border px-3 py-2">{r.students?.student_identifier}</td>
+                    <tr key={r.id} className={"odd:bg-white even:bg-gray-50 border-l-4 " + (r.is_active ? "opacity-100 border-l-green-500" : "opacity-60 border-l-gray-400") }>
+                      <td className="border px-2 py-2 w-10"><input type="checkbox" checked={selectedEnrollments.has(r.id)} onChange={(e)=>toggleRowSelect(r.id, e.target.checked)} /></td>
+                      <td className="border px-3 py-2">{normalizeStudentId(r.students?.student_identifier)}</td>
                       <td className="border px-3 py-2">
                         <button className="underline decoration-dotted underline-offset-2" onClick={()=>{ setHistoryFor(r.students); openHistory(r.students.id) }}>{r.students?.name}</button>
                       </td>
@@ -439,7 +572,7 @@ export default function ManageStudents({ user }) {
                           <input className="p-1 border rounded w-24" type="number" step="1" value={editYear} onChange={(e)=>setEditYear(e.target.value)} />
                         ) : (r.academic_year || '-')}
                       </td>
-                      <td className="border px-3 py-2">{r.is_active ? 'Active' : 'Inactive'}</td>
+                      <td className="border px-3 py-2">{r.is_active ? (<span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full bg-green-50 text-green-700 border border-green-200">Active</span>) : (<span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full bg-gray-100 text-gray-700 border border-gray-300"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" className="opacity-80"><path d="M6 5h4v14H6V5zm8 0h4v14h-4V5z"/></svg> Inactive</span>)}</td>
                       <td className="border px-3 py-2">
                         {editRowId === r.id ? (
                           <div className="flex gap-2">
@@ -460,7 +593,7 @@ export default function ManageStudents({ user }) {
                     </tr>
                   ))
                 ) : (
-                  <tr><td colSpan="7" className="px-3 py-6 text-center text-sm text-gray-600">No students found.</td></tr>
+                  <tr><td colSpan="9" className="px-3 py-6 text-center text-sm text-gray-600">No students found.</td></tr>
                 )}
               </tbody>
             </table>
@@ -483,7 +616,7 @@ export default function ManageStudents({ user }) {
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={()=>setHistoryOpen(false)}>
           <div className="bg-white rounded shadow-xl w-full max-w-2xl" onClick={(e)=>e.stopPropagation()}>
             <div className="px-4 py-2 border-b flex items-center justify-between">
-              <div className="font-medium">Enrollment History {historyFor ? `- ${historyFor.name} (${historyFor.student_identifier})` : ''}</div>
+              <div className="font-medium">Enrollment History {historyFor ? `- ${historyFor.name} (${normalizeStudentId(historyFor.student_identifier)})` : ''}</div>
               <button className="px-2 py-1 border rounded" onClick={()=>setHistoryOpen(false)}>Close</button>
             </div>
             <div className="p-4">
@@ -533,14 +666,22 @@ export default function ManageStudents({ user }) {
               </div>
               <textarea className="w-full h-48 p-2 border rounded font-mono text-xs" placeholder="Paste CSV here..." value={importText} onChange={(e)=>setImportText(e.target.value)} />
               <div className="flex items-center gap-2">
-                <button className="px-3 py-2 border rounded hover:bg-gray-50" onClick={parseImport} disabled={importParsing}>Parse</button>
+                <button className="px-3 py-2 border rounded hover:bg-gray-50" onClick={() => { try { console.log("[Import][parse button click]") } catch {}; parseImport() }} disabled={importParsing}>Parse</button>
                 {importPreview && (
                   <>
                     <div className="text-sm text-gray-700">Parsed: {importPreview.summary?.parsed || 0} rows • Errors: {importPreview.errors?.length || 0}</div>
-                    <button className="px-3 py-2 bg-blue-600 text-white rounded disabled:opacity-60" onClick={runImport} disabled={importParsing || !(importPreview.rows?.length)}>Import</button>
+                    <button className="px-3 py-2 bg-blue-600 text-white rounded disabled:opacity-60" onClick={() => { try { console.log("[Import][button click]") } catch {}; try { showToast("info", "Import clicked") } catch {}; runImport() }} disabled={importParsing || !(importPreview.rows?.length)}>Import</button>
                   </>
                 )}
               </div>
+				{importParsing && importPreview?.rows?.length ? (
+				  <div className="w-full">
+					<div className="w-full border rounded bg-gray-100 h-3 overflow-hidden" aria-label="Import progress">
+					  <div className="h-3 bg-blue-500 transition-all" style={{ width: `${Math.round(importProgress*100)}%` }} />
+					</div>
+					<div className="text-xs text-gray-600 mt-1">Importing {Math.round(importProgress*100)}% ({Math.round(importProgress*importPreview.rows.length)}/{importPreview.rows.length})</div>
+				  </div>
+				) : null}
               {importPreview && (
                 <>
                 {/* Summary banner */}
@@ -552,7 +693,7 @@ export default function ManageStudents({ user }) {
                   const parseErrs = importPreview?.errors?.length || 0;
                   return (
                     <div className="border border-blue-200 bg-blue-50 text-blue-900 rounded p-2 text-sm mb-2">
-                      Planned: Created {created}, Updated {updated}, Already exists {exists}. Parse errors: {parseErrs}.
+                      Planned: To create {created}, To update {updated}, Already exists {exists}. Parse errors: {parseErrs}.
                     </div>
                   );
                 })()}
@@ -575,7 +716,7 @@ export default function ManageStudents({ user }) {
               )}
               {importPreview?.errors?.length ? (
                 <div className="max-h-40 overflow-auto border rounded p-2 bg-red-50 text-sm">
-                  {importPreview.errors.slice(0,50).map((e, i)=> (<div key={i}>• {e.message || JSON.stringify(e)}</div>))}
+                  {importPreview.errors.slice(0,50).map((e, i)=> (<div key={i}>â€¢ {e.message || JSON.stringify(e)}</div>))}
                   {importPreview.errors.length > 50 && <div>...and more</div>}
                 </div>
               ) : null}
@@ -586,3 +727,22 @@ export default function ManageStudents({ user }) {
     </main>
   )
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

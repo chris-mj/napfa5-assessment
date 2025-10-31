@@ -3,12 +3,37 @@ import AttemptEditor from "../components/AttemptEditor";
 import { jsPDF } from "jspdf";
 import { drawBarcode } from "../utils/barcode";
 import { drawQrDataUrl } from "../utils/qrcode";
+import { normalizeStudentId } from "../utils/ids";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { isPlatformOwner } from "../lib/roles";
 import { supabase } from "../lib/supabaseClient";
 import RosterDualList from "../components/RosterDualList";
 
 const ROLE_CAN_MANAGE = ["superadmin", "admin"];
+
+function RosterRow({ s, sessionId, canRecord, onSaved }) {
+    const [open, setOpen] = useState(false);
+    return (
+        <>
+            <tr>
+                <td className="px-3 py-2 border">{normalizeStudentId(s.student_identifier)}</td>
+                <td className="px-3 py-2 border">{s.name}</td>
+                <td className="px-3 py-2 border">
+                    <button onClick={() => canRecord && setOpen(v => !v)} disabled={!canRecord} className="px-3 py-1.5 border rounded hover:bg-gray-100 text-sm">
+                        {open ? 'Close' : (canRecord ? 'Record' : 'View')}
+                    </button>
+                </td>
+            </tr>
+            {open && (
+                <tr>
+                    <td colSpan="3" className="px-3 py-3 border bg-gray-50">
+                        <AttemptEditor sessionId={sessionId} studentId={s.id} onSaved={onSaved} />
+                    </td>
+                </tr>
+            )}
+        </>
+    );
+}
 
 export default function SessionDetail({ user }) {
     const { id } = useParams();
@@ -226,26 +251,114 @@ export default function SessionDetail({ user }) {
     
     const exportResults = async () => {
         try {
-            const { data: rows, error } = await supabase
-                .rpc('export_session_scores_pft', { p_session_id: id });
-            if (error) throw error;
+            const templateRes = await fetch('/pft_template.csv', { cache: 'no-store' });
+            if (!templateRes.ok) throw new Error('Failed to load PFT template.');
+            let templateText = await templateRes.text();
+            // Keep only the first 21 rows of the template (row 21 is header)
+            const tmplLines = templateText.replace(/\r\n/g, '\n').split('\n');
+            const first21 = tmplLines.slice(0, 21).join('\n');
+            const prefix = first21.endsWith('\n') ? first21 : (first21 + '\n');
+
             const headers = [
                 'Sl.No','Name','ID','Class','Gender','DOB','Attendance',
                 'Sit-ups','Standing Broad Jump (cm)','Sit & Reach (cm)','Pull-ups','Shuttle Run (sec)','1.6/2.4 Km Run MMSS','PFT Test Date'
             ];
-            const csvRows = [headers.join(',')];
-            (rows || []).forEach(r => {
-                const ordered = [
-                    r["Sl.No"], r["Name"], r["ID"], r["Class"], r["Gender"], r["DOB"], r["Attendance"],
-                    r["Sit-ups"], r["Standing Broad Jump (cm)"], r["Sit & Reach (cm)"], r["Pull-ups"], r["Shuttle Run (sec)"], r["1.6/2.4 Km Run MMSS"], r["PFT Test Date"]
-                ];
-                csvRows.push(ordered.map(v => (v == null ? '' : (typeof v === 'string' ? '"' + v.replace(/"/g,'""') + '"' : v))).join(','));
+
+            let shaped = [];
+            let pftError = null;
+            try {
+                const { data: rows, error } = await supabase
+                    .rpc('export_session_scores_pft', { p_session_id: id });
+                if (error) throw error;
+                shaped = (rows || []).map(r => {
+                    const hasAny = (
+                        r['Sit-ups'] != null ||
+                        r['Standing Broad Jump (cm)'] != null ||
+                        r['Sit & Reach (cm)'] != null ||
+                        r['Pull-ups'] != null ||
+                        r['Shuttle Run (sec)'] != null
+                    );
+                    return {
+                        'Sl.No': r['Sl.No'],
+                        'Name': r['Name'],
+                        'ID': normalizeStudentId(r['ID']),
+                        'Class': r['Class'],
+                        'Gender': r['Gender'],
+                        'DOB': r['DOB'],
+                        'Attendance': hasAny ? 'P' : '',
+                        'Sit-ups': r['Sit-ups'],
+                        'Standing Broad Jump (cm)': r['Standing Broad Jump (cm)'],
+                        'Sit & Reach (cm)': r['Sit & Reach (cm)'],
+                        'Pull-ups': r['Pull-ups'],
+                        'Shuttle Run (sec)': r['Shuttle Run (sec)'],
+                        '1.6/2.4 Km Run MMSS': r['1.6/2.4 Km Run MMSS'] || '',
+                        'PFT Test Date': (function(){
+                            try { return formatDDMMYYYY(session?.session_date); } catch { return ''; }
+                        })()
+                    };
+                });
+            } catch (e) {
+                pftError = e;
+            }
+
+            if (pftError || shaped.length === 0) {
+                // Fallback to generic export and shape client‑side
+                const { data: raw, error } = await supabase
+                    .rpc('export_session_scores', { p_session_id: id });
+                if (error) throw error;
+                shaped = (raw || []).map((r, i) => {
+                    const hasAny = (
+                        r.situps != null ||
+                        r.broad_jump != null ||
+                        r.sit_and_reach != null ||
+                        r.pullups != null ||
+                        r.shuttle_run != null
+                    );
+                    return {
+                        'Sl.No': i + 1,
+                        'Name': r.name || '',
+                        'ID': normalizeStudentId(r.student_identifier || ''),
+                        'Class': r.class || '',
+                        'Gender': r.gender || '',
+                        'DOB': r.dob || '',
+                        'Attendance': hasAny ? 'P' : '',
+                        'Sit-ups': r.situps,
+                        'Standing Broad Jump (cm)': r.broad_jump,
+                        'Sit & Reach (cm)': r.sit_and_reach,
+                        'Pull-ups': r.pullups,
+                        'Shuttle Run (sec)': r.shuttle_run,
+                        '1.6/2.4 Km Run MMSS': '',
+                        'PFT Test Date': (function(){
+                            try { return formatDDMMYYYY(session?.session_date); } catch { return ''; }
+                        })()
+                    };
+                });
+            }
+
+            const dataRows = shaped.map(row => {
+                const cols = headers.map(h => {
+                    const v = row[h];
+                    return v == null ? '' : (typeof v === 'string' ? '"' + v.replace(/"/g,'""') + '"' : v);
+                });
+                // Add END marker in column O (after PFT Test Date column)
+                cols.push('*END*');
+                return cols.join(',');
             });
-            const blob = new Blob(["\uFEFF" + csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+
+            const finalCsv = "\uFEFF" + prefix + dataRows.join('\n');
+            const blob = new Blob([finalCsv], { type: 'text/csv;charset=utf-8;' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `session_${id}_results_pft.csv`;
+            // Filename: PFT_(session_title)_(session_date in ddmmyyyy)
+            const title = String(session?.title || 'Session');
+            const safeTitle = title.replace(/[^A-Za-z0-9_-]+/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '');
+            const d = new Date(session?.session_date);
+            const dd = String(d.getDate()).padStart(2, '0');
+            const mm = String(d.getMonth() + 1).padStart(2, '0');
+            const yyyy = d.getFullYear();
+            const ddmmyyyy = `${dd}${mm}${yyyy}`;
+            a.download = `PFT_${safeTitle}_${ddmmyyyy}.csv`;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
@@ -326,10 +439,11 @@ export default function SessionDetail({ user }) {
                 const targetBcWpx = Math.max(300, Math.round(intendedBcWmm * pxPerMm));
                 const targetBcHpx = Math.round(14 * pxPerMm); // slightly taller for better reads
                 // Render CODE128 with generous quiet zone
-                drawBarcode(bcCanvas, s.student_identifier, { format: 'CODE128', width: 2, height: targetBcHpx, margin: 24 });
+                const idNorm = normalizeStudentId(s.student_identifier)
+                drawBarcode(bcCanvas, idNorm, { format: 'CODE128', width: 2, height: targetBcHpx, margin: 24 });
                 // If generated width is smaller/larger than target, it's OK; PDF scales the image retaining resolution
                 const bcUrl = bcCanvas.toDataURL('image/png');
-                const qrUrl = await drawQrDataUrl(s.student_identifier, targetQrPx, 'M', 1);
+                const qrUrl = await drawQrDataUrl(idNorm, targetQrPx, 'M', 1);
 
                 // Card border
                 doc.setDrawColor(180);
@@ -338,7 +452,7 @@ export default function SessionDetail({ user }) {
 
                 // Text
                 doc.setFontSize(14);
-                doc.text(String(s.student_identifier), x0 + 6, y0 + 12);
+                doc.text(String(idNorm), x0 + 6, y0 + 12);
                 doc.setFontSize(12);
                 doc.text(s.name || '', x0 + 6, y0 + 20);
                 doc.text((s.class || ''), x0 + 6, y0 + 26);
@@ -423,6 +537,7 @@ export default function SessionDetail({ user }) {
                         const inProgress = inProgressSet.size;
                         const notStarted = Math.max(0, total - completed - inProgress);
                         const pct = (n) => total ? Math.round((n * 100) / total) : 0;
+                        const pctCompleted = pct(completed);
                         return (
                             <>
                                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
@@ -443,25 +558,45 @@ export default function SessionDetail({ user }) {
                                         <div className="text-base font-semibold">{completed}</div>
                                     </div>
                                 </div>
-                                <div className="h-2 w-full bg-gray-200 rounded overflow-hidden">
-                                    <div className="h-2 bg-gray-400" style={{ width: `${pct(notStarted)}%` }} />
-                                    <div className="h-2 bg-amber-400" style={{ width: `${pct(inProgress)}%` }} />
-                                    <div className="h-2 bg-green-500" style={{ width: `${pct(completed)}%` }} />
-                                </div>
-                                <div className="flex justify-between text-[11px] text-gray-600">
-                                    <span>Not started {pct(notStarted)}%</span>
-                                    <span>In progress {pct(inProgress)}%</span>
-                                    <span>Completed {pct(completed)}%</span>
+                                {/* Stacked progress bar: Not started | In progress | Completed */}
+                                <div className="mt-2">
+                                    {(() => {
+                                        const pctInProgress = pct(inProgress);
+                                        const pctNotStarted = pct(notStarted);
+                                        return (
+                                            <>
+                                                <div className="flex h-2 w-full rounded overflow-hidden bg-gray-200">
+                                                    {/* Not started */}
+                                                    <div className="bg-gray-300" style={{ width: `${pctNotStarted}%` }} aria-label={`Not started ${pctNotStarted}%`} />
+                                                    {/* In progress */}
+                                                    <div className="bg-amber-400" style={{ width: `${pctInProgress}%` }} aria-label={`In progress ${pctInProgress}%`} />
+                                                    {/* Completed */}
+                                                    <div className="bg-green-500" style={{ width: `${pctCompleted}%` }} aria-label={`Completed ${pctCompleted}%`} />
+                                                </div>
+                                                <div className="mt-1 text-[11px] text-gray-600 flex gap-4 flex-wrap">
+                                                    <span>
+                                                        <span className="inline-block w-2 h-2 rounded-sm bg-gray-300 mr-1 align-middle" />
+                                                        {notStarted}/{total} ({pctNotStarted}%) not started
+                                                    </span>
+                                                    <span>
+                                                        <span className="inline-block w-2 h-2 rounded-sm bg-amber-400 mr-1 align-middle" />
+                                                        {inProgress}/{total} ({pctInProgress}%) in progress
+                                                    </span>
+                                                    <span>
+                                                        <span className="inline-block w-2 h-2 rounded-sm bg-green-500 mr-1 align-middle" />
+                                                        {completed}/{total} ({pctCompleted}%) completed
+                                                    </span>
+                                                </div>
+                                            </>
+                                        );
+                                    })()}
                                 </div>
                             </>
                         );
                     })()}
+                    {/* Tabs moved out of sticky header */}
                 </div>
-
-                {/* Tabs moved out of sticky header */}
             </div>
-
-            
 
             {/* Animated flash */}
             <div>
@@ -647,29 +782,11 @@ export default function SessionDetail({ user }) {
     );
 }
 
-function RosterRow({ s, sessionId, canRecord, onSaved }) {
-    const [open, setOpen] = useState(false);
-    return (
-        <>
-            <tr>
-                <td className="px-3 py-2 border">{s.student_identifier}</td>
-                <td className="px-3 py-2 border">{s.name}</td>
-                <td className="px-3 py-2 border">
-                    <button onClick={() => canRecord && setOpen(v => !v)} disabled={!canRecord} className="px-3 py-1.5 border rounded hover:bg-gray-100 text-sm">
-                        
-                    </button>
-                </td>
-            </tr>
-            {open && (
-                <tr>
-                    <td colSpan="3" className="px-3 py-3 border bg-gray-50">
-                        <AttemptEditor sessionId={sessionId} studentId={s.id} onSaved={onSaved} />
-                    </td>
-                </tr>
-            )}
-        </>
-    );
-}
+ 
+
+
+
+
 
 
 
