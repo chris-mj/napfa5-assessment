@@ -8,7 +8,8 @@
     "scripts": {
         "dev": "vite",
         "build": "node node_modules/vite/bin/vite.js build",
-        "preview": "vite preview"
+        "preview": "vite preview",
+        "generate:standards": "node scripts/generate-standards-json.js"
     },
     "dependencies": {
         "@supabase/functions-js": "^2.76.1",

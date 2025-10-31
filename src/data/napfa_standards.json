@@ -1,0 +1,5427 @@
+[
+  {
+    "level": "Primary",
+    "sex": "Male",
+    "age_group": "9",
+    "band": "Outstanding",
+    "grade": "A",
+    "points": 5,
+    "stations": {
+      "situps": {
+        "min": 36,
+        "max": null
+      },
+      "broad_jump_cm": {
+        "min": 169,
+        "max": null
+      },
+      "sit_and_reach_cm": {
+        "min": 34,
+        "max": null
+      },
+      "pullups": {
+        "min": 22,
+        "max": null
+      },
+      "shuttle_s": {
+        "min": null,
+        "max": 11.2
+      },
+      "run": {
+        "km": 1.6,
+        "min_s": null,
+        "max_s": 579
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Male",
+    "age_group": "9",
+    "band": "Very Good",
+    "grade": "B",
+    "points": 4,
+    "stations": {
+      "situps": {
+        "min": 30,
+        "max": 35
+      },
+      "broad_jump_cm": {
+        "min": 159,
+        "max": 168
+      },
+      "sit_and_reach_cm": {
+        "min": 30,
+        "max": 33
+      },
+      "pullups": {
+        "min": 18,
+        "max": 21
+      },
+      "shuttle_s": {
+        "min": 11.3,
+        "max": 11.8
+      },
+      "run": {
+        "km": 1.6,
+        "min_s": 580,
+        "max_s": 640
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Male",
+    "age_group": "9",
+    "band": "Good",
+    "grade": "C",
+    "points": 3,
+    "stations": {
+      "situps": {
+        "min": 25,
+        "max": 29
+      },
+      "broad_jump_cm": {
+        "min": 149,
+        "max": 158
+      },
+      "sit_and_reach_cm": {
+        "min": 26,
+        "max": 29
+      },
+      "pullups": {
+        "min": 13,
+        "max": 17
+      },
+      "shuttle_s": {
+        "min": 11.9,
+        "max": 12.2
+      },
+      "run": {
+        "km": 1.6,
+        "min_s": 641,
+        "max_s": 700
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Male",
+    "age_group": "9",
+    "band": "Good",
+    "grade": "D",
+    "points": 2,
+    "stations": {
+      "situps": {
+        "min": 20,
+        "max": 24
+      },
+      "broad_jump_cm": {
+        "min": 139,
+        "max": 148
+      },
+      "sit_and_reach_cm": {
+        "min": 21,
+        "max": 25
+      },
+      "pullups": {
+        "min": 9,
+        "max": 12
+      },
+      "shuttle_s": {
+        "min": 12.3,
+        "max": 12.7
+      },
+      "run": {
+        "km": 1.6,
+        "min_s": 701,
+        "max_s": 760
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Male",
+    "age_group": "9",
+    "band": "Satisfactory",
+    "grade": "E",
+    "points": 1,
+    "stations": {
+      "situps": {
+        "min": 15,
+        "max": 19
+      },
+      "broad_jump_cm": {
+        "min": 130,
+        "max": 138
+      },
+      "sit_and_reach_cm": {
+        "min": 16,
+        "max": 20
+      },
+      "pullups": {
+        "min": 3,
+        "max": 8
+      },
+      "shuttle_s": {
+        "min": 12.8,
+        "max": 13.1
+      },
+      "run": {
+        "km": 1.6,
+        "min_s": 761,
+        "max_s": 830
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Male",
+    "age_group": "10",
+    "band": "Outstanding",
+    "grade": "A",
+    "points": 5,
+    "stations": {
+      "situps": {
+        "min": 37,
+        "max": null
+      },
+      "broad_jump_cm": {
+        "min": 175,
+        "max": null
+      },
+      "sit_and_reach_cm": {
+        "min": 36,
+        "max": null
+      },
+      "pullups": {
+        "min": 23,
+        "max": null
+      },
+      "shuttle_s": {
+        "min": null,
+        "max": 11
+      },
+      "run": {
+        "km": 1.6,
+        "min_s": null,
+        "max_s": 569
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Male",
+    "age_group": "10",
+    "band": "Very Good",
+    "grade": "B",
+    "points": 4,
+    "stations": {
+      "situps": {
+        "min": 31,
+        "max": 36
+      },
+      "broad_jump_cm": {
+        "min": 165,
+        "max": 174
+      },
+      "sit_and_reach_cm": {
+        "min": 32,
+        "max": 35
+      },
+      "pullups": {
+        "min": 19,
+        "max": 22
+      },
+      "shuttle_s": {
+        "min": 11.1,
+        "max": 11.6
+      },
+      "run": {
+        "km": 1.6,
+        "min_s": 570,
+        "max_s": 630
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Male",
+    "age_group": "10",
+    "band": "Good",
+    "grade": "C",
+    "points": 3,
+    "stations": {
+      "situps": {
+        "min": 26,
+        "max": 30
+      },
+      "broad_jump_cm": {
+        "min": 156,
+        "max": 164
+      },
+      "sit_and_reach_cm": {
+        "min": 28,
+        "max": 31
+      },
+      "pullups": {
+        "min": 14,
+        "max": 18
+      },
+      "shuttle_s": {
+        "min": 11.7,
+        "max": 12
+      },
+      "run": {
+        "km": 1.6,
+        "min_s": 631,
+        "max_s": 700
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Male",
+    "age_group": "10",
+    "band": "Good",
+    "grade": "D",
+    "points": 2,
+    "stations": {
+      "situps": {
+        "min": 21,
+        "max": 25
+      },
+      "broad_jump_cm": {
+        "min": 146,
+        "max": 155
+      },
+      "sit_and_reach_cm": {
+        "min": 23,
+        "max": 27
+      },
+      "pullups": {
+        "min": 9,
+        "max": 13
+      },
+      "shuttle_s": {
+        "min": 12.1,
+        "max": 12.4
+      },
+      "run": {
+        "km": 1.6,
+        "min_s": 701,
+        "max_s": 760
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Male",
+    "age_group": "10",
+    "band": "Satisfactory",
+    "grade": "E",
+    "points": 1,
+    "stations": {
+      "situps": {
+        "min": 17,
+        "max": 20
+      },
+      "broad_jump_cm": {
+        "min": 137,
+        "max": 145
+      },
+      "sit_and_reach_cm": {
+        "min": 18,
+        "max": 22
+      },
+      "pullups": {
+        "min": 3,
+        "max": 8
+      },
+      "shuttle_s": {
+        "min": 12.5,
+        "max": 12.9
+      },
+      "run": {
+        "km": 1.6,
+        "min_s": 761,
+        "max_s": 820
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Male",
+    "age_group": "11",
+    "band": "Outstanding",
+    "grade": "A",
+    "points": 5,
+    "stations": {
+      "situps": {
+        "min": 40,
+        "max": null
+      },
+      "broad_jump_cm": {
+        "min": 189,
+        "max": null
+      },
+      "sit_and_reach_cm": {
+        "min": 38,
+        "max": null
+      },
+      "pullups": {
+        "min": 24,
+        "max": null
+      },
+      "shuttle_s": {
+        "min": null,
+        "max": 10.6
+      },
+      "run": {
+        "km": 1.6,
+        "min_s": null,
+        "max_s": 529
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Male",
+    "age_group": "11",
+    "band": "Very Good",
+    "grade": "B",
+    "points": 4,
+    "stations": {
+      "situps": {
+        "min": 34,
+        "max": 39
+      },
+      "broad_jump_cm": {
+        "min": 177,
+        "max": 188
+      },
+      "sit_and_reach_cm": {
+        "min": 34,
+        "max": 37
+      },
+      "pullups": {
+        "min": 20,
+        "max": 23
+      },
+      "shuttle_s": {
+        "min": 10.7,
+        "max": 11.2
+      },
+      "run": {
+        "km": 1.6,
+        "min_s": 530,
+        "max_s": 600
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Male",
+    "age_group": "11",
+    "band": "Good",
+    "grade": "C",
+    "points": 3,
+    "stations": {
+      "situps": {
+        "min": 30,
+        "max": 33
+      },
+      "broad_jump_cm": {
+        "min": 166,
+        "max": 176
+      },
+      "sit_and_reach_cm": {
+        "min": 30,
+        "max": 33
+      },
+      "pullups": {
+        "min": 15,
+        "max": 19
+      },
+      "shuttle_s": {
+        "min": 11.3,
+        "max": 11.6
+      },
+      "run": {
+        "km": 1.6,
+        "min_s": 601,
+        "max_s": 670
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Male",
+    "age_group": "11",
+    "band": "Good",
+    "grade": "D",
+    "points": 2,
+    "stations": {
+      "situps": {
+        "min": 25,
+        "max": 29
+      },
+      "broad_jump_cm": {
+        "min": 155,
+        "max": 165
+      },
+      "sit_and_reach_cm": {
+        "min": 25,
+        "max": 29
+      },
+      "pullups": {
+        "min": 10,
+        "max": 14
+      },
+      "shuttle_s": {
+        "min": 11.7,
+        "max": 12
+      },
+      "run": {
+        "km": 1.6,
+        "min_s": 671,
+        "max_s": 740
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Male",
+    "age_group": "11",
+    "band": "Satisfactory",
+    "grade": "E",
+    "points": 1,
+    "stations": {
+      "situps": {
+        "min": 20,
+        "max": 24
+      },
+      "broad_jump_cm": {
+        "min": 144,
+        "max": 154
+      },
+      "sit_and_reach_cm": {
+        "min": 20,
+        "max": 24
+      },
+      "pullups": {
+        "min": 4,
+        "max": 9
+      },
+      "shuttle_s": {
+        "min": 12.1,
+        "max": 12.5
+      },
+      "run": {
+        "km": 1.6,
+        "min_s": 741,
+        "max_s": 810
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Male",
+    "age_group": "12",
+    "band": "Outstanding",
+    "grade": "A",
+    "points": 5,
+    "stations": {
+      "situps": {
+        "min": 42,
+        "max": null
+      },
+      "broad_jump_cm": {
+        "min": 203,
+        "max": null
+      },
+      "sit_and_reach_cm": {
+        "min": 40,
+        "max": null
+      },
+      "pullups": {
+        "min": 25,
+        "max": null
+      },
+      "shuttle_s": {
+        "min": null,
+        "max": 10.3
+      },
+      "run": {
+        "km": 1.6,
+        "min_s": null,
+        "max_s": 519
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Male",
+    "age_group": "12",
+    "band": "Very Good",
+    "grade": "B",
+    "points": 4,
+    "stations": {
+      "situps": {
+        "min": 36,
+        "max": 41
+      },
+      "broad_jump_cm": {
+        "min": 189,
+        "max": 202
+      },
+      "sit_and_reach_cm": {
+        "min": 36,
+        "max": 39
+      },
+      "pullups": {
+        "min": 21,
+        "max": 24
+      },
+      "shuttle_s": {
+        "min": 10.4,
+        "max": 10.9
+      },
+      "run": {
+        "km": 1.6,
+        "min_s": 520,
+        "max_s": 580
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Male",
+    "age_group": "12",
+    "band": "Good",
+    "grade": "C",
+    "points": 3,
+    "stations": {
+      "situps": {
+        "min": 32,
+        "max": 35
+      },
+      "broad_jump_cm": {
+        "min": 176,
+        "max": 188
+      },
+      "sit_and_reach_cm": {
+        "min": 32,
+        "max": 35
+      },
+      "pullups": {
+        "min": 16,
+        "max": 20
+      },
+      "shuttle_s": {
+        "min": 11,
+        "max": 11.3
+      },
+      "run": {
+        "km": 1.6,
+        "min_s": 581,
+        "max_s": 640
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Male",
+    "age_group": "12",
+    "band": "Good",
+    "grade": "D",
+    "points": 2,
+    "stations": {
+      "situps": {
+        "min": 27,
+        "max": 31
+      },
+      "broad_jump_cm": {
+        "min": 163,
+        "max": 175
+      },
+      "sit_and_reach_cm": {
+        "min": 28,
+        "max": 31
+      },
+      "pullups": {
+        "min": 11,
+        "max": 15
+      },
+      "shuttle_s": {
+        "min": 11.4,
+        "max": 11.7
+      },
+      "run": {
+        "km": 1.6,
+        "min_s": 641,
+        "max_s": 700
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Male",
+    "age_group": "12",
+    "band": "Satisfactory",
+    "grade": "E",
+    "points": 1,
+    "stations": {
+      "situps": {
+        "min": 22,
+        "max": 26
+      },
+      "broad_jump_cm": {
+        "min": 150,
+        "max": 162
+      },
+      "sit_and_reach_cm": {
+        "min": 23,
+        "max": 27
+      },
+      "pullups": {
+        "min": 5,
+        "max": 10
+      },
+      "shuttle_s": {
+        "min": 11.8,
+        "max": 12.2
+      },
+      "run": {
+        "km": 1.6,
+        "min_s": 701,
+        "max_s": 750
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Male",
+    "age_group": "13",
+    "band": "Outstanding",
+    "grade": "A",
+    "points": 5,
+    "stations": {
+      "situps": {
+        "min": 43,
+        "max": null
+      },
+      "broad_jump_cm": {
+        "min": 215,
+        "max": null
+      },
+      "sit_and_reach_cm": {
+        "min": 42,
+        "max": null
+      },
+      "pullups": {
+        "min": 26,
+        "max": null
+      },
+      "shuttle_s": {
+        "min": null,
+        "max": 10.2
+      },
+      "run": {
+        "km": 1.6,
+        "min_s": null,
+        "max_s": 489
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Male",
+    "age_group": "13",
+    "band": "Very Good",
+    "grade": "B",
+    "points": 4,
+    "stations": {
+      "situps": {
+        "min": 38,
+        "max": 42
+      },
+      "broad_jump_cm": {
+        "min": 202,
+        "max": 214
+      },
+      "sit_and_reach_cm": {
+        "min": 38,
+        "max": 41
+      },
+      "pullups": {
+        "min": 22,
+        "max": 25
+      },
+      "shuttle_s": {
+        "min": 10.3,
+        "max": 10.7
+      },
+      "run": {
+        "km": 1.6,
+        "min_s": 490,
+        "max_s": 550
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Male",
+    "age_group": "13",
+    "band": "Good",
+    "grade": "C",
+    "points": 3,
+    "stations": {
+      "situps": {
+        "min": 34,
+        "max": 37
+      },
+      "broad_jump_cm": {
+        "min": 189,
+        "max": 201
+      },
+      "sit_and_reach_cm": {
+        "min": 34,
+        "max": 37
+      },
+      "pullups": {
+        "min": 17,
+        "max": 21
+      },
+      "shuttle_s": {
+        "min": 10.8,
+        "max": 11.1
+      },
+      "run": {
+        "km": 1.6,
+        "min_s": 551,
+        "max_s": 610
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Male",
+    "age_group": "13",
+    "band": "Good",
+    "grade": "D",
+    "points": 2,
+    "stations": {
+      "situps": {
+        "min": 29,
+        "max": 33
+      },
+      "broad_jump_cm": {
+        "min": 176,
+        "max": 188
+      },
+      "sit_and_reach_cm": {
+        "min": 30,
+        "max": 33
+      },
+      "pullups": {
+        "min": 12,
+        "max": 16
+      },
+      "shuttle_s": {
+        "min": 11.2,
+        "max": 11.5
+      },
+      "run": {
+        "km": 1.6,
+        "min_s": 611,
+        "max_s": 660
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Male",
+    "age_group": "13",
+    "band": "Satisfactory",
+    "grade": "E",
+    "points": 1,
+    "stations": {
+      "situps": {
+        "min": 25,
+        "max": 28
+      },
+      "broad_jump_cm": {
+        "min": 164,
+        "max": 175
+      },
+      "sit_and_reach_cm": {
+        "min": 25,
+        "max": 29
+      },
+      "pullups": {
+        "min": 7,
+        "max": 11
+      },
+      "shuttle_s": {
+        "min": 11.6,
+        "max": 11.9
+      },
+      "run": {
+        "km": 1.6,
+        "min_s": 661,
+        "max_s": 720
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Male",
+    "age_group": "14",
+    "band": "Outstanding",
+    "grade": "A",
+    "points": 5,
+    "stations": {
+      "situps": {
+        "min": 43,
+        "max": null
+      },
+      "broad_jump_cm": {
+        "min": 226,
+        "max": null
+      },
+      "sit_and_reach_cm": {
+        "min": 44,
+        "max": null
+      },
+      "pullups": {
+        "min": 27,
+        "max": null
+      },
+      "shuttle_s": {
+        "min": null,
+        "max": 10.1
+      },
+      "run": {
+        "km": 2.4,
+        "min_s": null,
+        "max_s": 660
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Male",
+    "age_group": "14",
+    "band": "Very Good",
+    "grade": "B",
+    "points": 4,
+    "stations": {
+      "situps": {
+        "min": 40,
+        "max": 42
+      },
+      "broad_jump_cm": {
+        "min": 216,
+        "max": 225
+      },
+      "sit_and_reach_cm": {
+        "min": 40,
+        "max": 43
+      },
+      "pullups": {
+        "min": 23,
+        "max": 26
+      },
+      "shuttle_s": {
+        "min": 10.2,
+        "max": 10.4
+      },
+      "run": {
+        "km": 2.4,
+        "min_s": 661,
+        "max_s": 720
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Male",
+    "age_group": "14",
+    "band": "Good",
+    "grade": "C",
+    "points": 3,
+    "stations": {
+      "situps": {
+        "min": 37,
+        "max": 39
+      },
+      "broad_jump_cm": {
+        "min": 206,
+        "max": 215
+      },
+      "sit_and_reach_cm": {
+        "min": 36,
+        "max": 39
+      },
+      "pullups": {
+        "min": 18,
+        "max": 22
+      },
+      "shuttle_s": {
+        "min": 10.5,
+        "max": 10.8
+      },
+      "run": {
+        "km": 2.4,
+        "min_s": 721,
+        "max_s": 780
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Male",
+    "age_group": "14",
+    "band": "Good",
+    "grade": "D",
+    "points": 2,
+    "stations": {
+      "situps": {
+        "min": 33,
+        "max": 36
+      },
+      "broad_jump_cm": {
+        "min": 196,
+        "max": 205
+      },
+      "sit_and_reach_cm": {
+        "min": 32,
+        "max": 35
+      },
+      "pullups": {
+        "min": 13,
+        "max": 17
+      },
+      "shuttle_s": {
+        "min": 10.9,
+        "max": 11.2
+      },
+      "run": {
+        "km": 2.4,
+        "min_s": 781,
+        "max_s": 850
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Male",
+    "age_group": "14",
+    "band": "Satisfactory",
+    "grade": "E",
+    "points": 1,
+    "stations": {
+      "situps": {
+        "min": 29,
+        "max": 32
+      },
+      "broad_jump_cm": {
+        "min": 186,
+        "max": 195
+      },
+      "sit_and_reach_cm": {
+        "min": 27,
+        "max": 31
+      },
+      "pullups": {
+        "min": 8,
+        "max": 12
+      },
+      "shuttle_s": {
+        "min": 11.3,
+        "max": 11.6
+      },
+      "run": {
+        "km": 2.4,
+        "min_s": 851,
+        "max_s": 920
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Male",
+    "age_group": "15",
+    "band": "Outstanding",
+    "grade": "A",
+    "points": 5,
+    "stations": {
+      "situps": {
+        "min": 43,
+        "max": null
+      },
+      "broad_jump_cm": {
+        "min": 238,
+        "max": null
+      },
+      "sit_and_reach_cm": {
+        "min": 46,
+        "max": null
+      },
+      "pullups": {
+        "min": 8,
+        "max": null
+      },
+      "shuttle_s": {
+        "min": null,
+        "max": 10.1
+      },
+      "run": {
+        "km": 2.4,
+        "min_s": null,
+        "max_s": 640
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Male",
+    "age_group": "15",
+    "band": "Very Good",
+    "grade": "B",
+    "points": 4,
+    "stations": {
+      "situps": {
+        "min": 40,
+        "max": 42
+      },
+      "broad_jump_cm": {
+        "min": 228,
+        "max": 237
+      },
+      "sit_and_reach_cm": {
+        "min": 42,
+        "max": 45
+      },
+      "pullups": {
+        "min": 6,
+        "max": 7
+      },
+      "shuttle_s": {
+        "min": 10.2,
+        "max": 10.3
+      },
+      "run": {
+        "km": 2.4,
+        "min_s": 641,
+        "max_s": 700
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Male",
+    "age_group": "15",
+    "band": "Good",
+    "grade": "C",
+    "points": 3,
+    "stations": {
+      "situps": {
+        "min": 37,
+        "max": 39
+      },
+      "broad_jump_cm": {
+        "min": 218,
+        "max": 227
+      },
+      "sit_and_reach_cm": {
+        "min": 38,
+        "max": 41
+      },
+      "pullups": {
+        "min": 5,
+        "max": 5
+      },
+      "shuttle_s": {
+        "min": 10.4,
+        "max": 10.5
+      },
+      "run": {
+        "km": 2.4,
+        "min_s": 701,
+        "max_s": 760
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Male",
+    "age_group": "15",
+    "band": "Good",
+    "grade": "D",
+    "points": 2,
+    "stations": {
+      "situps": {
+        "min": 34,
+        "max": 36
+      },
+      "broad_jump_cm": {
+        "min": 208,
+        "max": 217
+      },
+      "sit_and_reach_cm": {
+        "min": 34,
+        "max": 37
+      },
+      "pullups": {
+        "min": 3,
+        "max": 4
+      },
+      "shuttle_s": {
+        "min": 10.6,
+        "max": 10.9
+      },
+      "run": {
+        "km": 2.4,
+        "min_s": 761,
+        "max_s": 820
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Male",
+    "age_group": "15",
+    "band": "Satisfactory",
+    "grade": "E",
+    "points": 1,
+    "stations": {
+      "situps": {
+        "min": 30,
+        "max": 33
+      },
+      "broad_jump_cm": {
+        "min": 198,
+        "max": 207
+      },
+      "sit_and_reach_cm": {
+        "min": 29,
+        "max": 33
+      },
+      "pullups": {
+        "min": 1,
+        "max": 2
+      },
+      "shuttle_s": {
+        "min": 11,
+        "max": 11.3
+      },
+      "run": {
+        "km": 2.4,
+        "min_s": 821,
+        "max_s": 880
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Female",
+    "age_group": "9",
+    "band": "Outstanding",
+    "grade": "A",
+    "points": 5,
+    "stations": {
+      "situps": {
+        "min": 27,
+        "max": null
+      },
+      "broad_jump_cm": {
+        "min": 159,
+        "max": null
+      },
+      "sit_and_reach_cm": {
+        "min": 34,
+        "max": null
+      },
+      "pullups": {
+        "min": 15,
+        "max": null
+      },
+      "shuttle_s": {
+        "min": null,
+        "max": 11.7
+      },
+      "run": {
+        "km": 1.6,
+        "min_s": null,
+        "max_s": 639
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Female",
+    "age_group": "9",
+    "band": "Very Good",
+    "grade": "B",
+    "points": 4,
+    "stations": {
+      "situps": {
+        "min": 22,
+        "max": 26
+      },
+      "broad_jump_cm": {
+        "min": 148,
+        "max": 158
+      },
+      "sit_and_reach_cm": {
+        "min": 31,
+        "max": 33
+      },
+      "pullups": {
+        "min": 12,
+        "max": 14
+      },
+      "shuttle_s": {
+        "min": 11.8,
+        "max": 12.3
+      },
+      "run": {
+        "km": 1.6,
+        "min_s": 640,
+        "max_s": 700
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Female",
+    "age_group": "9",
+    "band": "Good",
+    "grade": "C",
+    "points": 3,
+    "stations": {
+      "situps": {
+        "min": 18,
+        "max": 21
+      },
+      "broad_jump_cm": {
+        "min": 139,
+        "max": 147
+      },
+      "sit_and_reach_cm": {
+        "min": 28,
+        "max": 30
+      },
+      "pullups": {
+        "min": 9,
+        "max": 11
+      },
+      "shuttle_s": {
+        "min": 12.4,
+        "max": 12.8
+      },
+      "run": {
+        "km": 1.6,
+        "min_s": 701,
+        "max_s": 770
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Female",
+    "age_group": "9",
+    "band": "Good",
+    "grade": "D",
+    "points": 2,
+    "stations": {
+      "situps": {
+        "min": 14,
+        "max": 17
+      },
+      "broad_jump_cm": {
+        "min": 129,
+        "max": 138
+      },
+      "sit_and_reach_cm": {
+        "min": 24,
+        "max": 27
+      },
+      "pullups": {
+        "min": 6,
+        "max": 8
+      },
+      "shuttle_s": {
+        "min": 12.9,
+        "max": 13.3
+      },
+      "run": {
+        "km": 1.6,
+        "min_s": 771,
+        "max_s": 830
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Female",
+    "age_group": "9",
+    "band": "Satisfactory",
+    "grade": "E",
+    "points": 1,
+    "stations": {
+      "situps": {
+        "min": 10,
+        "max": 13
+      },
+      "broad_jump_cm": {
+        "min": 119,
+        "max": 128
+      },
+      "sit_and_reach_cm": {
+        "min": 19,
+        "max": 23
+      },
+      "pullups": {
+        "min": 2,
+        "max": 5
+      },
+      "shuttle_s": {
+        "min": 13.4,
+        "max": 13.8
+      },
+      "run": {
+        "km": 1.6,
+        "min_s": 831,
+        "max_s": 900
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Female",
+    "age_group": "10",
+    "band": "Outstanding",
+    "grade": "A",
+    "points": 5,
+    "stations": {
+      "situps": {
+        "min": 28,
+        "max": null
+      },
+      "broad_jump_cm": {
+        "min": 162,
+        "max": null
+      },
+      "sit_and_reach_cm": {
+        "min": 36,
+        "max": null
+      },
+      "pullups": {
+        "min": 15,
+        "max": null
+      },
+      "shuttle_s": {
+        "min": null,
+        "max": 11.6
+      },
+      "run": {
+        "km": 1.6,
+        "min_s": null,
+        "max_s": 629
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Female",
+    "age_group": "10",
+    "band": "Very Good",
+    "grade": "B",
+    "points": 4,
+    "stations": {
+      "situps": {
+        "min": 23,
+        "max": 27
+      },
+      "broad_jump_cm": {
+        "min": 152,
+        "max": 161
+      },
+      "sit_and_reach_cm": {
+        "min": 33,
+        "max": 35
+      },
+      "pullups": {
+        "min": 12,
+        "max": 14
+      },
+      "shuttle_s": {
+        "min": 11.7,
+        "max": 12.2
+      },
+      "run": {
+        "km": 1.6,
+        "min_s": 630,
+        "max_s": 685
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Female",
+    "age_group": "10",
+    "band": "Good",
+    "grade": "C",
+    "points": 3,
+    "stations": {
+      "situps": {
+        "min": 19,
+        "max": 22
+      },
+      "broad_jump_cm": {
+        "min": 143,
+        "max": 151
+      },
+      "sit_and_reach_cm": {
+        "min": 30,
+        "max": 32
+      },
+      "pullups": {
+        "min": 9,
+        "max": 11
+      },
+      "shuttle_s": {
+        "min": 12.3,
+        "max": 12.7
+      },
+      "run": {
+        "km": 1.6,
+        "min_s": 686,
+        "max_s": 750
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Female",
+    "age_group": "10",
+    "band": "Good",
+    "grade": "D",
+    "points": 2,
+    "stations": {
+      "situps": {
+        "min": 15,
+        "max": 18
+      },
+      "broad_jump_cm": {
+        "min": 134,
+        "max": 142
+      },
+      "sit_and_reach_cm": {
+        "min": 26,
+        "max": 29
+      },
+      "pullups": {
+        "min": 6,
+        "max": 8
+      },
+      "shuttle_s": {
+        "min": 12.8,
+        "max": 13.2
+      },
+      "run": {
+        "km": 1.6,
+        "min_s": 751,
+        "max_s": 805
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Female",
+    "age_group": "10",
+    "band": "Satisfactory",
+    "grade": "E",
+    "points": 1,
+    "stations": {
+      "situps": {
+        "min": 11,
+        "max": 14
+      },
+      "broad_jump_cm": {
+        "min": 125,
+        "max": 133
+      },
+      "sit_and_reach_cm": {
+        "min": 21,
+        "max": 25
+      },
+      "pullups": {
+        "min": 3,
+        "max": 5
+      },
+      "shuttle_s": {
+        "min": 13.3,
+        "max": 13.7
+      },
+      "run": {
+        "km": 1.6,
+        "min_s": 806,
+        "max_s": 870
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Female",
+    "age_group": "11",
+    "band": "Outstanding",
+    "grade": "A",
+    "points": 5,
+    "stations": {
+      "situps": {
+        "min": 29,
+        "max": null
+      },
+      "broad_jump_cm": {
+        "min": 165,
+        "max": null
+      },
+      "sit_and_reach_cm": {
+        "min": 38,
+        "max": null
+      },
+      "pullups": {
+        "min": 16,
+        "max": null
+      },
+      "shuttle_s": {
+        "min": null,
+        "max": 11.5
+      },
+      "run": {
+        "km": 1.6,
+        "min_s": null,
+        "max_s": 619
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Female",
+    "age_group": "11",
+    "band": "Very Good",
+    "grade": "B",
+    "points": 4,
+    "stations": {
+      "situps": {
+        "min": 24,
+        "max": 28
+      },
+      "broad_jump_cm": {
+        "min": 156,
+        "max": 164
+      },
+      "sit_and_reach_cm": {
+        "min": 35,
+        "max": 37
+      },
+      "pullups": {
+        "min": 13,
+        "max": 15
+      },
+      "shuttle_s": {
+        "min": 11.6,
+        "max": 12.1
+      },
+      "run": {
+        "km": 1.6,
+        "min_s": 620,
+        "max_s": 670
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Female",
+    "age_group": "11",
+    "band": "Good",
+    "grade": "C",
+    "points": 3,
+    "stations": {
+      "situps": {
+        "min": 20,
+        "max": 23
+      },
+      "broad_jump_cm": {
+        "min": 147,
+        "max": 155
+      },
+      "sit_and_reach_cm": {
+        "min": 32,
+        "max": 34
+      },
+      "pullups": {
+        "min": 10,
+        "max": 12
+      },
+      "shuttle_s": {
+        "min": 12.2,
+        "max": 12.5
+      },
+      "run": {
+        "km": 1.6,
+        "min_s": 671,
+        "max_s": 730
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Female",
+    "age_group": "11",
+    "band": "Good",
+    "grade": "D",
+    "points": 2,
+    "stations": {
+      "situps": {
+        "min": 16,
+        "max": 19
+      },
+      "broad_jump_cm": {
+        "min": 138,
+        "max": 146
+      },
+      "sit_and_reach_cm": {
+        "min": 28,
+        "max": 31
+      },
+      "pullups": {
+        "min": 7,
+        "max": 9
+      },
+      "shuttle_s": {
+        "min": 12.6,
+        "max": 12.9
+      },
+      "run": {
+        "km": 1.6,
+        "min_s": 731,
+        "max_s": 780
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Female",
+    "age_group": "11",
+    "band": "Satisfactory",
+    "grade": "E",
+    "points": 1,
+    "stations": {
+      "situps": {
+        "min": 12,
+        "max": 15
+      },
+      "broad_jump_cm": {
+        "min": 129,
+        "max": 137
+      },
+      "sit_and_reach_cm": {
+        "min": 23,
+        "max": 27
+      },
+      "pullups": {
+        "min": 3,
+        "max": 6
+      },
+      "shuttle_s": {
+        "min": 13,
+        "max": 13.4
+      },
+      "run": {
+        "km": 1.6,
+        "min_s": 781,
+        "max_s": 840
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Female",
+    "age_group": "12",
+    "band": "Outstanding",
+    "grade": "A",
+    "points": 5,
+    "stations": {
+      "situps": {
+        "min": 30,
+        "max": null
+      },
+      "broad_jump_cm": {
+        "min": 168,
+        "max": null
+      },
+      "sit_and_reach_cm": {
+        "min": 40,
+        "max": null
+      },
+      "pullups": {
+        "min": 16,
+        "max": null
+      },
+      "shuttle_s": {
+        "min": null,
+        "max": 11.4
+      },
+      "run": {
+        "km": 1.6,
+        "min_s": null,
+        "max_s": 609
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Female",
+    "age_group": "12",
+    "band": "Very Good",
+    "grade": "B",
+    "points": 4,
+    "stations": {
+      "situps": {
+        "min": 25,
+        "max": 29
+      },
+      "broad_jump_cm": {
+        "min": 159,
+        "max": 167
+      },
+      "sit_and_reach_cm": {
+        "min": 37,
+        "max": 39
+      },
+      "pullups": {
+        "min": 13,
+        "max": 15
+      },
+      "shuttle_s": {
+        "min": 11.5,
+        "max": 11.9
+      },
+      "run": {
+        "km": 1.6,
+        "min_s": 610,
+        "max_s": 660
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Female",
+    "age_group": "12",
+    "band": "Good",
+    "grade": "C",
+    "points": 3,
+    "stations": {
+      "situps": {
+        "min": 21,
+        "max": 24
+      },
+      "broad_jump_cm": {
+        "min": 150,
+        "max": 158
+      },
+      "sit_and_reach_cm": {
+        "min": 34,
+        "max": 36
+      },
+      "pullups": {
+        "min": 10,
+        "max": 12
+      },
+      "shuttle_s": {
+        "min": 12,
+        "max": 12.3
+      },
+      "run": {
+        "km": 1.6,
+        "min_s": 661,
+        "max_s": 720
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Female",
+    "age_group": "12",
+    "band": "Good",
+    "grade": "D",
+    "points": 2,
+    "stations": {
+      "situps": {
+        "min": 17,
+        "max": 20
+      },
+      "broad_jump_cm": {
+        "min": 141,
+        "max": 149
+      },
+      "sit_and_reach_cm": {
+        "min": 30,
+        "max": 33
+      },
+      "pullups": {
+        "min": 7,
+        "max": 9
+      },
+      "shuttle_s": {
+        "min": 12.4,
+        "max": 12.7
+      },
+      "run": {
+        "km": 1.6,
+        "min_s": 721,
+        "max_s": 770
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Female",
+    "age_group": "12",
+    "band": "Satisfactory",
+    "grade": "E",
+    "points": 1,
+    "stations": {
+      "situps": {
+        "min": 13,
+        "max": 16
+      },
+      "broad_jump_cm": {
+        "min": 132,
+        "max": 140
+      },
+      "sit_and_reach_cm": {
+        "min": 25,
+        "max": 29
+      },
+      "pullups": {
+        "min": 3,
+        "max": 6
+      },
+      "shuttle_s": {
+        "min": 12.8,
+        "max": 13.2
+      },
+      "run": {
+        "km": 1.6,
+        "min_s": 771,
+        "max_s": 830
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Female",
+    "age_group": "13",
+    "band": "Outstanding",
+    "grade": "A",
+    "points": 5,
+    "stations": {
+      "situps": {
+        "min": 31,
+        "max": null
+      },
+      "broad_jump_cm": {
+        "min": 171,
+        "max": null
+      },
+      "sit_and_reach_cm": {
+        "min": 42,
+        "max": null
+      },
+      "pullups": {
+        "min": 17,
+        "max": null
+      },
+      "shuttle_s": {
+        "min": null,
+        "max": 11.2
+      },
+      "run": {
+        "km": 1.6,
+        "min_s": null,
+        "max_s": 599
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Female",
+    "age_group": "13",
+    "band": "Very Good",
+    "grade": "B",
+    "points": 4,
+    "stations": {
+      "situps": {
+        "min": 26,
+        "max": 30
+      },
+      "broad_jump_cm": {
+        "min": 162,
+        "max": 170
+      },
+      "sit_and_reach_cm": {
+        "min": 39,
+        "max": 41
+      },
+      "pullups": {
+        "min": 13,
+        "max": 16
+      },
+      "shuttle_s": {
+        "min": 11.3,
+        "max": 11.7
+      },
+      "run": {
+        "km": 1.6,
+        "min_s": 600,
+        "max_s": 650
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Female",
+    "age_group": "13",
+    "band": "Good",
+    "grade": "C",
+    "points": 3,
+    "stations": {
+      "situps": {
+        "min": 22,
+        "max": 25
+      },
+      "broad_jump_cm": {
+        "min": 153,
+        "max": 161
+      },
+      "sit_and_reach_cm": {
+        "min": 36,
+        "max": 38
+      },
+      "pullups": {
+        "min": 10,
+        "max": 12
+      },
+      "shuttle_s": {
+        "min": 11.8,
+        "max": 12.2
+      },
+      "run": {
+        "km": 1.6,
+        "min_s": 651,
+        "max_s": 710
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Female",
+    "age_group": "13",
+    "band": "Good",
+    "grade": "D",
+    "points": 2,
+    "stations": {
+      "situps": {
+        "min": 18,
+        "max": 21
+      },
+      "broad_jump_cm": {
+        "min": 144,
+        "max": 152
+      },
+      "sit_and_reach_cm": {
+        "min": 32,
+        "max": 35
+      },
+      "pullups": {
+        "min": 7,
+        "max": 9
+      },
+      "shuttle_s": {
+        "min": 12.3,
+        "max": 12.7
+      },
+      "run": {
+        "km": 1.6,
+        "min_s": 711,
+        "max_s": 760
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Female",
+    "age_group": "13",
+    "band": "Satisfactory",
+    "grade": "E",
+    "points": 1,
+    "stations": {
+      "situps": {
+        "min": 14,
+        "max": 17
+      },
+      "broad_jump_cm": {
+        "min": 135,
+        "max": 143
+      },
+      "sit_and_reach_cm": {
+        "min": 27,
+        "max": 31
+      },
+      "pullups": {
+        "min": 3,
+        "max": 6
+      },
+      "shuttle_s": {
+        "min": 12.8,
+        "max": 13.2
+      },
+      "run": {
+        "km": 1.6,
+        "min_s": 761,
+        "max_s": 820
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Female",
+    "age_group": "14",
+    "band": "Outstanding",
+    "grade": "A",
+    "points": 5,
+    "stations": {
+      "situps": {
+        "min": 31,
+        "max": null
+      },
+      "broad_jump_cm": {
+        "min": 178,
+        "max": null
+      },
+      "sit_and_reach_cm": {
+        "min": 44,
+        "max": null
+      },
+      "pullups": {
+        "min": 17,
+        "max": null
+      },
+      "shuttle_s": {
+        "min": null,
+        "max": 11.4
+      },
+      "run": {
+        "km": 2.4,
+        "min_s": null,
+        "max_s": 860
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Female",
+    "age_group": "14",
+    "band": "Very Good",
+    "grade": "B",
+    "points": 4,
+    "stations": {
+      "situps": {
+        "min": 28,
+        "max": 30
+      },
+      "broad_jump_cm": {
+        "min": 169,
+        "max": 177
+      },
+      "sit_and_reach_cm": {
+        "min": 41,
+        "max": 43
+      },
+      "pullups": {
+        "min": 14,
+        "max": 16
+      },
+      "shuttle_s": {
+        "min": 11.5,
+        "max": 11.8
+      },
+      "run": {
+        "km": 2.4,
+        "min_s": 861,
+        "max_s": 920
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Female",
+    "age_group": "14",
+    "band": "Good",
+    "grade": "C",
+    "points": 3,
+    "stations": {
+      "situps": {
+        "min": 24,
+        "max": 27
+      },
+      "broad_jump_cm": {
+        "min": 160,
+        "max": 168
+      },
+      "sit_and_reach_cm": {
+        "min": 38,
+        "max": 40
+      },
+      "pullups": {
+        "min": 10,
+        "max": 13
+      },
+      "shuttle_s": {
+        "min": 11.9,
+        "max": 12.2
+      },
+      "run": {
+        "km": 2.4,
+        "min_s": 921,
+        "max_s": 980
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Female",
+    "age_group": "14",
+    "band": "Good",
+    "grade": "D",
+    "points": 2,
+    "stations": {
+      "situps": {
+        "min": 20,
+        "max": 23
+      },
+      "broad_jump_cm": {
+        "min": 151,
+        "max": 159
+      },
+      "sit_and_reach_cm": {
+        "min": 34,
+        "max": 37
+      },
+      "pullups": {
+        "min": 7,
+        "max": 9
+      },
+      "shuttle_s": {
+        "min": 12.3,
+        "max": 12.6
+      },
+      "run": {
+        "km": 2.4,
+        "min_s": 981,
+        "max_s": 1040
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Female",
+    "age_group": "14",
+    "band": "Satisfactory",
+    "grade": "E",
+    "points": 1,
+    "stations": {
+      "situps": {
+        "min": 16,
+        "max": 19
+      },
+      "broad_jump_cm": {
+        "min": 142,
+        "max": 150
+      },
+      "sit_and_reach_cm": {
+        "min": 29,
+        "max": 33
+      },
+      "pullups": {
+        "min": 3,
+        "max": 6
+      },
+      "shuttle_s": {
+        "min": 12.7,
+        "max": 13
+      },
+      "run": {
+        "km": 2.4,
+        "min_s": 1041,
+        "max_s": 1100
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Female",
+    "age_group": "15",
+    "band": "Outstanding",
+    "grade": "A",
+    "points": 5,
+    "stations": {
+      "situps": {
+        "min": 31,
+        "max": null
+      },
+      "broad_jump_cm": {
+        "min": 183,
+        "max": null
+      },
+      "sit_and_reach_cm": {
+        "min": 46,
+        "max": null
+      },
+      "pullups": {
+        "min": 17,
+        "max": null
+      },
+      "shuttle_s": {
+        "min": null,
+        "max": 11.2
+      },
+      "run": {
+        "km": 2.4,
+        "min_s": null,
+        "max_s": 850
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Female",
+    "age_group": "15",
+    "band": "Very Good",
+    "grade": "B",
+    "points": 4,
+    "stations": {
+      "situps": {
+        "min": 29,
+        "max": 30
+      },
+      "broad_jump_cm": {
+        "min": 174,
+        "max": 182
+      },
+      "sit_and_reach_cm": {
+        "min": 43,
+        "max": 45
+      },
+      "pullups": {
+        "min": 14,
+        "max": 16
+      },
+      "shuttle_s": {
+        "min": 11.3,
+        "max": 11.6
+      },
+      "run": {
+        "km": 2.4,
+        "min_s": 851,
+        "max_s": 910
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Female",
+    "age_group": "15",
+    "band": "Good",
+    "grade": "C",
+    "points": 3,
+    "stations": {
+      "situps": {
+        "min": 25,
+        "max": 28
+      },
+      "broad_jump_cm": {
+        "min": 165,
+        "max": 173
+      },
+      "sit_and_reach_cm": {
+        "min": 39,
+        "max": 42
+      },
+      "pullups": {
+        "min": 10,
+        "max": 13
+      },
+      "shuttle_s": {
+        "min": 11.7,
+        "max": 12
+      },
+      "run": {
+        "km": 2.4,
+        "min_s": 911,
+        "max_s": 970
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Female",
+    "age_group": "15",
+    "band": "Good",
+    "grade": "D",
+    "points": 2,
+    "stations": {
+      "situps": {
+        "min": 21,
+        "max": 24
+      },
+      "broad_jump_cm": {
+        "min": 156,
+        "max": 164
+      },
+      "sit_and_reach_cm": {
+        "min": 35,
+        "max": 38
+      },
+      "pullups": {
+        "min": 7,
+        "max": 9
+      },
+      "shuttle_s": {
+        "min": 12.1,
+        "max": 12.4
+      },
+      "run": {
+        "km": 2.4,
+        "min_s": 971,
+        "max_s": 1030
+      }
+    }
+  },
+  {
+    "level": "Primary",
+    "sex": "Female",
+    "age_group": "15",
+    "band": "Satisfactory",
+    "grade": "E",
+    "points": 1,
+    "stations": {
+      "situps": {
+        "min": 17,
+        "max": 20
+      },
+      "broad_jump_cm": {
+        "min": 147,
+        "max": 155
+      },
+      "sit_and_reach_cm": {
+        "min": 30,
+        "max": 34
+      },
+      "pullups": {
+        "min": 3,
+        "max": 6
+      },
+      "shuttle_s": {
+        "min": 12.5,
+        "max": 12.8
+      },
+      "run": {
+        "km": 2.4,
+        "min_s": 1031,
+        "max_s": 1090
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Male",
+    "age_group": "12",
+    "band": null,
+    "grade": "A",
+    "points": 5,
+    "stations": {
+      "situps": {
+        "min": 42,
+        "max": null
+      },
+      "broad_jump_cm": {
+        "min": 203,
+        "max": null
+      },
+      "sit_and_reach_cm": {
+        "min": 40,
+        "max": null
+      },
+      "pullups": {
+        "min": 25,
+        "max": null
+      },
+      "shuttle_s": {
+        "min": null,
+        "max": 10.3
+      },
+      "run": {
+        "km": null,
+        "min_s": null,
+        "max_s": 720
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Male",
+    "age_group": "12",
+    "band": null,
+    "grade": "B",
+    "points": 4,
+    "stations": {
+      "situps": {
+        "min": 36,
+        "max": 41
+      },
+      "broad_jump_cm": {
+        "min": 189,
+        "max": 202
+      },
+      "sit_and_reach_cm": {
+        "min": 36,
+        "max": 39
+      },
+      "pullups": {
+        "min": 21,
+        "max": 24
+      },
+      "shuttle_s": {
+        "min": 10.4,
+        "max": 10.9
+      },
+      "run": {
+        "km": null,
+        "min_s": 721,
+        "max_s": 790
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Male",
+    "age_group": "12",
+    "band": null,
+    "grade": "C",
+    "points": 3,
+    "stations": {
+      "situps": {
+        "min": 32,
+        "max": 35
+      },
+      "broad_jump_cm": {
+        "min": 176,
+        "max": 188
+      },
+      "sit_and_reach_cm": {
+        "min": 32,
+        "max": 35
+      },
+      "pullups": {
+        "min": 16,
+        "max": 20
+      },
+      "shuttle_s": {
+        "min": 11,
+        "max": 11.3
+      },
+      "run": {
+        "km": null,
+        "min_s": 791,
+        "max_s": 860
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Male",
+    "age_group": "12",
+    "band": null,
+    "grade": "D",
+    "points": 2,
+    "stations": {
+      "situps": {
+        "min": 27,
+        "max": 31
+      },
+      "broad_jump_cm": {
+        "min": 163,
+        "max": 175
+      },
+      "sit_and_reach_cm": {
+        "min": 28,
+        "max": 31
+      },
+      "pullups": {
+        "min": 11,
+        "max": 15
+      },
+      "shuttle_s": {
+        "min": 11.4,
+        "max": 11.7
+      },
+      "run": {
+        "km": null,
+        "min_s": 861,
+        "max_s": 930
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Male",
+    "age_group": "12",
+    "band": null,
+    "grade": "E",
+    "points": 1,
+    "stations": {
+      "situps": {
+        "min": 22,
+        "max": 26
+      },
+      "broad_jump_cm": {
+        "min": 150,
+        "max": 162
+      },
+      "sit_and_reach_cm": {
+        "min": 23,
+        "max": 27
+      },
+      "pullups": {
+        "min": 5,
+        "max": 10
+      },
+      "shuttle_s": {
+        "min": 11.8,
+        "max": 12.2
+      },
+      "run": {
+        "km": null,
+        "min_s": 931,
+        "max_s": 1010
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Male",
+    "age_group": "13",
+    "band": null,
+    "grade": "A",
+    "points": 5,
+    "stations": {
+      "situps": {
+        "min": 43,
+        "max": null
+      },
+      "broad_jump_cm": {
+        "min": 215,
+        "max": null
+      },
+      "sit_and_reach_cm": {
+        "min": 42,
+        "max": null
+      },
+      "pullups": {
+        "min": 26,
+        "max": null
+      },
+      "shuttle_s": {
+        "min": null,
+        "max": 10.2
+      },
+      "run": {
+        "km": null,
+        "min_s": null,
+        "max_s": 690
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Male",
+    "age_group": "13",
+    "band": null,
+    "grade": "B",
+    "points": 4,
+    "stations": {
+      "situps": {
+        "min": 38,
+        "max": 42
+      },
+      "broad_jump_cm": {
+        "min": 202,
+        "max": 214
+      },
+      "sit_and_reach_cm": {
+        "min": 38,
+        "max": 41
+      },
+      "pullups": {
+        "min": 22,
+        "max": 25
+      },
+      "shuttle_s": {
+        "min": 10.3,
+        "max": 10.7
+      },
+      "run": {
+        "km": null,
+        "min_s": 691,
+        "max_s": 750
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Male",
+    "age_group": "13",
+    "band": null,
+    "grade": "C",
+    "points": 3,
+    "stations": {
+      "situps": {
+        "min": 34,
+        "max": 37
+      },
+      "broad_jump_cm": {
+        "min": 189,
+        "max": 201
+      },
+      "sit_and_reach_cm": {
+        "min": 34,
+        "max": 37
+      },
+      "pullups": {
+        "min": 17,
+        "max": 21
+      },
+      "shuttle_s": {
+        "min": 10.8,
+        "max": 11.1
+      },
+      "run": {
+        "km": null,
+        "min_s": 751,
+        "max_s": 820
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Male",
+    "age_group": "13",
+    "band": null,
+    "grade": "D",
+    "points": 2,
+    "stations": {
+      "situps": {
+        "min": 29,
+        "max": 33
+      },
+      "broad_jump_cm": {
+        "min": 176,
+        "max": 188
+      },
+      "sit_and_reach_cm": {
+        "min": 30,
+        "max": 33
+      },
+      "pullups": {
+        "min": 12,
+        "max": 16
+      },
+      "shuttle_s": {
+        "min": 11.2,
+        "max": 11.5
+      },
+      "run": {
+        "km": null,
+        "min_s": 821,
+        "max_s": 890
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Male",
+    "age_group": "13",
+    "band": null,
+    "grade": "E",
+    "points": 1,
+    "stations": {
+      "situps": {
+        "min": 25,
+        "max": 28
+      },
+      "broad_jump_cm": {
+        "min": 164,
+        "max": 175
+      },
+      "sit_and_reach_cm": {
+        "min": 25,
+        "max": 29
+      },
+      "pullups": {
+        "min": 7,
+        "max": 11
+      },
+      "shuttle_s": {
+        "min": 11.6,
+        "max": 11.9
+      },
+      "run": {
+        "km": null,
+        "min_s": 891,
+        "max_s": 960
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Male",
+    "age_group": "14",
+    "band": null,
+    "grade": "A",
+    "points": 5,
+    "stations": {
+      "situps": {
+        "min": 43,
+        "max": null
+      },
+      "broad_jump_cm": {
+        "min": 226,
+        "max": null
+      },
+      "sit_and_reach_cm": {
+        "min": 44,
+        "max": null
+      },
+      "pullups": {
+        "min": 27,
+        "max": null
+      },
+      "shuttle_s": {
+        "min": null,
+        "max": 10.1
+      },
+      "run": {
+        "km": null,
+        "min_s": null,
+        "max_s": 660
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Male",
+    "age_group": "14",
+    "band": null,
+    "grade": "B",
+    "points": 4,
+    "stations": {
+      "situps": {
+        "min": 40,
+        "max": 42
+      },
+      "broad_jump_cm": {
+        "min": 216,
+        "max": 225
+      },
+      "sit_and_reach_cm": {
+        "min": 40,
+        "max": 43
+      },
+      "pullups": {
+        "min": 23,
+        "max": 26
+      },
+      "shuttle_s": {
+        "min": 10.2,
+        "max": 10.4
+      },
+      "run": {
+        "km": null,
+        "min_s": 661,
+        "max_s": 720
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Male",
+    "age_group": "14",
+    "band": null,
+    "grade": "C",
+    "points": 3,
+    "stations": {
+      "situps": {
+        "min": 37,
+        "max": 39
+      },
+      "broad_jump_cm": {
+        "min": 206,
+        "max": 215
+      },
+      "sit_and_reach_cm": {
+        "min": 36,
+        "max": 39
+      },
+      "pullups": {
+        "min": 18,
+        "max": 22
+      },
+      "shuttle_s": {
+        "min": 10.5,
+        "max": 10.8
+      },
+      "run": {
+        "km": null,
+        "min_s": 721,
+        "max_s": 780
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Male",
+    "age_group": "14",
+    "band": null,
+    "grade": "D",
+    "points": 2,
+    "stations": {
+      "situps": {
+        "min": 33,
+        "max": 36
+      },
+      "broad_jump_cm": {
+        "min": 196,
+        "max": 205
+      },
+      "sit_and_reach_cm": {
+        "min": 32,
+        "max": 35
+      },
+      "pullups": {
+        "min": 13,
+        "max": 17
+      },
+      "shuttle_s": {
+        "min": 10.9,
+        "max": 11.2
+      },
+      "run": {
+        "km": null,
+        "min_s": 781,
+        "max_s": 850
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Male",
+    "age_group": "14",
+    "band": null,
+    "grade": "E",
+    "points": 1,
+    "stations": {
+      "situps": {
+        "min": 29,
+        "max": 32
+      },
+      "broad_jump_cm": {
+        "min": 186,
+        "max": 195
+      },
+      "sit_and_reach_cm": {
+        "min": 27,
+        "max": 31
+      },
+      "pullups": {
+        "min": 8,
+        "max": 12
+      },
+      "shuttle_s": {
+        "min": 11.3,
+        "max": 11.6
+      },
+      "run": {
+        "km": null,
+        "min_s": 851,
+        "max_s": 920
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Male",
+    "age_group": "15",
+    "band": null,
+    "grade": "A",
+    "points": 5,
+    "stations": {
+      "situps": {
+        "min": 43,
+        "max": null
+      },
+      "broad_jump_cm": {
+        "min": 238,
+        "max": null
+      },
+      "sit_and_reach_cm": {
+        "min": 46,
+        "max": null
+      },
+      "pullups": {
+        "min": 8,
+        "max": null
+      },
+      "shuttle_s": {
+        "min": null,
+        "max": 10.1
+      },
+      "run": {
+        "km": null,
+        "min_s": null,
+        "max_s": 640
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Male",
+    "age_group": "15",
+    "band": null,
+    "grade": "B",
+    "points": 4,
+    "stations": {
+      "situps": {
+        "min": 40,
+        "max": 42
+      },
+      "broad_jump_cm": {
+        "min": 228,
+        "max": 237
+      },
+      "sit_and_reach_cm": {
+        "min": 42,
+        "max": 45
+      },
+      "pullups": {
+        "min": 6,
+        "max": 7
+      },
+      "shuttle_s": {
+        "min": 10.2,
+        "max": 10.3
+      },
+      "run": {
+        "km": null,
+        "min_s": 641,
+        "max_s": 700
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Male",
+    "age_group": "15",
+    "band": null,
+    "grade": "C",
+    "points": 3,
+    "stations": {
+      "situps": {
+        "min": 37,
+        "max": 39
+      },
+      "broad_jump_cm": {
+        "min": 218,
+        "max": 227
+      },
+      "sit_and_reach_cm": {
+        "min": 38,
+        "max": 41
+      },
+      "pullups": {
+        "min": 5,
+        "max": 5
+      },
+      "shuttle_s": {
+        "min": 10.4,
+        "max": 10.5
+      },
+      "run": {
+        "km": null,
+        "min_s": 701,
+        "max_s": 760
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Male",
+    "age_group": "15",
+    "band": null,
+    "grade": "D",
+    "points": 2,
+    "stations": {
+      "situps": {
+        "min": 34,
+        "max": 36
+      },
+      "broad_jump_cm": {
+        "min": 208,
+        "max": 217
+      },
+      "sit_and_reach_cm": {
+        "min": 34,
+        "max": 37
+      },
+      "pullups": {
+        "min": 3,
+        "max": 4
+      },
+      "shuttle_s": {
+        "min": 10.6,
+        "max": 10.9
+      },
+      "run": {
+        "km": null,
+        "min_s": 761,
+        "max_s": 820
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Male",
+    "age_group": "15",
+    "band": null,
+    "grade": "E",
+    "points": 1,
+    "stations": {
+      "situps": {
+        "min": 30,
+        "max": 33
+      },
+      "broad_jump_cm": {
+        "min": 198,
+        "max": 207
+      },
+      "sit_and_reach_cm": {
+        "min": 29,
+        "max": 33
+      },
+      "pullups": {
+        "min": 1,
+        "max": 2
+      },
+      "shuttle_s": {
+        "min": 11,
+        "max": 11.3
+      },
+      "run": {
+        "km": null,
+        "min_s": 821,
+        "max_s": 880
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Male",
+    "age_group": "16",
+    "band": null,
+    "grade": "A",
+    "points": 5,
+    "stations": {
+      "situps": {
+        "min": 43,
+        "max": null
+      },
+      "broad_jump_cm": {
+        "min": 246,
+        "max": null
+      },
+      "sit_and_reach_cm": {
+        "min": 48,
+        "max": null
+      },
+      "pullups": {
+        "min": 9,
+        "max": null
+      },
+      "shuttle_s": {
+        "min": null,
+        "max": 10.1
+      },
+      "run": {
+        "km": null,
+        "min_s": null,
+        "max_s": 630
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Male",
+    "age_group": "16",
+    "band": null,
+    "grade": "B",
+    "points": 4,
+    "stations": {
+      "situps": {
+        "min": 40,
+        "max": 42
+      },
+      "broad_jump_cm": {
+        "min": 236,
+        "max": 245
+      },
+      "sit_and_reach_cm": {
+        "min": 44,
+        "max": 47
+      },
+      "pullups": {
+        "min": 7,
+        "max": 8
+      },
+      "shuttle_s": {
+        "min": 10.2,
+        "max": 10.3
+      },
+      "run": {
+        "km": null,
+        "min_s": 631,
+        "max_s": 690
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Male",
+    "age_group": "16",
+    "band": null,
+    "grade": "C",
+    "points": 3,
+    "stations": {
+      "situps": {
+        "min": 37,
+        "max": 39
+      },
+      "broad_jump_cm": {
+        "min": 226,
+        "max": 235
+      },
+      "sit_and_reach_cm": {
+        "min": 40,
+        "max": 43
+      },
+      "pullups": {
+        "min": 5,
+        "max": 6
+      },
+      "shuttle_s": {
+        "min": 10.4,
+        "max": 10.5
+      },
+      "run": {
+        "km": null,
+        "min_s": 691,
+        "max_s": 740
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Male",
+    "age_group": "16",
+    "band": null,
+    "grade": "D",
+    "points": 2,
+    "stations": {
+      "situps": {
+        "min": 34,
+        "max": 36
+      },
+      "broad_jump_cm": {
+        "min": 216,
+        "max": 225
+      },
+      "sit_and_reach_cm": {
+        "min": 36,
+        "max": 39
+      },
+      "pullups": {
+        "min": 3,
+        "max": 4
+      },
+      "shuttle_s": {
+        "min": 10.6,
+        "max": 10.7
+      },
+      "run": {
+        "km": null,
+        "min_s": 741,
+        "max_s": 800
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Male",
+    "age_group": "16",
+    "band": null,
+    "grade": "E",
+    "points": 1,
+    "stations": {
+      "situps": {
+        "min": 31,
+        "max": 33
+      },
+      "broad_jump_cm": {
+        "min": 206,
+        "max": 215
+      },
+      "sit_and_reach_cm": {
+        "min": 31,
+        "max": 35
+      },
+      "pullups": {
+        "min": 1,
+        "max": 2
+      },
+      "shuttle_s": {
+        "min": 10.8,
+        "max": 11.1
+      },
+      "run": {
+        "km": null,
+        "min_s": 801,
+        "max_s": 850
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Male",
+    "age_group": "17",
+    "band": null,
+    "grade": "A",
+    "points": 5,
+    "stations": {
+      "situps": {
+        "min": 43,
+        "max": null
+      },
+      "broad_jump_cm": {
+        "min": 250,
+        "max": null
+      },
+      "sit_and_reach_cm": {
+        "min": 49,
+        "max": null
+      },
+      "pullups": {
+        "min": 10,
+        "max": null
+      },
+      "shuttle_s": {
+        "min": null,
+        "max": 10.1
+      },
+      "run": {
+        "km": null,
+        "min_s": null,
+        "max_s": 620
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Male",
+    "age_group": "17",
+    "band": null,
+    "grade": "B",
+    "points": 4,
+    "stations": {
+      "situps": {
+        "min": 40,
+        "max": 42
+      },
+      "broad_jump_cm": {
+        "min": 240,
+        "max": 249
+      },
+      "sit_and_reach_cm": {
+        "min": 45,
+        "max": 48
+      },
+      "pullups": {
+        "min": 8,
+        "max": 9
+      },
+      "shuttle_s": {
+        "min": 10.2,
+        "max": 10.3
+      },
+      "run": {
+        "km": null,
+        "min_s": 621,
+        "max_s": 670
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Male",
+    "age_group": "17",
+    "band": null,
+    "grade": "C",
+    "points": 3,
+    "stations": {
+      "situps": {
+        "min": 37,
+        "max": 39
+      },
+      "broad_jump_cm": {
+        "min": 230,
+        "max": 239
+      },
+      "sit_and_reach_cm": {
+        "min": 41,
+        "max": 44
+      },
+      "pullups": {
+        "min": 6,
+        "max": 7
+      },
+      "shuttle_s": {
+        "min": 10.4,
+        "max": 10.5
+      },
+      "run": {
+        "km": null,
+        "min_s": 671,
+        "max_s": 720
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Male",
+    "age_group": "17",
+    "band": null,
+    "grade": "D",
+    "points": 2,
+    "stations": {
+      "situps": {
+        "min": 34,
+        "max": 36
+      },
+      "broad_jump_cm": {
+        "min": 220,
+        "max": 229
+      },
+      "sit_and_reach_cm": {
+        "min": 37,
+        "max": 40
+      },
+      "pullups": {
+        "min": 4,
+        "max": 5
+      },
+      "shuttle_s": {
+        "min": 10.6,
+        "max": 10.7
+      },
+      "run": {
+        "km": null,
+        "min_s": 721,
+        "max_s": 770
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Male",
+    "age_group": "17",
+    "band": null,
+    "grade": "E",
+    "points": 1,
+    "stations": {
+      "situps": {
+        "min": 31,
+        "max": 33
+      },
+      "broad_jump_cm": {
+        "min": 210,
+        "max": 219
+      },
+      "sit_and_reach_cm": {
+        "min": 32,
+        "max": 36
+      },
+      "pullups": {
+        "min": 2,
+        "max": 3
+      },
+      "shuttle_s": {
+        "min": 10.8,
+        "max": 10.9
+      },
+      "run": {
+        "km": null,
+        "min_s": 771,
+        "max_s": 820
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Male",
+    "age_group": "18",
+    "band": null,
+    "grade": "A",
+    "points": 5,
+    "stations": {
+      "situps": {
+        "min": 43,
+        "max": null
+      },
+      "broad_jump_cm": {
+        "min": 252,
+        "max": null
+      },
+      "sit_and_reach_cm": {
+        "min": 49,
+        "max": null
+      },
+      "pullups": {
+        "min": 11,
+        "max": null
+      },
+      "shuttle_s": {
+        "min": null,
+        "max": 10.1
+      },
+      "run": {
+        "km": null,
+        "min_s": null,
+        "max_s": 620
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Male",
+    "age_group": "18",
+    "band": null,
+    "grade": "B",
+    "points": 4,
+    "stations": {
+      "situps": {
+        "min": 40,
+        "max": 42
+      },
+      "broad_jump_cm": {
+        "min": 242,
+        "max": 251
+      },
+      "sit_and_reach_cm": {
+        "min": 45,
+        "max": 48
+      },
+      "pullups": {
+        "min": 9,
+        "max": 10
+      },
+      "shuttle_s": {
+        "min": 10.2,
+        "max": 10.3
+      },
+      "run": {
+        "km": null,
+        "min_s": 621,
+        "max_s": 670
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Male",
+    "age_group": "18",
+    "band": null,
+    "grade": "C",
+    "points": 3,
+    "stations": {
+      "situps": {
+        "min": 37,
+        "max": 39
+      },
+      "broad_jump_cm": {
+        "min": 232,
+        "max": 241
+      },
+      "sit_and_reach_cm": {
+        "min": 41,
+        "max": 44
+      },
+      "pullups": {
+        "min": 7,
+        "max": 8
+      },
+      "shuttle_s": {
+        "min": 10.4,
+        "max": 10.5
+      },
+      "run": {
+        "km": null,
+        "min_s": 671,
+        "max_s": 710
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Male",
+    "age_group": "18",
+    "band": null,
+    "grade": "D",
+    "points": 2,
+    "stations": {
+      "situps": {
+        "min": 34,
+        "max": 36
+      },
+      "broad_jump_cm": {
+        "min": 222,
+        "max": 231
+      },
+      "sit_and_reach_cm": {
+        "min": 37,
+        "max": 40
+      },
+      "pullups": {
+        "min": 5,
+        "max": 6
+      },
+      "shuttle_s": {
+        "min": 10.6,
+        "max": 10.7
+      },
+      "run": {
+        "km": null,
+        "min_s": 711,
+        "max_s": 760
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Male",
+    "age_group": "18",
+    "band": null,
+    "grade": "E",
+    "points": 1,
+    "stations": {
+      "situps": {
+        "min": 31,
+        "max": 33
+      },
+      "broad_jump_cm": {
+        "min": 212,
+        "max": 221
+      },
+      "sit_and_reach_cm": {
+        "min": 32,
+        "max": 36
+      },
+      "pullups": {
+        "min": 3,
+        "max": 4
+      },
+      "shuttle_s": {
+        "min": 10.8,
+        "max": 10.9
+      },
+      "run": {
+        "km": null,
+        "min_s": 761,
+        "max_s": 810
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Male",
+    "age_group": "19",
+    "band": null,
+    "grade": "A",
+    "points": 5,
+    "stations": {
+      "situps": {
+        "min": 43,
+        "max": null
+      },
+      "broad_jump_cm": {
+        "min": 252,
+        "max": null
+      },
+      "sit_and_reach_cm": {
+        "min": 49,
+        "max": null
+      },
+      "pullups": {
+        "min": 11,
+        "max": null
+      },
+      "shuttle_s": {
+        "min": null,
+        "max": 10.1
+      },
+      "run": {
+        "km": null,
+        "min_s": null,
+        "max_s": 620
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Male",
+    "age_group": "19",
+    "band": null,
+    "grade": "B",
+    "points": 4,
+    "stations": {
+      "situps": {
+        "min": 40,
+        "max": 42
+      },
+      "broad_jump_cm": {
+        "min": 242,
+        "max": 251
+      },
+      "sit_and_reach_cm": {
+        "min": 45,
+        "max": 48
+      },
+      "pullups": {
+        "min": 9,
+        "max": 10
+      },
+      "shuttle_s": {
+        "min": 10.2,
+        "max": 10.3
+      },
+      "run": {
+        "km": null,
+        "min_s": 621,
+        "max_s": 660
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Male",
+    "age_group": "19",
+    "band": null,
+    "grade": "C",
+    "points": 3,
+    "stations": {
+      "situps": {
+        "min": 37,
+        "max": 39
+      },
+      "broad_jump_cm": {
+        "min": 232,
+        "max": 241
+      },
+      "sit_and_reach_cm": {
+        "min": 41,
+        "max": 44
+      },
+      "pullups": {
+        "min": 7,
+        "max": 8
+      },
+      "shuttle_s": {
+        "min": 10.4,
+        "max": 10.5
+      },
+      "run": {
+        "km": null,
+        "min_s": 661,
+        "max_s": 700
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Male",
+    "age_group": "19",
+    "band": null,
+    "grade": "D",
+    "points": 2,
+    "stations": {
+      "situps": {
+        "min": 34,
+        "max": 36
+      },
+      "broad_jump_cm": {
+        "min": 222,
+        "max": 231
+      },
+      "sit_and_reach_cm": {
+        "min": 37,
+        "max": 40
+      },
+      "pullups": {
+        "min": 5,
+        "max": 6
+      },
+      "shuttle_s": {
+        "min": 10.6,
+        "max": 10.7
+      },
+      "run": {
+        "km": null,
+        "min_s": 701,
+        "max_s": 750
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Male",
+    "age_group": "19",
+    "band": null,
+    "grade": "E",
+    "points": 1,
+    "stations": {
+      "situps": {
+        "min": 31,
+        "max": 33
+      },
+      "broad_jump_cm": {
+        "min": 212,
+        "max": 221
+      },
+      "sit_and_reach_cm": {
+        "min": 32,
+        "max": 36
+      },
+      "pullups": {
+        "min": 3,
+        "max": 4
+      },
+      "shuttle_s": {
+        "min": 10.8,
+        "max": 10.9
+      },
+      "run": {
+        "km": null,
+        "min_s": 751,
+        "max_s": 800
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Male",
+    "age_group": "20-24",
+    "band": null,
+    "grade": "A",
+    "points": 5,
+    "stations": {
+      "situps": {
+        "min": 40,
+        "max": null
+      },
+      "broad_jump_cm": {
+        "min": 243,
+        "max": null
+      },
+      "sit_and_reach_cm": {
+        "min": 48,
+        "max": null
+      },
+      "pullups": {
+        "min": 11,
+        "max": null
+      },
+      "shuttle_s": {
+        "min": null,
+        "max": 10.3
+      },
+      "run": {
+        "km": null,
+        "min_s": null,
+        "max_s": 620
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Male",
+    "age_group": "20-24",
+    "band": null,
+    "grade": "B",
+    "points": 4,
+    "stations": {
+      "situps": {
+        "min": 37,
+        "max": 39
+      },
+      "broad_jump_cm": {
+        "min": 234,
+        "max": 242
+      },
+      "sit_and_reach_cm": {
+        "min": 44,
+        "max": 47
+      },
+      "pullups": {
+        "min": 9,
+        "max": 10
+      },
+      "shuttle_s": {
+        "min": 10.4,
+        "max": 10.5
+      },
+      "run": {
+        "km": null,
+        "min_s": 621,
+        "max_s": 660
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Male",
+    "age_group": "20-24",
+    "band": null,
+    "grade": "C",
+    "points": 3,
+    "stations": {
+      "situps": {
+        "min": 34,
+        "max": 36
+      },
+      "broad_jump_cm": {
+        "min": 225,
+        "max": 233
+      },
+      "sit_and_reach_cm": {
+        "min": 40,
+        "max": 43
+      },
+      "pullups": {
+        "min": 7,
+        "max": 8
+      },
+      "shuttle_s": {
+        "min": 10.6,
+        "max": 10.7
+      },
+      "run": {
+        "km": null,
+        "min_s": 661,
+        "max_s": 700
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Male",
+    "age_group": "20-24",
+    "band": null,
+    "grade": "D",
+    "points": 2,
+    "stations": {
+      "situps": {
+        "min": 31,
+        "max": 33
+      },
+      "broad_jump_cm": {
+        "min": 216,
+        "max": 224
+      },
+      "sit_and_reach_cm": {
+        "min": 36,
+        "max": 39
+      },
+      "pullups": {
+        "min": 5,
+        "max": 6
+      },
+      "shuttle_s": {
+        "min": 10.8,
+        "max": 10.9
+      },
+      "run": {
+        "km": null,
+        "min_s": 701,
+        "max_s": 740
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Male",
+    "age_group": "20-24",
+    "band": null,
+    "grade": "E",
+    "points": 1,
+    "stations": {
+      "situps": {
+        "min": 28,
+        "max": 30
+      },
+      "broad_jump_cm": {
+        "min": 207,
+        "max": 215
+      },
+      "sit_and_reach_cm": {
+        "min": 32,
+        "max": 35
+      },
+      "pullups": {
+        "min": 3,
+        "max": 4
+      },
+      "shuttle_s": {
+        "min": 11,
+        "max": 11.1
+      },
+      "run": {
+        "km": null,
+        "min_s": 741,
+        "max_s": 780
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Female",
+    "age_group": "12",
+    "band": null,
+    "grade": "A",
+    "points": 5,
+    "stations": {
+      "situps": {
+        "min": 30,
+        "max": null
+      },
+      "broad_jump_cm": {
+        "min": 168,
+        "max": null
+      },
+      "sit_and_reach_cm": {
+        "min": 40,
+        "max": null
+      },
+      "pullups": {
+        "min": 16,
+        "max": null
+      },
+      "shuttle_s": {
+        "min": null,
+        "max": 11.4
+      },
+      "run": {
+        "km": null,
+        "min_s": null,
+        "max_s": 880
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Female",
+    "age_group": "12",
+    "band": null,
+    "grade": "B",
+    "points": 4,
+    "stations": {
+      "situps": {
+        "min": 25,
+        "max": 29
+      },
+      "broad_jump_cm": {
+        "min": 159,
+        "max": 167
+      },
+      "sit_and_reach_cm": {
+        "min": 37,
+        "max": 39
+      },
+      "pullups": {
+        "min": 13,
+        "max": 15
+      },
+      "shuttle_s": {
+        "min": 11.5,
+        "max": 11.9
+      },
+      "run": {
+        "km": null,
+        "min_s": 881,
+        "max_s": 940
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Female",
+    "age_group": "12",
+    "band": null,
+    "grade": "C",
+    "points": 3,
+    "stations": {
+      "situps": {
+        "min": 21,
+        "max": 24
+      },
+      "broad_jump_cm": {
+        "min": 150,
+        "max": 158
+      },
+      "sit_and_reach_cm": {
+        "min": 34,
+        "max": 36
+      },
+      "pullups": {
+        "min": 10,
+        "max": 12
+      },
+      "shuttle_s": {
+        "min": 12,
+        "max": 12.3
+      },
+      "run": {
+        "km": null,
+        "min_s": 941,
+        "max_s": 1000
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Female",
+    "age_group": "12",
+    "band": null,
+    "grade": "D",
+    "points": 2,
+    "stations": {
+      "situps": {
+        "min": 17,
+        "max": 20
+      },
+      "broad_jump_cm": {
+        "min": 141,
+        "max": 149
+      },
+      "sit_and_reach_cm": {
+        "min": 30,
+        "max": 33
+      },
+      "pullups": {
+        "min": 7,
+        "max": 9
+      },
+      "shuttle_s": {
+        "min": 12.4,
+        "max": 12.7
+      },
+      "run": {
+        "km": null,
+        "min_s": 1001,
+        "max_s": 1060
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Female",
+    "age_group": "12",
+    "band": null,
+    "grade": "E",
+    "points": 1,
+    "stations": {
+      "situps": {
+        "min": 13,
+        "max": 16
+      },
+      "broad_jump_cm": {
+        "min": 132,
+        "max": 140
+      },
+      "sit_and_reach_cm": {
+        "min": 23,
+        "max": 27
+      },
+      "pullups": {
+        "min": 3,
+        "max": 6
+      },
+      "shuttle_s": {
+        "min": 12.8,
+        "max": 13.2
+      },
+      "run": {
+        "km": null,
+        "min_s": 1061,
+        "max_s": 1120
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Female",
+    "age_group": "13",
+    "band": null,
+    "grade": "A",
+    "points": 5,
+    "stations": {
+      "situps": {
+        "min": 31,
+        "max": null
+      },
+      "broad_jump_cm": {
+        "min": 171,
+        "max": null
+      },
+      "sit_and_reach_cm": {
+        "min": 42,
+        "max": null
+      },
+      "pullups": {
+        "min": 17,
+        "max": null
+      },
+      "shuttle_s": {
+        "min": null,
+        "max": 11.2
+      },
+      "run": {
+        "km": null,
+        "min_s": null,
+        "max_s": 870
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Female",
+    "age_group": "13",
+    "band": null,
+    "grade": "B",
+    "points": 4,
+    "stations": {
+      "situps": {
+        "min": 26,
+        "max": 30
+      },
+      "broad_jump_cm": {
+        "min": 162,
+        "max": 170
+      },
+      "sit_and_reach_cm": {
+        "min": 39,
+        "max": 41
+      },
+      "pullups": {
+        "min": 13,
+        "max": 16
+      },
+      "shuttle_s": {
+        "min": 11.3,
+        "max": 11.7
+      },
+      "run": {
+        "km": null,
+        "min_s": 871,
+        "max_s": 930
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Female",
+    "age_group": "13",
+    "band": null,
+    "grade": "C",
+    "points": 3,
+    "stations": {
+      "situps": {
+        "min": 22,
+        "max": 25
+      },
+      "broad_jump_cm": {
+        "min": 153,
+        "max": 161
+      },
+      "sit_and_reach_cm": {
+        "min": 36,
+        "max": 38
+      },
+      "pullups": {
+        "min": 10,
+        "max": 12
+      },
+      "shuttle_s": {
+        "min": 11.8,
+        "max": 12.2
+      },
+      "run": {
+        "km": null,
+        "min_s": 931,
+        "max_s": 990
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Female",
+    "age_group": "13",
+    "band": null,
+    "grade": "D",
+    "points": 2,
+    "stations": {
+      "situps": {
+        "min": 18,
+        "max": 21
+      },
+      "broad_jump_cm": {
+        "min": 144,
+        "max": 152
+      },
+      "sit_and_reach_cm": {
+        "min": 32,
+        "max": 35
+      },
+      "pullups": {
+        "min": 7,
+        "max": 9
+      },
+      "shuttle_s": {
+        "min": 12.3,
+        "max": 12.7
+      },
+      "run": {
+        "km": null,
+        "min_s": 991,
+        "max_s": 1050
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Female",
+    "age_group": "13",
+    "band": null,
+    "grade": "E",
+    "points": 1,
+    "stations": {
+      "situps": {
+        "min": 14,
+        "max": 17
+      },
+      "broad_jump_cm": {
+        "min": 135,
+        "max": 143
+      },
+      "sit_and_reach_cm": {
+        "min": 27,
+        "max": 31
+      },
+      "pullups": {
+        "min": 3,
+        "max": 6
+      },
+      "shuttle_s": {
+        "min": 12.8,
+        "max": 13.2
+      },
+      "run": {
+        "km": null,
+        "min_s": 1051,
+        "max_s": 1110
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Female",
+    "age_group": "14",
+    "band": null,
+    "grade": "A",
+    "points": 5,
+    "stations": {
+      "situps": {
+        "min": 31,
+        "max": null
+      },
+      "broad_jump_cm": {
+        "min": 178,
+        "max": null
+      },
+      "sit_and_reach_cm": {
+        "min": 44,
+        "max": null
+      },
+      "pullups": {
+        "min": 17,
+        "max": null
+      },
+      "shuttle_s": {
+        "min": null,
+        "max": 11.4
+      },
+      "run": {
+        "km": null,
+        "min_s": null,
+        "max_s": 860
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Female",
+    "age_group": "14",
+    "band": null,
+    "grade": "B",
+    "points": 4,
+    "stations": {
+      "situps": {
+        "min": 28,
+        "max": 30
+      },
+      "broad_jump_cm": {
+        "min": 169,
+        "max": 177
+      },
+      "sit_and_reach_cm": {
+        "min": 41,
+        "max": 43
+      },
+      "pullups": {
+        "min": 14,
+        "max": 16
+      },
+      "shuttle_s": {
+        "min": 11.5,
+        "max": 11.8
+      },
+      "run": {
+        "km": null,
+        "min_s": 861,
+        "max_s": 920
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Female",
+    "age_group": "14",
+    "band": null,
+    "grade": "C",
+    "points": 3,
+    "stations": {
+      "situps": {
+        "min": 24,
+        "max": 27
+      },
+      "broad_jump_cm": {
+        "min": 160,
+        "max": 168
+      },
+      "sit_and_reach_cm": {
+        "min": 38,
+        "max": 40
+      },
+      "pullups": {
+        "min": 10,
+        "max": 13
+      },
+      "shuttle_s": {
+        "min": 11.9,
+        "max": 12.2
+      },
+      "run": {
+        "km": null,
+        "min_s": 921,
+        "max_s": 980
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Female",
+    "age_group": "14",
+    "band": null,
+    "grade": "D",
+    "points": 2,
+    "stations": {
+      "situps": {
+        "min": 20,
+        "max": 23
+      },
+      "broad_jump_cm": {
+        "min": 151,
+        "max": 159
+      },
+      "sit_and_reach_cm": {
+        "min": 34,
+        "max": 37
+      },
+      "pullups": {
+        "min": 7,
+        "max": 9
+      },
+      "shuttle_s": {
+        "min": 12.3,
+        "max": 12.6
+      },
+      "run": {
+        "km": null,
+        "min_s": 981,
+        "max_s": 1040
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Female",
+    "age_group": "14",
+    "band": null,
+    "grade": "E",
+    "points": 1,
+    "stations": {
+      "situps": {
+        "min": 16,
+        "max": 19
+      },
+      "broad_jump_cm": {
+        "min": 142,
+        "max": 150
+      },
+      "sit_and_reach_cm": {
+        "min": 29,
+        "max": 33
+      },
+      "pullups": {
+        "min": 3,
+        "max": 6
+      },
+      "shuttle_s": {
+        "min": 12.7,
+        "max": 13
+      },
+      "run": {
+        "km": null,
+        "min_s": 1041,
+        "max_s": 1100
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Female",
+    "age_group": "15",
+    "band": null,
+    "grade": "A",
+    "points": 5,
+    "stations": {
+      "situps": {
+        "min": 31,
+        "max": null
+      },
+      "broad_jump_cm": {
+        "min": 183,
+        "max": null
+      },
+      "sit_and_reach_cm": {
+        "min": 46,
+        "max": null
+      },
+      "pullups": {
+        "min": 17,
+        "max": null
+      },
+      "shuttle_s": {
+        "min": null,
+        "max": 11.2
+      },
+      "run": {
+        "km": null,
+        "min_s": null,
+        "max_s": 840
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Female",
+    "age_group": "15",
+    "band": null,
+    "grade": "B",
+    "points": 4,
+    "stations": {
+      "situps": {
+        "min": 29,
+        "max": 30
+      },
+      "broad_jump_cm": {
+        "min": 174,
+        "max": 182
+      },
+      "sit_and_reach_cm": {
+        "min": 43,
+        "max": 45
+      },
+      "pullups": {
+        "min": 14,
+        "max": 16
+      },
+      "shuttle_s": {
+        "min": 11.3,
+        "max": 11.5
+      },
+      "run": {
+        "km": null,
+        "min_s": 841,
+        "max_s": 900
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Female",
+    "age_group": "15",
+    "band": null,
+    "grade": "C",
+    "points": 3,
+    "stations": {
+      "situps": {
+        "min": 25,
+        "max": 28
+      },
+      "broad_jump_cm": {
+        "min": 165,
+        "max": 173
+      },
+      "sit_and_reach_cm": {
+        "min": 39,
+        "max": 42
+      },
+      "pullups": {
+        "min": 10,
+        "max": 13
+      },
+      "shuttle_s": {
+        "min": 11.6,
+        "max": 11.8
+      },
+      "run": {
+        "km": null,
+        "min_s": 901,
+        "max_s": 960
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Female",
+    "age_group": "15",
+    "band": null,
+    "grade": "D",
+    "points": 2,
+    "stations": {
+      "situps": {
+        "min": 21,
+        "max": 24
+      },
+      "broad_jump_cm": {
+        "min": 156,
+        "max": 164
+      },
+      "sit_and_reach_cm": {
+        "min": 35,
+        "max": 38
+      },
+      "pullups": {
+        "min": 7,
+        "max": 10
+      },
+      "shuttle_s": {
+        "min": 11.9,
+        "max": 12.2
+      },
+      "run": {
+        "km": null,
+        "min_s": 961,
+        "max_s": 1020
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Female",
+    "age_group": "15",
+    "band": null,
+    "grade": "E",
+    "points": 1,
+    "stations": {
+      "situps": {
+        "min": 17,
+        "max": 20
+      },
+      "broad_jump_cm": {
+        "min": 147,
+        "max": 155
+      },
+      "sit_and_reach_cm": {
+        "min": 30,
+        "max": 34
+      },
+      "pullups": {
+        "min": 3,
+        "max": 6
+      },
+      "shuttle_s": {
+        "min": 12.3,
+        "max": 12.6
+      },
+      "run": {
+        "km": null,
+        "min_s": 1021,
+        "max_s": 1070
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Female",
+    "age_group": "17",
+    "band": null,
+    "grade": "A",
+    "points": 5,
+    "stations": {
+      "situps": {
+        "min": 31,
+        "max": null
+      },
+      "broad_jump_cm": {
+        "min": 190,
+        "max": null
+      },
+      "sit_and_reach_cm": {
+        "min": 47,
+        "max": null
+      },
+      "pullups": {
+        "min": 18,
+        "max": null
+      },
+      "shuttle_s": {
+        "min": null,
+        "max": 11.2
+      },
+      "run": {
+        "km": null,
+        "min_s": null,
+        "max_s": 840
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Female",
+    "age_group": "17",
+    "band": null,
+    "grade": "B",
+    "points": 4,
+    "stations": {
+      "situps": {
+        "min": 29,
+        "max": 30
+      },
+      "broad_jump_cm": {
+        "min": 181,
+        "max": 189
+      },
+      "sit_and_reach_cm": {
+        "min": 44,
+        "max": 46
+      },
+      "pullups": {
+        "min": 14,
+        "max": 17
+      },
+      "shuttle_s": {
+        "min": 11.3,
+        "max": 11.5
+      },
+      "run": {
+        "km": null,
+        "min_s": 841,
+        "max_s": 890
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Female",
+    "age_group": "17",
+    "band": null,
+    "grade": "C",
+    "points": 3,
+    "stations": {
+      "situps": {
+        "min": 27,
+        "max": 28
+      },
+      "broad_jump_cm": {
+        "min": 172,
+        "max": 180
+      },
+      "sit_and_reach_cm": {
+        "min": 40,
+        "max": 43
+      },
+      "pullups": {
+        "min": 11,
+        "max": 13
+      },
+      "shuttle_s": {
+        "min": 11.6,
+        "max": 11.8
+      },
+      "run": {
+        "km": null,
+        "min_s": 891,
+        "max_s": 950
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Female",
+    "age_group": "17",
+    "band": null,
+    "grade": "D",
+    "points": 2,
+    "stations": {
+      "situps": {
+        "min": 23,
+        "max": 26
+      },
+      "broad_jump_cm": {
+        "min": 163,
+        "max": 171
+      },
+      "sit_and_reach_cm": {
+        "min": 36,
+        "max": 39
+      },
+      "pullups": {
+        "min": 7,
+        "max": 10
+      },
+      "shuttle_s": {
+        "min": 11.9,
+        "max": 12.1
+      },
+      "run": {
+        "km": null,
+        "min_s": 951,
+        "max_s": 1000
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Female",
+    "age_group": "17",
+    "band": null,
+    "grade": "E",
+    "points": 1,
+    "stations": {
+      "situps": {
+        "min": 19,
+        "max": 22
+      },
+      "broad_jump_cm": {
+        "min": 154,
+        "max": 162
+      },
+      "sit_and_reach_cm": {
+        "min": 32,
+        "max": 35
+      },
+      "pullups": {
+        "min": 3,
+        "max": 6
+      },
+      "shuttle_s": {
+        "min": 12.2,
+        "max": 12.5
+      },
+      "run": {
+        "km": null,
+        "min_s": 1001,
+        "max_s": 1050
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Female",
+    "age_group": "18",
+    "band": null,
+    "grade": "A",
+    "points": 5,
+    "stations": {
+      "situps": {
+        "min": 31,
+        "max": null
+      },
+      "broad_jump_cm": {
+        "min": 193,
+        "max": null
+      },
+      "sit_and_reach_cm": {
+        "min": 47,
+        "max": null
+      },
+      "pullups": {
+        "min": 18,
+        "max": null
+      },
+      "shuttle_s": {
+        "min": null,
+        "max": 11.2
+      },
+      "run": {
+        "km": null,
+        "min_s": null,
+        "max_s": 840
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Female",
+    "age_group": "18",
+    "band": null,
+    "grade": "B",
+    "points": 4,
+    "stations": {
+      "situps": {
+        "min": 29,
+        "max": 30
+      },
+      "broad_jump_cm": {
+        "min": 183,
+        "max": 192
+      },
+      "sit_and_reach_cm": {
+        "min": 44,
+        "max": 46
+      },
+      "pullups": {
+        "min": 15,
+        "max": 17
+      },
+      "shuttle_s": {
+        "min": 11.3,
+        "max": 11.5
+      },
+      "run": {
+        "km": null,
+        "min_s": 841,
+        "max_s": 890
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Female",
+    "age_group": "18",
+    "band": null,
+    "grade": "C",
+    "points": 3,
+    "stations": {
+      "situps": {
+        "min": 27,
+        "max": 28
+      },
+      "broad_jump_cm": {
+        "min": 174,
+        "max": 182
+      },
+      "sit_and_reach_cm": {
+        "min": 40,
+        "max": 43
+      },
+      "pullups": {
+        "min": 11,
+        "max": 14
+      },
+      "shuttle_s": {
+        "min": 11.6,
+        "max": 11.8
+      },
+      "run": {
+        "km": null,
+        "min_s": 891,
+        "max_s": 940
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Female",
+    "age_group": "18",
+    "band": null,
+    "grade": "D",
+    "points": 2,
+    "stations": {
+      "situps": {
+        "min": 24,
+        "max": 26
+      },
+      "broad_jump_cm": {
+        "min": 165,
+        "max": 173
+      },
+      "sit_and_reach_cm": {
+        "min": 36,
+        "max": 39
+      },
+      "pullups": {
+        "min": 8,
+        "max": 10
+      },
+      "shuttle_s": {
+        "min": 11.9,
+        "max": 12.1
+      },
+      "run": {
+        "km": null,
+        "min_s": 941,
+        "max_s": 990
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Female",
+    "age_group": "18",
+    "band": null,
+    "grade": "E",
+    "points": 1,
+    "stations": {
+      "situps": {
+        "min": 20,
+        "max": 23
+      },
+      "broad_jump_cm": {
+        "min": 156,
+        "max": 164
+      },
+      "sit_and_reach_cm": {
+        "min": 32,
+        "max": 35
+      },
+      "pullups": {
+        "min": 4,
+        "max": 7
+      },
+      "shuttle_s": {
+        "min": 12.2,
+        "max": 12.4
+      },
+      "run": {
+        "km": null,
+        "min_s": 991,
+        "max_s": 1040
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Female",
+    "age_group": "19",
+    "band": null,
+    "grade": "A",
+    "points": 5,
+    "stations": {
+      "situps": {
+        "min": 31,
+        "max": null
+      },
+      "broad_jump_cm": {
+        "min": 196,
+        "max": null
+      },
+      "sit_and_reach_cm": {
+        "min": 46,
+        "max": null
+      },
+      "pullups": {
+        "min": 18,
+        "max": null
+      },
+      "shuttle_s": {
+        "min": null,
+        "max": 11.2
+      },
+      "run": {
+        "km": null,
+        "min_s": null,
+        "max_s": 860
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Female",
+    "age_group": "19",
+    "band": null,
+    "grade": "B",
+    "points": 4,
+    "stations": {
+      "situps": {
+        "min": 29,
+        "max": 30
+      },
+      "broad_jump_cm": {
+        "min": 185,
+        "max": 195
+      },
+      "sit_and_reach_cm": {
+        "min": 43,
+        "max": 45
+      },
+      "pullups": {
+        "min": 15,
+        "max": 17
+      },
+      "shuttle_s": {
+        "min": 11.3,
+        "max": 11.5
+      },
+      "run": {
+        "km": null,
+        "min_s": 861,
+        "max_s": 890
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Female",
+    "age_group": "19",
+    "band": null,
+    "grade": "C",
+    "points": 3,
+    "stations": {
+      "situps": {
+        "min": 27,
+        "max": 28
+      },
+      "broad_jump_cm": {
+        "min": 174,
+        "max": 184
+      },
+      "sit_and_reach_cm": {
+        "min": 39,
+        "max": 42
+      },
+      "pullups": {
+        "min": 11,
+        "max": 14
+      },
+      "shuttle_s": {
+        "min": 11.6,
+        "max": 11.8
+      },
+      "run": {
+        "km": null,
+        "min_s": 891,
+        "max_s": 930
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Female",
+    "age_group": "19",
+    "band": null,
+    "grade": "D",
+    "points": 2,
+    "stations": {
+      "situps": {
+        "min": 24,
+        "max": 26
+      },
+      "broad_jump_cm": {
+        "min": 165,
+        "max": 173
+      },
+      "sit_and_reach_cm": {
+        "min": 36,
+        "max": 38
+      },
+      "pullups": {
+        "min": 8,
+        "max": 10
+      },
+      "shuttle_s": {
+        "min": 11.9,
+        "max": 12.1
+      },
+      "run": {
+        "km": null,
+        "min_s": 931,
+        "max_s": 980
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Female",
+    "age_group": "19",
+    "band": null,
+    "grade": "E",
+    "points": 1,
+    "stations": {
+      "situps": {
+        "min": 21,
+        "max": 23
+      },
+      "broad_jump_cm": {
+        "min": 156,
+        "max": 164
+      },
+      "sit_and_reach_cm": {
+        "min": 32,
+        "max": 35
+      },
+      "pullups": {
+        "min": 5,
+        "max": 7
+      },
+      "shuttle_s": {
+        "min": 12.2,
+        "max": 12.4
+      },
+      "run": {
+        "km": null,
+        "min_s": 981,
+        "max_s": 1030
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Female",
+    "age_group": "20-24",
+    "band": null,
+    "grade": "A",
+    "points": 5,
+    "stations": {
+      "situps": {
+        "min": 29,
+        "max": null
+      },
+      "broad_jump_cm": {
+        "min": 198,
+        "max": null
+      },
+      "sit_and_reach_cm": {
+        "min": 44,
+        "max": null
+      },
+      "pullups": {
+        "min": 18,
+        "max": null
+      },
+      "shuttle_s": {
+        "min": null,
+        "max": 11.5
+      },
+      "run": {
+        "km": null,
+        "min_s": null,
+        "max_s": 900
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Female",
+    "age_group": "20-24",
+    "band": null,
+    "grade": "B",
+    "points": 4,
+    "stations": {
+      "situps": {
+        "min": 27,
+        "max": 28
+      },
+      "broad_jump_cm": {
+        "min": 186,
+        "max": 197
+      },
+      "sit_and_reach_cm": {
+        "min": 41,
+        "max": 43
+      },
+      "pullups": {
+        "min": 15,
+        "max": 17
+      },
+      "shuttle_s": {
+        "min": 11.6,
+        "max": 11.8
+      },
+      "run": {
+        "km": null,
+        "min_s": 901,
+        "max_s": 930
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Female",
+    "age_group": "20-24",
+    "band": null,
+    "grade": "C",
+    "points": 3,
+    "stations": {
+      "situps": {
+        "min": 25,
+        "max": 26
+      },
+      "broad_jump_cm": {
+        "min": 174,
+        "max": 185
+      },
+      "sit_and_reach_cm": {
+        "min": 38,
+        "max": 40
+      },
+      "pullups": {
+        "min": 11,
+        "max": 14
+      },
+      "shuttle_s": {
+        "min": 11.9,
+        "max": 12.1
+      },
+      "run": {
+        "km": null,
+        "min_s": 931,
+        "max_s": 960
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Female",
+    "age_group": "20-24",
+    "band": null,
+    "grade": "D",
+    "points": 2,
+    "stations": {
+      "situps": {
+        "min": 23,
+        "max": 24
+      },
+      "broad_jump_cm": {
+        "min": 162,
+        "max": 173
+      },
+      "sit_and_reach_cm": {
+        "min": 35,
+        "max": 37
+      },
+      "pullups": {
+        "min": 8,
+        "max": 10
+      },
+      "shuttle_s": {
+        "min": 12.2,
+        "max": 12.4
+      },
+      "run": {
+        "km": null,
+        "min_s": 961,
+        "max_s": 990
+      }
+    }
+  },
+  {
+    "level": "Secondary",
+    "sex": "Female",
+    "age_group": "20-24",
+    "band": null,
+    "grade": "E",
+    "points": 1,
+    "stations": {
+      "situps": {
+        "min": 21,
+        "max": 22
+      },
+      "broad_jump_cm": {
+        "min": 150,
+        "max": 161
+      },
+      "sit_and_reach_cm": {
+        "min": 31,
+        "max": 34
+      },
+      "pullups": {
+        "min": 5,
+        "max": 7
+      },
+      "shuttle_s": {
+        "min": 12.5,
+        "max": 12.7
+      },
+      "run": {
+        "km": null,
+        "min_s": 991,
+        "max_s": 1020
+      }
+    }
+  }
+]

@@ -46,7 +46,7 @@ export default function ModifyUser({ user }) {
             if (platformOwner) {
                 const { data, error } = await supabase
                     .from('schools')
-                    .select('id, name')
+                    .select('id, name, type')
                     .order('name');
                 if (error) {
                     console.error('Failed to load schools:', error.message);
@@ -57,7 +57,7 @@ export default function ModifyUser({ user }) {
             } else {
                 const { data, error } = await supabase
                     .from('memberships')
-                    .select('role, schools:schools!inner(id, name)')
+                    .select('role, schools:schools!inner(id, name, type)')
                     .eq('user_id', user.id)
                     .in('role', ['admin','superadmin']);
                 if (error) {
@@ -366,26 +366,34 @@ export default function ModifyUser({ user }) {
             <section className="border rounded-lg p-4 bg-white shadow-sm">
               <h2 className="text-lg font-semibold mb-3">Context</h2>
               <div className="grid gap-3 md:grid-cols-2">
-                <label className="text-sm">
-                  School
-                  <select value={schoolId} onChange={(e)=>{ setSchoolId(e.target.value); setPage(1) }} className="border rounded p-2 w-full mt-1">
-                    <option value="">Select a school</option>
-                    {schools.map((s) => (<option key={s.id} value={s.id}>{s.name}</option>))}
-                  </select>
-                </label>
-                <div className="text-sm text-gray-700 border rounded p-3 bg-gray-50">
-                  <div className="font-medium mb-1">Role legend</div>
-                  <div className="flex flex-wrap gap-3">
-                    <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-800">admin/superadmin</span>
-                    <span>Manage students, enrollments, sessions & roster; record scores.</span>
-                  </div>
-                  <div className="flex flex-wrap gap-3 mt-2">
-                    <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-800">score_taker</span>
-                    <span>Record scores when session is Active; cannot manage roster.</span>
-                  </div>
-                </div>
-              </div>
-            </section>
+  <label className="text-sm">
+    School
+    <select value={schoolId} onChange={(e)=>{ setSchoolId(e.target.value); setPage(1) }} className="border rounded p-2 w-full mt-1">
+      <option value="">Select a school</option>
+      {schools.map((s) => (<option key={s.id} value={s.id}>{s.name}</option>))}
+    </select>
+    <div className="text-xs text-gray-600 mt-1">
+      {(() => {
+        const s = (schools || []).find(x => x.id === schoolId);
+        if (!s) return null;
+        const label = s.type === 'primary' ? 'Primary' : (s.type === 'secondaryJC' ? 'Secondary/JC' : (s.type || '-'));
+        const tone = s.type === "primary" ? "bg-green-50 text-green-700 border-green-200" : "bg-gray-100 text-gray-700 border-gray-300";
+        return (<span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border ${tone}`}>{label}</span>);
+      })()}
+    </div>
+  </label>
+  <div className="text-sm text-gray-700 border rounded p-3 bg-gray-50">
+    <div className="font-medium mb-1">Role legend</div>
+    <div className="flex flex-wrap gap-3">
+      <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-800">admin/superadmin</span>
+      <span>Manage students, enrollments, sessions & roster; record scores.</span>
+    </div>
+    <div className="flex flex-wrap gap-3 mt-2">
+      <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-800">score_taker</span>
+      <span>Record scores when session is Active; cannot manage roster.</span>
+    </div>
+  </div>
+</div>            </section>
 
             {/* Add user moved to modal; use button in list header */}
 
@@ -574,6 +582,11 @@ export default function ModifyUser({ user }) {
         </main>
     );
 }
+
+
+
+
+
 
 
 

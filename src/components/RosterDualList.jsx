@@ -1,5 +1,6 @@
 ﻿import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
+import { normalizeStudentId } from "../utils/ids";
 
 export default function RosterDualList({ user, session, membership, canManage, onProfileCards }) {
   const sessionId = session?.id;
@@ -224,7 +225,7 @@ export default function RosterDualList({ user, session, membership, canManage, o
                 ) : leftPaged.rows.map(s => (
                   <tr key={s.id} className="hover:bg-gray-50">
                     <td className="px-3 py-2 border"><input type="checkbox" checked={leftSelected.has(s.id)} onChange={() => toggleLeft(s.id)} /></td>
-                    <td className="px-3 py-2 border whitespace-nowrap">{s.student_identifier}</td>
+                    <td className="px-3 py-2 border whitespace-nowrap">{normalizeStudentId(s.student_identifier)}</td>
                     <td className="px-3 py-2 border">{s.name}</td>
                     <td className="px-3 py-2 border">{s.class || ''}</td>
                   </tr>
@@ -280,7 +281,7 @@ export default function RosterDualList({ user, session, membership, canManage, o
                         <input type="checkbox" checked={rightSelected.has(s.id)} onChange={() => toggleRight(s.id)} />
                       )}
                     </td>
-                    <td className="px-3 py-2 border whitespace-nowrap">{s.student_identifier}</td>
+                    <td className="px-3 py-2 border whitespace-nowrap">{normalizeStudentId(s.student_identifier)}</td>
                     <td className="px-3 py-2 border">
                       {s.name}
                       {scoredSet.has(s.id) && <span className="ml-2 text-[11px] text-green-700" title="Has scores">scored</span>}
@@ -413,6 +414,7 @@ function LockIcon({ title }) {
     </svg>
   );
 }
+
 
 
 
