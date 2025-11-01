@@ -1,0 +1,62 @@
+Instruction:,,,,,,,,,,,,,,*END*
+1. Please do not delete any Rows or columns. You can upload the partially filled data.,,,,,,,,,,,,,,*END*
+     The system will validate and if there are any errors the system will promot and will automatically update the records without error.,,,,,,,,,,,,,,*END*
+2. When the downloaded file is re-uploaded existing values will be replaced with the new values.,,,,,,,,,,,,,,*END*
+3. Attendance status should be one of the following values (P/A/L/O/H/E),,,,,,,,,,,,,,*END*
+     P - Present,,,,,,,,,,,,,,*END*
+     A - Absent,,,,,,,,,,,,,,*END*
+     L - Long Term MC,,,,,,,,,,,,,,*END*
+     O - Short Term MC,,,,,,,,,,,,,,*END*
+     E - Special Case,,,,,,,,,,,,,,*END*
+     H - Pending appointment Student Health Services,,,,,,,,,,,,,,*END*
+4. Please save your updated file in CSV(Comma delimited) format only.,,,,,,,,,,,,,,*END*
+5.  The value of Sit Up reps should be numeric and it can be up to 2 digits. ,,,,,,,,,,,,,,*END*
+6.  The value of Broad Jump should be numeric and it can be up to 3 digits. ,,,,,,,,,,,,,,*END*
+7.  The value of Sit& Reach should be numeric and it can be up to 2 digits. ,,,,,,,,,,,,,,*END*
+8.  The value of IPU/Push-up reps should be numeric and it can be up to 2 digits. (Applicable for PRE-U) ,,,,,,,,,,,,,,*END*
+9.  The value of IPU/Pull-up reps should be numeric and it can be up to 2 digits. ,,,,,,,,,,,,,,*END*
+10. The value of Shuttle Run time should be numeric and it has to be either 2 or 3 digits with 1 decimal place allowed,,,,,,,,,,,,,,*END*
+11. The value of 1.6/2.4 km Run should be numeric and it has to be either 3 or 4 digits e.g. 10 Minutes and 45 seconds will be entered as 1045,,,,,,,,,,,,,,*END*
+     another example 9 minute 45 seconds will be entered as 945 ,,,,,,,,,,,,,,*END*
+No,Name,ID,Class,Gender,DOB,Attendance Status,Sit Up reps xx,Broad Jump cm xxx,Sit& Reach cm xx,IPU/Pull-up reps xx,Shuttle Run sec xx.x,1.6/2.4 Km Run MMSS,PFT Test Date(DD/MM/YYYY),*END*
+1,d1,14101010,P4-D,F,30/4/2015,P,29,131,32,22,11.7,1058,9/4/2025,*END*
+2,d2,14101011,P4-D,F,12/1/2015,P,27,151,38,15,12.1,1116,9/4/2025,*END*
+3,d3,14101012,P4-D,F,26/1/2015,P,28,141,31,12,11.4,838,9/4/2025,*END*
+4,d4,14101013,P4-D,F,10/7/2015,P,20,142,28,10,11.7,818,9/4/2025,*END*
+5,d5,14101014,P4-D,F,7/12/2015,P,30,152,33,16,11.4,821,9/4/2025,*END*
+6,d6,14101015,P4-D,F,22/10/2015,P,27,133,33,10,11.9,831,9/4/2025,*END*
+7,d7,14101016,P4-D,F,28/12/2015,P,14,121,29,10,12.9,1222,9/4/2025,*END*
+8,d8,14101017,P4-D,F,11/6/2015,P,26,137,32,16,12.4,1103,9/4/2025,*END*
+9,d9,14101018,P4-D,F,15/3/2015,P,21,152,39,14,11.2,1220,9/4/2025,*END*
+10,d10,14101019,P4-D,F,5/8/2015,P,23,151,39,26,11.8,914,9/4/2025,*END*
+11,d11,14101020,P4-D,F,24/12/2015,P,32,159,28,34,11.1,1005,9/4/2025,*END*
+12,d12,14101021,P4-D,F,19/12/2014,P,14,135,42,6,13.5,1400,9/4/2025,*END*
+13,d13,14101022,P4-D,F,28/1/2015,P,20,138,34,15,12,1150,9/4/2025,*END*
+14,d14,14101023,P4-D,F,14/5/2015,P,12,125,32,11,13.4,1231,9/4/2025,*END*
+15,d15,14101024,P4-D,F,24/12/2015,P,22,120,32,12,13.1,1229,9/4/2025,*END*
+16,d16,14101025,P4-D,F,14/2/2015,P,24,154,42,18,10.8,907,9/4/2025,*END*
+17,d17,14101026,P4-D,F,29/5/2015,P,23,154,33,11,12.2,1142,9/4/2025,*END*
+18,d18,14101027,P4-D,F,14/2/2015,P,3,104,28,7,13.2,1153,9/4/2025,*END*
+19,d19,14101028,P4-D,F,17/2/2015,P,15,119,32,6,13.1,1438,9/4/2025,*END*
+20,d20,14101029,P4-D,F,28/1/2015,P,20,143,44,5,12,947,9/4/2025,*END*
+21,d21,14101030,P4-D,F,25/3/2015,P,23,140,35,13,12.2,1214,9/4/2025,*END*
+22,d22,14101031,P4-D,F,12/11/2015,P,30,165,34,20,12.4,1130,9/4/2025,*END*
+23,d23,14101032,P4-D,M,10/4/2015,P,16,133,31,11,12.2,1044,9/4/2025,*END*
+24,d24,14101033,P4-D,M,24/1/2015,P,24,152,35,9,12.6,940,9/4/2025,*END*
+25,d25,14101034,P4-D,M,31/3/2015,P,28,152,28,16,10.9,820,9/4/2025,*END*
+26,d26,14101035,P4-D,M,2/10/2015,P,20,138,31,6,13.4,1250,9/4/2025,*END*
+27,d27,14101036,P4-D,M,27/3/2015,P,30,137,30,17,12.2,1203,9/4/2025,*END*
+28,d28,14101037,P4-D,M,20/9/2015,P,25,151,31,17,11.3,822,9/4/2025,*END*
+29,d29,14101038,P4-D,M,23/4/2015,P,30,148,29,15,11.6,800,9/4/2025,*END*
+30,d30,14101039,P4-D,M,4/10/2015,P,20,132,26,12,12.7,1328,9/4/2025,*END*
+31,d31,14101040,P4-D,M,30/6/2015,P,33,181,25,27,11.2,854,9/4/2025,*END*
+32,d32,14101041,P4-D,M,15/11/2015,P,26,130,32,3,12.7,1316,9/4/2025,*END*
+33,d33,14101042,P4-D,M,2/1/2015,P,20,153,25,21,11.9,1011,9/4/2025,*END*
+34,d34,14101043,P4-D,M,20/4/2015,P,27,154,34,15,11.7,1135,9/4/2025,*END*
+35,d35,14101044,P4-D,M,22/5/2015,P,23,143,30,13,11.8,1016,9/4/2025,*END*
+36,d36,14101045,P4-D,M,22/5/2015,P,34,134,28,30,11.2,949,9/4/2025,*END*
+37,d37,14101046,P4-D,M,12/2/2015,P,28,153,34,23,11.2,1048,9/4/2025,*END*
+38,d38,14101047,P4-D,M,27/3/2015,P,22,157,33,25,11.6,934,9/4/2025,*END*
+39,d39,14101048,P4-D,M,12/8/2015,P,27,145,27,22,11.1,851,9/4/2025,*END*
+40,d40,14101049,P4-D,M,8/9/2015,P,29,150,29,18,12.4,1205,9/4/2025,*END*
+41,d41,14101050,P4-D,M,5/8/2015,P,36,142,28,36,13,1016,23/4/2025,*END*
