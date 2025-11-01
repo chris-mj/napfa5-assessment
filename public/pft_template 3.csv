@@ -1,0 +1,61 @@
+Instruction:,,,,,,,,,,,,,,*END*
+1. Please do not delete any Rows or columns. You can upload the partially filled data.,,,,,,,,,,,,,,*END*
+     The system will validate and if there are any errors the system will promot and will automatically update the records without error.,,,,,,,,,,,,,,*END*
+2. When the downloaded file is re-uploaded existing values will be replaced with the new values.,,,,,,,,,,,,,,*END*
+3. Attendance status should be one of the following values (P/A/L/O/H/E),,,,,,,,,,,,,,*END*
+     P - Present,,,,,,,,,,,,,,*END*
+     A - Absent,,,,,,,,,,,,,,*END*
+     L - Long Term MC,,,,,,,,,,,,,,*END*
+     O - Short Term MC,,,,,,,,,,,,,,*END*
+     E - Special Case,,,,,,,,,,,,,,*END*
+     H - Pending appointment Student Health Services,,,,,,,,,,,,,,*END*
+4. Please save your updated file in CSV(Comma delimited) format only.,,,,,,,,,,,,,,*END*
+5.  The value of Sit Up reps should be numeric and it can be up to 2 digits. ,,,,,,,,,,,,,,*END*
+6.  The value of Broad Jump should be numeric and it can be up to 3 digits. ,,,,,,,,,,,,,,*END*
+7.  The value of Sit& Reach should be numeric and it can be up to 2 digits. ,,,,,,,,,,,,,,*END*
+8.  The value of IPU/Push-up reps should be numeric and it can be up to 2 digits. (Applicable for PRE-U) ,,,,,,,,,,,,,,*END*
+9.  The value of IPU/Pull-up reps should be numeric and it can be up to 2 digits. ,,,,,,,,,,,,,,*END*
+10. The value of Shuttle Run time should be numeric and it has to be either 2 or 3 digits with 1 decimal place allowed,,,,,,,,,,,,,,*END*
+11. The value of 1.6/2.4 km Run should be numeric and it has to be either 3 or 4 digits e.g. 10 Minutes and 45 seconds will be entered as 1045,,,,,,,,,,,,,,*END*
+     another example 9 minute 45 seconds will be entered as 945 ,,,,,,,,,,,,,,*END*
+No,Name,ID,Class,Gender,DOB,Attendance Status,Sit Up reps xx,Broad Jump cm xxx,Sit& Reach cm xx,IPU/Pull-up reps xx,Shuttle Run sec xx.x,1.6/2.4 Km Run MMSS,PFT Test Date(DD/MM/YYYY),*END*
+1,c1,23201010,P4-C,F,30/4/2015,,,,,,,,,*END*
+2,c2,23201009,P4-C,F,12/1/2015,,,,,,,,,*END*
+3,c3,23201012,P4-C,F,26/1/2015,,,,,,,,,*END*
+4,c4,23201013,P4-C,F,10/7/2015,,,,,,,,,*END*
+5,c5,23201014,P4-C,F,7/12/2015,,,,,,,,,*END*
+6,c6,23201015,P4-C,F,22/10/2015,,,,,,,,,*END*
+7,c7,23201016,P4-C,F,28/12/2015,,,,,,,,,*END*
+8,c8,23201017,P4-C,F,11/6/2015,,,,,,,,,*END*
+9,c9,23201018,P4-C,F,15/3/2015,,,,,,,,,*END*
+10,c10,23201019,P4-C,F,5/8/2015,,,,,,,,,*END*
+11,c11,23201020,P4-C,F,24/12/2015,,,,,,,,,*END*
+12,c12,23201021,P4-C,F,19/12/2014,,,,,,,,,*END*
+13,c13,23201022,P4-C,F,28/1/2015,,,,,,,,,*END*
+14,c14,23201023,P4-C,F,14/5/2015,,,,,,,,,*END*
+15,c15,23201024,P4-C,F,24/12/2015,,,,,,,,,*END*
+16,c16,23201025,P4-C,F,14/2/2015,,,,,,,,,*END*
+17,c17,23201026,P4-C,F,29/5/2015,,,,,,,,,*END*
+18,c18,23201027,P4-C,F,14/2/2015,,,,,,,,,*END*
+19,c19,23201028,P4-C,F,17/2/2015,,,,,,,,,*END*
+20,c20,23201029,P4-C,F,28/1/2015,,,,,,,,,*END*
+21,c21,23201030,P4-C,F,25/3/2015,,,,,,,,,*END*
+22,c22,23201031,P4-C,F,12/11/2015,,,,,,,,,*END*
+23,c23,23201032,P4-C,M,10/4/2015,,,,,,,,,*END*
+24,c24,23201033,P4-C,M,24/1/2015,,,,,,,,,*END*
+25,c25,23201034,P4-C,M,31/3/2015,,,,,,,,,*END*
+26,c26,23201035,P4-C,M,2/10/2015,,,,,,,,,*END*
+27,c27,23201036,P4-C,M,27/3/2015,,,,,,,,,*END*
+28,c28,23201037,P4-C,M,20/9/2015,,,,,,,,,*END*
+29,c29,23201038,P4-C,M,23/4/2015,,,,,,,,,*END*
+30,c30,23201039,P4-C,M,4/10/2015,,,,,,,,,*END*
+31,c31,23201040,P4-C,M,30/6/2015,,,,,,,,,*END*
+32,c32,23201041,P4-C,M,15/11/2015,,,,,,,,,*END*
+33,c33,23201042,P4-C,M,2/1/2015,,,,,,,,,*END*
+34,c34,23201043,P4-C,M,20/4/2015,,,,,,,,,*END*
+35,c35,23201044,P4-C,M,22/5/2015,,,,,,,,,*END*
+36,c36,23201045,P4-C,M,22/5/2015,,,,,,,,,*END*
+37,c37,23201046,P4-C,M,12/2/2015,,,,,,,,,*END*
+38,c38,23201047,P4-C,M,27/3/2015,,,,,,,,,*END*
+39,c39,23201048,P4-C,M,12/8/2015,,,,,,,,,*END*
+40,c40,23201049,P4-C,M,8/9/2015,,,,,,,,,*END*

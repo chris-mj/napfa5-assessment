@@ -1,0 +1,74 @@
+  const runImport = async () => {
+    if (!importPreview?.rows?.length || !membership?.school_id) return;
+    setImportParsing(true);
+    setImportProgress(0);
+    try { showToast('info', `Starting import of ${importPreview.rows.length} row(s)...`); } catch {}
+    if (importDebug) { try { console.log('[Import][start]', { total: importPreview.rows.length, schoolId: membership.school_id, year: importYear }); } catch {} }
+    let created = 0, updated = 0, exists = 0, failed = 0;
+    const details = [];
+    const total = importPreview.rows.length;
+    let idx = 0;
+    let firstFailureReported = false;
+    for (const r of importPreview.rows) {
+      if (importDebug) 
+      try {
+        const targetClass = r.class || null;
+        const targetYear = r.academic_year || Number(importYear);
+        const targetSchool = membership.school_id;
+        const payloadStudent = { student_identifier: r.id, name: r.name, gender: r.gender, dob: r.dob };
+        if (importDebug) 
+        const { data: st, error: sErr } = await supabase
+          .from('students')
+          .upsert(payloadStudent, { onConflict: 'student_identifier' })
+          .select('id')
+          .maybeSingle();
+        if (importDebug) 
+        if (sErr || !st?.id) throw sErr || new Error('no student id');
+        const { data: enrolls, error: eErr } = await supabase
+          .from('enrollments')
+          .select('id, school_id, class, academic_year, is_active')
+          .eq('student_id', st.id);
+        if (importDebug) { try { console.log('[Import][enroll fetch]', { count: (enrolls||[]).length, eErr }); } catch {} }
+        const matchActive = (enrolls || []).find(e => e.school_id === targetSchool && (e.class || null) === targetClass && e.academic_year === targetYear && e.is_active);
+        if (matchActive) { exists++; details.push({ id: r.id, name: r.name, result: 'already exists', detail: `${targetClass || '-'} / ${targetYear}` }); idx++; setImportProgress(idx / total); continue; }
+        const sameYearRow = (enrolls || []).find(e => e.school_id === targetSchool && e.academic_year === targetYear);
+        if (sameYearRow) {
+          if (importDebug) 
+          await supabase.from('enrollments').update({ is_active: false }).eq('student_id', st.id).eq('is_active', true).neq('id', sameYearRow.id);
+          if (importDebug) { try { console.log('[Import][enroll update]', sameYearRow.id, { class: targetClass, is_active: true }); } catch {} }
+          const { error: uErr } = await supabase.from('enrollments').update({ class: targetClass, is_active: true }).eq('id', sameYearRow.id);
+          if (uErr) throw uErr;
+          updated++; details.push({ id: r.id, name: r.name, result: 'updated', detail: class  ->  @  });
+        } else {
+          if (importDebug) 
+          await supabase.from('enrollments').update({ is_active: false }).eq('student_id', st.id).eq('is_active', true);
+          const newEnroll = { student_id: st.id, school_id: targetSchool, class: targetClass, academic_year: targetYear, is_active: true };
+          if (importDebug) 
+          const { error: iErr } = await supabase.from('enrollments').insert(newEnroll);
+          if (iErr) throw iErr;
+          created++; details.push({ id: r.id, name: r.name, result: 'created', detail: ${targetClass || '-'} /  });
+        }
+      } catch (e) {
+        failed++; const msg = e?.message || '-';
+        details.push({ id: r.id, name: r.name, result: 'failed', detail: msg });
+        if (importDebug && !firstFailureReported) { try { showToast('error', Row  () failed: ); } catch {} firstFailureReported = true; }
+        if (importDebug) { try { console.error('[Import][row error]', idx+1, r, e); } catch {} }
+      }
+      idx++; setImportProgress(idx / total);
+    }
+    const { data: latest } = await supabase
+      .from('enrollments')
+      .select('id, class, academic_year, is_active, created_at, students(id, student_identifier, name, gender, dob)')
+      .eq('school_id', membership.school_id)
+      .order('class', { ascending: true })
+      .order('academic_year', { ascending: false });
+    setRows(latest || []);
+    const header = 'Student ID,Name,Result,Detail\n';
+    const body = details.map(d => [d.id, d.name || '', d.result, d.detail || ''].map(x => "").join(',')).join('\n');
+    const csv = header + body;
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    setImportSummaryUrl(url);
+    setImportResult({ created, updated, exists, failed, total: importPreview.rows.length });
+    setImportParsing(false);
+    showToast('success', Import done. Created: , Updated: , Already exists: , Failed: );
+  };
