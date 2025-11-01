@@ -1,4 +1,4 @@
-﻿// Inline minimal icons to avoid external deps
+// Inline minimal icons to avoid external deps
 import { useMemo, useRef, useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
@@ -10,16 +10,17 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { Input } from '../components/ui/input'
 import { Button } from '../components/ui/button'
 import { useToast } from '../components/ToastProvider'
+import { SitupsIcon, BroadJumpIcon, ReachIcon, PullupsIcon, ShuttleIcon } from '../components/icons/StationIcons'
 
 export default function AddAttempt({ user }) {
   const [sessionId, setSessionId] = useState('')
   const [sessions, setSessions] = useState([])
   const stations = useMemo(() => ([
-    { key: 'situps', name: 'Sit-ups', Icon: Activity, description: 'Count repetitions | 1 attempt' },
-    { key: 'broad_jump', name: 'Broad Jump', Icon: Ruler, description: 'Measure distance (cm) | 2 attempts, record best' },
-    { key: 'sit_and_reach', name: 'Sit & Reach', Icon: Ruler, description: 'Measure distance (cm) | 2 attempts, record best' },
-    { key: 'pullups', name: 'Pull-ups', Icon: Hand, description: 'Count repetitions | 1 attempt' },
-    { key: 'shuttle_run', name: 'Shuttle Run', Icon: Timer, description: 'Record time (sec, 1dp) | 1 attempt' },
+    { key: 'situps', name: 'Sit-ups', Icon: SitupsIcon, description: 'Count repetitions | 1 attempt' },
+    { key: 'broad_jump', name: 'Broad Jump', Icon: BroadJumpIcon, description: 'Measure distance (cm) | 2 attempts, record best' },
+    { key: 'sit_and_reach', name: 'Sit & Reach', Icon: ReachIcon, description: 'Measure distance (cm) | 2 attempts, record best' },
+    { key: 'pullups', name: 'Pull-ups', Icon: PullupsIcon, description: 'Count repetitions | 1 attempt' },
+    { key: 'shuttle_run', name: 'Shuttle Run', Icon: ShuttleIcon, description: 'Record time (sec, 1dp) | 1 attempt' },
   ]), [])
   const [activeStation, setActiveStation] = useState('situps')
   const [studentId, setStudentId] = useState('')
@@ -38,6 +39,37 @@ export default function AddAttempt({ user }) {
   const navigate = useNavigate()
   const active = useMemo(() => stations.find(s => s.key === activeStation), [stations, activeStation])
   const { showToast } = useToast()
+
+  // Live validation for current station + inputs
+  const validation = useMemo(() => {
+    const inRange = (v, min, max) => v >= min && v <= max
+    const make = (valid, message) => ({ valid, message })
+    if (!student || !sessionId) return make(false, 'Select a session and student.')
+    if (activeStation === 'situps' || activeStation === 'pullups') {
+      if (attempt1 === '') return make(false, 'Enter a value 0–60.')
+      const n = parseInt((attempt1 || '').toString(), 10)
+      if (!Number.isFinite(n)) return make(false, 'Invalid number.')
+      return inRange(n, 0, 60) ? make(true, 'OK') : make(false, 'Value must be 0–60.')
+    }
+    if (activeStation === 'broad_jump' || activeStation === 'sit_and_reach') {
+      const max = activeStation === 'broad_jump' ? 300 : 80
+      if (attempt1 === '' && attempt2 === '') return make(false, `Enter at least one attempt (0–${max} cm).`)
+      const a = attempt1 === '' ? null : parseInt(attempt1, 10)
+      const b = attempt2 === '' ? null : parseInt(attempt2, 10)
+      if ((a !== null && !Number.isFinite(a)) || (b !== null && !Number.isFinite(b))) return make(false, 'Invalid number in attempts.')
+      if ((a !== null && !inRange(a, 0, max)) || (b !== null && !inRange(b, 0, max))) return make(false, `Attempts must be 0–${max} cm.`)
+      return make(true, 'Best of two is saved.')
+    }
+    if (activeStation === 'shuttle_run') {
+      if (attempt1 === '' && attempt2 === '') return make(false, 'Enter at least one time (0.0–20.0s).')
+      const a = attempt1 === '' ? null : Number.parseFloat(Number(oneDecimal(attempt1)).toFixed(1))
+      const b = attempt2 === '' ? null : Number.parseFloat(Number(oneDecimal(attempt2)).toFixed(1))
+      if ((a !== null && !Number.isFinite(a)) || (b !== null && !Number.isFinite(b))) return make(false, 'Invalid time format.')
+      if ((a !== null && !inRange(a, 0.0, 20.0)) || (b !== null && !inRange(b, 0.0, 20.0))) return make(false, 'Times must be 0.0–20.0 seconds (1 d.p.).')
+      return make(true, 'Lower of two is saved.')
+    }
+    return make(false, 'Select a station.')
+  }, [activeStation, attempt1, attempt2, student, sessionId])
 
   // Load sessions belonging to the same school as the user
   useEffect(() => {
@@ -61,6 +93,13 @@ export default function AddAttempt({ user }) {
     }
     load()
   }, [user?.id])
+
+  // Auto-select session if there is exactly one active session
+  useEffect(() => {
+    if (!sessionId && Array.isArray(sessions) && sessions.length === 1) {
+      setSessionId(sessions[0].id)
+    }
+  }, [sessions, sessionId])
 
   const doSearch = async (idValue) => {
     setError('')
@@ -146,9 +185,9 @@ export default function AddAttempt({ user }) {
     return () => { ignore = true }
   }, [sessionId])
 
-  // Input helpers
-  const onlyInt = (val) => (val || '').toString().replace(/[^0-9]/g, '')
-  const oneDecimal = (val) => {
+  // Input helpers (hoisted declarations to avoid TDZ issues)
+  function onlyInt(val) { return (val || '').toString().replace(/[^0-9]/g, '') }
+  function oneDecimal(val) {
     const s = (val || '').toString().replace(/[^0-9.]/g, '')
     const parts = s.split('.')
     if (parts.length === 1) return parts[0]
@@ -186,21 +225,34 @@ export default function AddAttempt({ user }) {
     }
     const col = colMap[activeStation] || 'situps'
     let num = null
+    // Validation helpers
+    const inRange = (v, min, max) => v >= min && v <= max
+    const err = (msg) => { showToast('error', msg); throw new Error(msg) }
+
     if (activeStation === 'situps' || activeStation === 'pullups') {
       const n = parseInt(onlyInt(attempt1 || ''))
       if (!Number.isFinite(n)) return
+      const max = 60
+      if (!inRange(n, 0, max)) err(`${active.name} must be between 0 and ${max}.`)
       num = n
     } else if (activeStation === 'broad_jump' || activeStation === 'sit_and_reach') {
       const a = attempt1 ? parseInt(onlyInt(attempt1 || '')) : null
       const b = attempt2 ? parseInt(onlyInt(attempt2 || '')) : null
       if (a == null && b == null) return
+      const max = activeStation === 'broad_jump' ? 300 : 80
+      if (a != null && !inRange(a, 0, max)) err(`${active.name} attempts must be between 0 and ${max} cm.`)
+      if (b != null && !inRange(b, 0, max)) err(`${active.name} attempts must be between 0 and ${max} cm.`)
       num = a == null ? b : (b == null ? a : Math.max(a, b))
     } else if (activeStation === 'shuttle_run') {
       const a = attempt1 ? Number(oneDecimal(attempt1)) : null
       const b = attempt2 ? Number(oneDecimal(attempt2)) : null
       if (a == null && b == null) return
       const best = (a == null) ? b : (b == null ? a : Math.min(a, b))
-      num = Number.parseFloat(Number(best).toFixed(1))
+      const bestRounded = Number.parseFloat(Number(best).toFixed(1))
+      if ((a != null && !inRange(a, 0.0, 20.0)) || (b != null && !inRange(b, 0.0, 20.0)) || !inRange(bestRounded, 0.0, 20.0)) {
+        err('Shuttle Run time must be between 0.0 and 20.0 seconds (1 d.p.).')
+      }
+      num = bestRounded
     }
     if (num == null || !Number.isFinite(num)) return
     try {
@@ -309,7 +361,7 @@ export default function AddAttempt({ user }) {
                              text-gray-700 hover:text-gray-900"
                   aria-label="Sit-ups"
                 >
-                  <Activity className="h-4 w-4" aria-hidden="true" />
+                  <SitupsIcon className="h-4 w-4" aria-hidden="true" />
                   <span className="font-medium whitespace-nowrap">Sit-ups</span>
                 </TabsTrigger>
 
@@ -321,7 +373,7 @@ export default function AddAttempt({ user }) {
                              text-gray-700 hover:text-gray-900"
                   aria-label="Broad Jump"
                 >
-                  <Ruler className="h-4 w-4" aria-hidden="true" />
+                  <BroadJumpIcon className="h-4 w-4" aria-hidden="true" />
                   <span className="font-medium whitespace-nowrap">Broad Jump</span>
                 </TabsTrigger>
 
@@ -333,7 +385,7 @@ export default function AddAttempt({ user }) {
                              text-gray-700 hover:text-gray-900"
                   aria-label="Sit & Reach"
                 >
-                  <Ruler className="h-4 w-4" aria-hidden="true" />
+                  <ReachIcon className="h-4 w-4" aria-hidden="true" />
                   <span className="font-medium whitespace-nowrap">Sit & Reach</span>
                 </TabsTrigger>
 
@@ -345,7 +397,7 @@ export default function AddAttempt({ user }) {
                              text-gray-700 hover:text-gray-900"
                   aria-label="Pull-ups"
                 >
-                  <Hand className="h-4 w-4" aria-hidden="true" />
+                  <PullupsIcon className="h-4 w-4" aria-hidden="true" />
                   <span className="font-medium whitespace-nowrap">Pull-ups</span>
                 </TabsTrigger>
 
@@ -357,7 +409,7 @@ export default function AddAttempt({ user }) {
                              text-gray-700 hover:text-gray-900"
                   aria-label="Shuttle Run"
                 >
-                  <Timer className="h-4 w-4" aria-hidden="true" />
+                  <ShuttleIcon className="h-4 w-4" aria-hidden="true" />
                   <span className="font-medium whitespace-nowrap">Shuttle Run</span>
                 </TabsTrigger>
               </TabsList>
@@ -403,7 +455,7 @@ export default function AddAttempt({ user }) {
                     aria-label="Search student by ID"
                   >
                     <ArrowRight className="h-4 w-4 mr-1.5" />
-                    {loading ? 'Searchingâ€¦' : 'Search'}
+                    {loading ? 'Searching…' : 'Search'}
                   </button>
                   <button
                     type="button"
@@ -476,16 +528,18 @@ export default function AddAttempt({ user }) {
                         <label htmlFor="attempt1" className="text-gray-700 text-sm">Repetitions</label>
                         <div className="text-xs text-gray-600">Unit: reps | Example: 25</div>
                         <Input id="attempt1" inputMode="numeric" value={attempt1} onChange={(e)=> setAttempt1(onlyInt(e.target.value))} placeholder="e.g., 25" className="w-full" />
+                        <div role="status" aria-live="polite" className={(validation.valid ? "text-gray-500" : "text-red-600") + " text-xs mt-1"}>{validation.message}</div>
                       </>
                     )}
                     {['broad_jump','sit_and_reach'].includes(activeStation) && (
                       <>
                         <label className="text-gray-700 text-sm">Scores (2 attempts, best kept)</label>
-                        <div className="text-xs text-gray-600">Unit: cm | Example: 190</div>
+                        <div className="text-xs text-gray-600">Unit: cm | Example: {activeStation === 'sit_and_reach' ? '34' : '190'}</div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                           <Input inputMode="numeric" value={attempt1} onChange={(e)=> setAttempt1(onlyInt(e.target.value))} placeholder="Attempt 1" />
                           <Input inputMode="numeric" value={attempt2} onChange={(e)=> setAttempt2(onlyInt(e.target.value))} placeholder="Attempt 2" />
                         </div>
+                        <div role="status" aria-live="polite" className={(validation.valid ? "text-gray-500" : "text-red-600") + " text-xs mt-1"}>{validation.message}</div>
                       </>
                     )}
                     {activeStation === 'shuttle_run' && (
@@ -496,9 +550,10 @@ export default function AddAttempt({ user }) {
                           <Input inputMode="decimal" value={attempt1} onChange={(e)=> setAttempt1(oneDecimal(e.target.value))} placeholder="Attempt 1 (e.g., 10.3)" />
                           <Input inputMode="decimal" value={attempt2} onChange={(e)=> setAttempt2(oneDecimal(e.target.value))} placeholder="Attempt 2 (e.g., 10.2)" />
                         </div>
+                        <div role="status" aria-live="polite" className={(validation.valid ? "text-gray-500" : "text-red-600") + " text-xs mt-1"}>{validation.message}</div>
                       </>
                     )}
-                    <Button className="w-full" onClick={() => { saveScore(); }}>
+                    <Button className="w-full" disabled={!validation.valid} onClick={() => { if (validation.valid) saveScore(); }}>
                       Save Score
                     </Button>
                     <div className="text-xs text-gray-500">Note: This will replace any saved values.</div>

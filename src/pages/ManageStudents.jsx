@@ -552,14 +552,20 @@ export default function ManageStudents({ user }) {
               <tbody>
                 {loading ? (
                   <tr><td colSpan="9" className="px-3 py-3 text-sm">Loading...</td></tr>
-                ) : paged.items.length ? (
-                  paged.items.map((r) => (
-                    <tr key={r.id} className={"odd:bg-white even:bg-gray-50 border-l-4 " + (r.is_active ? "opacity-100 border-l-green-500" : "opacity-60 border-l-gray-400") }>
-                      <td className="border px-2 py-2 w-10"><input type="checkbox" checked={selectedEnrollments.has(r.id)} onChange={(e)=>toggleRowSelect(r.id, e.target.checked)} /></td>
-                      <td className="border px-3 py-2">{normalizeStudentId(r.students?.student_identifier)}</td>
-                      <td className="border px-3 py-2">
-                        <button className="underline decoration-dotted underline-offset-2" onClick={()=>{ setHistoryFor(r.students); openHistory(r.students.id) }}>{r.students?.name}</button>
-                      </td>
+                ) : (
+                  <>
+                    {paged.items.length ? (
+                      <>
+                        <tr>
+                          <td colSpan="9" className="px-3 py-1 text-xs text-gray-600">Selected: {selectedEnrollments.size}</td>
+                        </tr>
+                        {paged.items.map((r) => (
+                      <tr key={r.id} className={"odd:bg-white even:bg-gray-50 border-l-4 " + (r.is_active ? "opacity-100 border-l-green-500" : "opacity-60 border-l-gray-400") }>
+                        <td className="border px-2 py-2 w-10"><input type="checkbox" checked={selectedEnrollments.has(r.id)} onChange={(e)=>toggleRowSelect(r.id, e.target.checked)} /></td>
+                        <td className="border px-3 py-2">{normalizeStudentId(r.students?.student_identifier)}</td>
+                        <td className="border px-3 py-2">
+                          <button className="underline decoration-dotted underline-offset-2" onClick={()=>{ setHistoryFor(r.students); openHistory(r.students.id) }}>{r.students?.name}</button>
+                        </td>
                       <td className="border px-3 py-2">{r.students?.gender || '-'}</td>
                       <td className="border px-3 py-2">{formatDob(r.students?.dob)}</td>
                       <td className="border px-3 py-2">
@@ -591,9 +597,12 @@ export default function ManageStudents({ user }) {
                         )}
                       </td>
                     </tr>
-                  ))
-                ) : (
+                  ))}
+                      </>
+                    ) : (
                   <tr><td colSpan="9" className="px-3 py-6 text-center text-sm text-gray-600">No students found.</td></tr>
+                )}
+                  </>
                 )}
               </tbody>
             </table>
@@ -601,7 +610,10 @@ export default function ManageStudents({ user }) {
 
           {/* Pagination */}
           <div className="flex items-center justify-between text-sm mt-2">
-            <div>Showing {(paged.cur-1)*pageSize + (filtered.length?1:0)}-{Math.min(paged.cur*pageSize, filtered.length)} of {filtered.length}</div>
+            <div className="flex items-center gap-4">
+              <div>Showing {(paged.cur-1)*pageSize + (filtered.length?1:0)}-{Math.min(paged.cur*pageSize, filtered.length)} of {filtered.length}</div>
+              <div className="text-xs text-gray-600">Selected: {selectedEnrollments.size}</div>
+            </div>
             <div className="flex items-center gap-2">
               <button className="px-2 py-1 border rounded disabled:opacity-50" disabled={paged.cur<=1} onClick={()=>setPage(p=>Math.max(1,p-1))}>Prev</button>
               <div>Page {paged.cur} / {paged.totalPages}</div>

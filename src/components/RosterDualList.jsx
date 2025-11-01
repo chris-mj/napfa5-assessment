@@ -220,6 +220,11 @@ export default function RosterDualList({ user, session, membership, canManage, o
                 </tr>
               </thead>
               <tbody>
+                {leftPaged.rows.length > 0 && (
+                  <tr>
+                    <td colSpan="4" className="px-3 py-1 text-xs text-gray-600">Selected: {leftSelected.size}</td>
+                  </tr>
+                )}
                 {leftPaged.rows.length === 0 ? (
                   <tr><td colSpan="4" className="px-3 py-4 text-center text-gray-500">No eligible students.</td></tr>
                 ) : leftPaged.rows.map(s => (
@@ -270,6 +275,11 @@ export default function RosterDualList({ user, session, membership, canManage, o
                 </tr>
               </thead>
               <tbody>
+                {rightPaged.rows.length > 0 && (
+                  <tr>
+                    <td colSpan="4" className="px-3 py-1 text-xs text-gray-600">Selected: {rightSelected.size}</td>
+                  </tr>
+                )}
                 {rightPaged.rows.length === 0 ? (
                   <tr><td colSpan="4" className="px-3 py-4 text-center text-gray-500">No students in roster.</td></tr>
                 ) : rightPaged.rows.map(s => (

@@ -41,6 +41,7 @@ export default function SessionDetail({ user }) {
     const location = useLocation();
 
     const [membership, setMembership] = useState(null);
+    const [schoolName, setSchoolName] = useState("");
     const [membershipLoading, setMembershipLoading] = useState(true);
     const [membershipError, setMembershipError] = useState("");
 
@@ -97,6 +98,17 @@ export default function SessionDetail({ user }) {
             })
             .finally(() => setMembershipLoading(false));
     }, [user]);
+
+    // Load school name for PDF/profile cards context
+    useEffect(() => {
+        if (!membership?.school_id) return;
+        supabase
+            .from('schools')
+            .select('id,name')
+            .eq('id', membership.school_id)
+            .maybeSingle()
+            .then(({ data }) => setSchoolName(data?.name || ""));
+    }, [membership?.school_id]);
 
     useEffect(() => {
         if (!membership?.school_id || !id) return;
@@ -421,15 +433,45 @@ export default function SessionDetail({ user }) {
             const bcCanvas = document.createElement('canvas');
             const qrCanvas = document.createElement('canvas');
 
-            for (let i = 0; i < list.length; i++) {
-                const s = list[i];
-                const pageIndex = Math.floor(i / (cols * rows));
-                const idxInPage = i % (cols * rows);
-                const col = idxInPage % cols;
-                const row = Math.floor(idxInPage / cols);
-                if (i > 0 && idxInPage === 0) doc.addPage();
-                const x0 = margin + col * cellW;
-                const y0 = margin + row * cellH;
+            const titleLine = String(session?.title || "");
+            const schoolLine = String(schoolName || "");
+
+            // Helper: truncate text to fit max width (mm) without wrapping
+            const truncateToWidth = (text, maxW, fontSize) => {
+                if (!text) return '';
+                doc.setFontSize(fontSize);
+                const ellipsis = '…';
+                let t = String(text);
+                // Fast path: fits
+                if (doc.getTextWidth(t) <= maxW) return t;
+                // Trim until fits, then add ellipsis if room
+                while (t.length > 0 && doc.getTextWidth(t + ellipsis) > maxW) {
+                    t = t.slice(0, -1);
+                }
+                return t.length ? (t + ellipsis) : '';
+            };
+
+            // Group by class so each class starts on a fresh page
+            const groups = [];
+            let curClass = null;
+            list.forEach((s) => {
+                const k = s.class || '';
+                if (k !== curClass) { groups.push({ klass: k, items: [] }); curClass = k; }
+                groups[groups.length - 1].items.push(s);
+            });
+
+            let idxInPage = 0;
+            const capacity = cols * rows;
+            const ensureNewPage = () => { if (idxInPage !== 0) { doc.addPage(); idxInPage = 0; } };
+
+            for (const grp of groups) {
+                // start new class on a new page
+                ensureNewPage();
+                for (const s of grp.items) {
+                    const col = idxInPage % cols;
+                    const row = Math.floor(idxInPage / cols);
+                    const x0 = margin + col * cellW;
+                    const y0 = margin + row * cellH;
 
                 // Draw barcode and QR to canvases with high resolution for print
                 const pxPerMm = 300 / 25.4; // 300 DPI target
@@ -462,11 +504,43 @@ export default function SessionDetail({ user }) {
                 doc.addImage(qrUrl, 'PNG', x0 + cellW - qrSize - 6, y0 + 8, qrSize, qrSize);
                 // Barcode bottom spans width minus QR area
                 const bcW = cellW - qrSize - 12;
-                const bcH = 14;
-                doc.addImage(bcUrl, 'PNG', x0 + 6, y0 + cellH - bcH - 8, bcW, bcH);
+                // Reserve a footer band above barcode for school and session title
+                const footerH = 10; // mm (two small text lines)
+                const gap = 2;      // mm gap between footer and barcode
+                const bottomPad = 4; // bottom padding
+                const bcH = 12;     // reduce slightly to make space
+                const bcY = y0 + cellH - bottomPad - bcH; // barcode sits above bottom padding
+
+                // Footer band (draw text, not a filled rect). Centered text, truncated to fit cell width - paddings
+                const textPadX = 6; // left/right text padding inside cell
+                const maxTextW = cellW - textPadX * 2;
+                const line1 = truncateToWidth(schoolLine, maxTextW, 9);
+                const line2 = truncateToWidth(titleLine, maxTextW, 9);
+                const footerBottomY = bcY - gap; // band sits directly above barcode
+                const line2Y = footerBottomY - 1; // small inner padding
+                const line1Y = line2Y - 4; // line spacing ~4mm
+                doc.setFontSize(9);
+                if (line1) doc.text(line1, x0 + cellW / 2, line1Y, { align: 'center' });
+                if (line2) doc.text(line2, x0 + cellW / 2, line2Y, { align: 'center' });
+
+                // Draw barcode
+                doc.addImage(bcUrl, 'PNG', x0 + 6, bcY, bcW, bcH);
+                idxInPage++;
+                if (idxInPage >= capacity) { doc.addPage(); idxInPage = 0; }
+            }
             }
 
-            doc.save(`session_${id}_profile_cards.pdf`);
+            // Filename: (session_title)_(ddmmyyyy)_profilecards.pdf
+            const d = new Date(session.session_date);
+            const dd = String(d.getDate()).padStart(2, '0');
+            const mm = String(d.getMonth() + 1).padStart(2, '0');
+            const yyyy = d.getFullYear();
+            const ddmmyyyy = `${dd}${mm}${yyyy}`;
+            const safeTitle = String(session?.title || 'session')
+                .trim()
+                .replace(/[\\/:*?"<>|]+/g, '')
+                .replace(/\s+/g, '_');
+            doc.save(`${safeTitle}_${ddmmyyyy}_profilecards.pdf`);
         } catch (err) {
             setFlash(err.message || 'Failed to generate cards PDF.');
         }

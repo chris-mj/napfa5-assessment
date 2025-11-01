@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { SitupsIcon, BroadJumpIcon, ReachIcon, PullupsIcon, ShuttleIcon } from '../components/icons/StationIcons'
 import { supabase } from '../lib/supabaseClient'
 import { normalizeStudentId } from '../utils/ids'
 import { evaluateNapfa, normalizeSex, getAgeGroup, findRows } from '../utils/napfaStandards'
@@ -69,6 +70,14 @@ export default function ViewScore() {
     }
   }
 
+  const clearSearch = () => {
+    setStudentId('')
+    setError('')
+    setProfile(null)
+    setAttempts([])
+    setSelectedId(null)
+  }
+
   const details = useMemo(() => {
     if (!profile || !selected) return null
     const level = (selected.school_type === 'primary') ? 'Primary' : 'Secondary'
@@ -105,7 +114,10 @@ export default function ViewScore() {
             </div>
             {/* helper removed per request */}
           </div>
-          <button onClick={()=>handleSearch()} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700" disabled={loading}>{loading? 'Searching...' : 'Search'}</button>
+          <div className="flex items-center gap-2">
+            <button onClick={clearSearch} className="px-4 py-2 border rounded hover:bg-gray-50" disabled={loading && !profile && !studentId}>Clear</button>
+            <button onClick={()=>handleSearch()} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700" disabled={loading}>{loading? 'Searching...' : 'Search'}</button>
+          </div>
         </div>
         {error && <div className="mt-2 text-sm text-red-600">{error}</div>}
       </div>
@@ -231,7 +243,7 @@ function renderRow(label, key, raw, band, nextTarget, unit, isTime = false) {
       </td>
       <td className="px-3 py-2 border tabular-nums text-right">{formatRaw(raw, unit, isTime)}</td>
       <td className="px-3 py-2 border">{band?.grade ? <GradeBadge grade={band.grade} /> : '-'}</td>
-      <td className="px-3 py-2 border">{Number.isFinite(band?.points) ? <PointsBadge points={band.points} /> : 0}</td>
+      <td className="px-3 py-2 border">{Number.isFinite(band?.points) ? <PointsBadge points={band.points} grade={band?.grade} /> : 0}</td>
       <td className="px-3 py-2 border">{isTime ? (nextTarget?.target_mmss || '-') : (formatRaw(nextTarget?.target, unit, isTime) || '-')}</td>
     </tr>
   )
@@ -247,7 +259,7 @@ function renderRunRow(run2400Min, details) {
       <td className="px-3 py-2 border"><div className="flex items-center gap-2"><Timer className="w-4 h-4" /> <span>{`Run (${details?.runKm} km)`}</span></div></td>
       <td className="px-3 py-2 border tabular-nums text-right">{raw}</td>
       <td className="px-3 py-2 border">{band?.grade ? <GradeBadge grade={band.grade} /> : '-'}</td>
-      <td className="px-3 py-2 border">{Number.isFinite(band?.points) ? <PointsBadge points={band.points} /> : 0}</td>
+      <td className="px-3 py-2 border">{Number.isFinite(band?.points) ? <PointsBadge points={band.points} grade={band?.grade} /> : 0}</td>
       <td className="px-3 py-2 border">{nextTarget?.target_mmss || '-'}</td>
     </tr>
   )
@@ -270,8 +282,20 @@ function formatRaw(val, unit, isTime = false) {
   return `${val}${unit ? ' ' + unit : ''}`
 }
 
-function toIntOrNull(v) { const n = Number(v); return Number.isFinite(n) ? Math.trunc(n) : null }
-function toFloatOrNull(v) { const n = Number(v); return Number.isFinite(n) ? n : null }
+function toIntOrNull(v) {
+  if (v == null) return null;
+  const s = String(v).trim();
+  if (s === "") return null;
+  const n = Number(s);
+  return Number.isFinite(n) ? Math.trunc(n) : null;
+}
+function toFloatOrNull(v) {
+  if (v == null) return null;
+  const s = String(v).trim();
+  if (s === "") return null;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
+}
 
 function calcAgeAt(dob, onDate) {
   if (!dob) return 0
@@ -360,9 +384,18 @@ function GradeBadge({ grade }) {
   return <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${map[g] || '-'}`}>{g}</span>
 }
 
-function PointsBadge({ points }) {
-  const p = Number(points||0)
-  return <span className="inline-flex items-center rounded px-2 py-0.5 text-xs bg-slate-100 text-slate-800 tabular-nums">{p}</span>
+function PointsBadge({ points, grade }) {
+  const p = Number(points || 0)
+  const g = String(grade || '').toUpperCase()
+  const map = {
+    A: 'bg-green-100 text-green-800',
+    B: 'bg-sky-100 text-sky-800',
+    C: 'bg-amber-100 text-amber-800',
+    D: 'bg-orange-100 text-orange-800',
+    E: 'bg-rose-100 text-rose-800',
+  }
+  const cls = map[g] || 'bg-slate-100 text-slate-800'
+  return <span className={`inline-flex items-center rounded px-2 py-0.5 text-xs tabular-nums ${cls}`}>{p}</span>
 }
 
 function AwardBanner({ award }) {
@@ -409,11 +442,14 @@ function GradeLadderSection({ details, selected }) {
               <div className="text-xs text-slate-500 ml-6">Score: {formatLadderScore(r.key, selected, details?.runKm)}</div>
             </div>
             <div className="flex-1">
-              <SegmentBar filled={Number(r.points || 0)} grade={r.grade} />
+              <SegmentBar
+                filled={Number(r.points || 0)}
+                grade={r.grade}
+                currentLabel={formatLadderScore(r.key, selected, details?.runKm)}
+                nextLabel={formatNextChip(r.key, r.next, r.unit)}
+              />
             </div>
-            <div className="w-40 shrink-0 text-sm text-slate-600">
-              {formatNext(r.key, r.next, r.unit)}
-            </div>
+            
           </div>
         ))}
       </div>
@@ -421,22 +457,64 @@ function GradeLadderSection({ details, selected }) {
   )
 }
 
-function SegmentBar({ filled = 0, grade }) {
+function SegmentBar({ filled = 0, grade, currentLabel, nextLabel }) {
   const total = 5
   const f = Math.max(0, Math.min(total, Number(filled)))
   const color = gradeToColor(grade)
+  const segW = 100 / total
+  const curIdx = f > 0 ? f - 1 : null
+  const nextIdx = f < total ? f : null
   return (
-    <div className="flex items-center" title={`Grade ${grade || '-'} (${f}/5)`} aria-label={`Grade ${grade || '-'} (${f}/5)`}>
-      {Array.from({ length: total }).map((_, i) => (
-        <div
-          key={i}
-          title={`Grade ${grade || '-'} (${f}/5)`}
-          className={`h-3 rounded-sm border ${i < f ? color : 'bg-slate-200 border-slate-300'} ${i < total - 1 ? 'mr-1' : ''}`}
-          style={{ width: `${100/total}%` }}
-        />
-      ))}
+    <div className="relative" title={`Grade ${grade || '-'} (${f}/5)`} aria-label={`Grade ${grade || '-'} (${f}/5)`}>
+      <div className="flex items-center">
+        {Array.from({ length: total }).map((_, i) => (
+          <div key={i} className={`h-3 rounded-sm border ${i < f ? color : 'bg-slate-200 border-slate-300'} ${i < total - 1 ? 'mr-1' : ''}`} style={{ width: `${segW}%` }} />
+        ))}
+      </div>
+      {curIdx != null && currentLabel && currentLabel !== '-' && (
+        <span
+          className={`${gradeToChipSolid(grade)} absolute top-1/2 -translate-y-1/2 -translate-x-1/2 px-1.5 py-0.5 rounded-full text-[10px] shadow-sm`}
+          style={{ left: `${(curIdx + 0.5) * segW}%` }}
+          title={`Score: ${currentLabel} (Grade ${grade || '-'})`}
+        >
+          {currentLabel}
+        </span>
+      )}
+      {nextIdx != null && nextLabel && nextLabel !== '-' && (
+        <span
+          className={`${gradeToChipOutline(grade)} absolute top-[calc(100%+2px)] -translate-x-1/2 px-1.5 py-0.5 rounded-full text-[10px]`}
+          style={{ left: `${(nextIdx + 0.5) * segW}%` }}
+          title={`Next: ${nextLabel}`}
+        >
+          {nextLabel}
+        </span>
+      )}
     </div>
   )
+}
+
+function gradeToChipSolid(grade) {
+  const g = String(grade || '').toUpperCase()
+  const map = {
+    A: 'bg-green-100 text-green-800 border border-green-200',
+    B: 'bg-sky-100 text-sky-800 border border-sky-200',
+    C: 'bg-amber-100 text-amber-800 border border-amber-200',
+    D: 'bg-orange-100 text-orange-800 border border-orange-200',
+    E: 'bg-rose-100 text-rose-800 border border-rose-200',
+  }
+  return map[g] || 'bg-slate-100 text-slate-800 border border-slate-200'
+}
+
+function gradeToChipOutline(grade) {
+  const g = String(grade || '').toUpperCase()
+  const map = {
+    A: 'border-2 border-green-400 text-green-700 bg-white',
+    B: 'border-2 border-sky-400 text-sky-700 bg-white',
+    C: 'border-2 border-amber-400 text-amber-700 bg-white',
+    D: 'border-2 border-orange-400 text-orange-700 bg-white',
+    E: 'border-2 border-rose-400 text-rose-700 bg-white',
+  }
+  return map[g] || 'border-2 border-slate-400 text-slate-700 bg-white'
 }
 
 function gradeToColor(grade) {
@@ -451,9 +529,16 @@ function gradeToColor(grade) {
 
 function formatNext(key, next, unit) {
   if (!next) return 'Next: -'
-  if (key === 'run') return `Next: ≤ ${next.target_mmss || '-'}`
-  if (key === 'shuttle_s') return `Next: ≤ ${Number(next.target || 0).toFixed(1)} s`
-  return `Next: ≥ ${next.target ?? '-'}${unit ? ' ' + unit : ''}`
+  if (key === 'run') return `Next: <= ${next.target_mmss || '-'}`
+  if (key === 'shuttle_s') return `Next: <= ${Number(next.target || 0).toFixed(1)} s`
+  return `Next: >= ${next.target ?? '-'}${unit ? ' ' + unit : ''}`
+}
+
+function formatNextChip(key, next, unit) {
+  if (!next) return '-'
+  if (key === 'run') return next.target_mmss ? `≤ ${next.target_mmss}` : '-'
+  if (key === 'shuttle_s') return Number.isFinite(next.target) ? `≤ ${Number(next.target).toFixed(1)} s` : '-'
+  return next.target != null ? `≥ ${next.target}${unit ? ' ' + unit : ''}` : '-'
 }
 
 function formatLadderScore(key, selected, runKm) {
@@ -471,11 +556,12 @@ function formatLadderScore(key, selected, runKm) {
 }
 
 function StationIcon({ kind, className = 'w-4 h-4' }) {
-  if (kind === 'situps') return <Activity className={className} />
-  if (kind === 'broad' || kind === 'reach') return <Ruler className={className} />
-  if (kind === 'pullups') return <Hand className={className} />
-  if (kind === 'shuttle') return <Timer className={className} />
-  return <Activity className={className} />
+  if (kind === 'situps') return <SitupsIcon className={className} />
+  if (kind === 'broad') return <BroadJumpIcon className={className} />
+  if (kind === 'reach') return <ReachIcon className={className} />
+  if (kind === 'pullups') return <PullupsIcon className={className} />
+  if (kind === 'shuttle') return <ShuttleIcon className={className} />
+  return <SitupsIcon className={className} />
 }
 
 function IconBase({ children, className }) {
@@ -581,6 +667,20 @@ function ScannerModal({ onClose, onDetected }) {
     </div>
   )
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
