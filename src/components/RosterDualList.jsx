@@ -144,7 +144,7 @@ export default function RosterDualList({ user, session, membership, canManage, o
       const upserts = ids.map(sid => ({ session_id: sessionId, student_id: sid }));
       const { error: rErr } = await supabase.from('session_roster').upsert(upserts, { onConflict: 'session_id,student_id' });
       if (rErr) throw rErr;
-      await supabase.from('scores').upsert(upserts, { onConflict: 'session_id,student_id' });
+      // Do not pre-create empty score rows; scores are inserted only when first recorded.
       setMessage(`Added ${ids.length} student(s) to session.`);
       await loadData();
     } catch (e) {
