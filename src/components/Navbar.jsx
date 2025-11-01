@@ -71,6 +71,9 @@ export default function Navbar({ user, onLogout }) {
                   <NavLink to="/add-attempt" className={({ isActive }) => `${link} ${isActive ? active : ""}`}>
                     Score Entry
                   </NavLink>
+                  <NavLink to="/view-score" className={({ isActive }) => `${link} ${isActive ? active : ""}`}>
+                    View Score
+                  </NavLink>
                   {canManageUsers && (
                     <NavLink to="/manage-students" className={({ isActive }) => `${link} ${isActive ? active : ""}`}>
                       Manage Students
@@ -126,6 +129,7 @@ export default function Navbar({ user, onLogout }) {
                       {canManageUsers && (<NavLink to="/sessions" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Sessions</NavLink>)}
                       {canManageUsers && (<NavLink to="/manage-students" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Manage Students</NavLink>)}
                       <NavLink to="/add-attempt" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Score Entry</NavLink>
+                      <NavLink to="/view-score" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>View Score</NavLink>
                       {canManageUsers && (
                         <NavLink to="/modify-user" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Manage Users</NavLink>
                       )}

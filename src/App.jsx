@@ -17,6 +17,7 @@ const Contact = lazy(() => import("./pages/Contact"));
 const Sessions = lazy(() => import("./pages/Sessions"));
 const SessionDetail = lazy(() => import("./pages/SessionDetail"));
 const SessionCards = lazy(() => import("./pages/SessionCards"));
+const ViewScore = lazy(() => import("./pages/ViewScore"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const Profile = lazy(() => import("./pages/Profile"));
 const ManageStudents = lazy(() => import("./pages/ManageStudents"));
@@ -109,6 +110,16 @@ function AnimatedRoutes({ user, setUser }) {
                         }
                     />
                     <Route path="/contact" element={<PageFade><Contact /></PageFade>} />
+                    <Route
+                        path="/view-score"
+                        element={
+                            user ? (
+                                <PageFade><ViewScore user={user} /></PageFade>
+                            ) : (
+                                <Navigate to="/login" replace />
+                            )
+                        }
+                    />
 
                     {/* Auth-only pages */}
                     <Route
