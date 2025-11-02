@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import AttemptEditor from "../components/AttemptEditor";
 import { jsPDF } from "jspdf";
 import { drawBarcode } from "../utils/barcode";
@@ -261,7 +261,8 @@ export default function SessionDetail({ user }) {
     };
 
     
-    const exportResults = async () => {
+    // Build PFT-shaped rows with attendance/date logic
+    const buildPftRows = async () => {
         try {
             const templateRes = await fetch('/pft_template.csv', { cache: 'no-store' });
             if (!templateRes.ok) throw new Error('Failed to load PFT template.');
@@ -304,9 +305,7 @@ export default function SessionDetail({ user }) {
                         'Pull-ups': r['Pull-ups'],
                         'Shuttle Run (sec)': r['Shuttle Run (sec)'],
                         '1.6/2.4 Km Run MMSS': r['1.6/2.4 Km Run MMSS'] || '',
-                        'PFT Test Date': (function(){
-                            try { return formatDDMMYYYY(session?.session_date); } catch { return ''; }
-                        })()
+                        'PFT Test Date': hasAny ? (function(){ try { return formatDDMMYYYY(session?.session_date); } catch { return ''; } })() : ''
                     };
                 });
             } catch (e) {
@@ -314,7 +313,7 @@ export default function SessionDetail({ user }) {
             }
 
             if (pftError || shaped.length === 0) {
-                // Fallback to generic export and shape client‑side
+                // Fallback to generic export and shape client-side
                 const { data: raw, error } = await supabase
                     .rpc('export_session_scores', { p_session_id: id });
                 if (error) throw error;
@@ -340,43 +339,88 @@ export default function SessionDetail({ user }) {
                         'Pull-ups': r.pullups,
                         'Shuttle Run (sec)': r.shuttle_run,
                         '1.6/2.4 Km Run MMSS': '',
-                        'PFT Test Date': (function(){
-                            try { return formatDDMMYYYY(session?.session_date); } catch { return ''; }
-                        })()
+                        'PFT Test Date': hasAny ? (function(){ try { return formatDDMMYYYY(session?.session_date); } catch { return ''; } })() : ''
                     };
                 });
             }
 
-            const dataRows = shaped.map(row => {
+            return { headers, prefix, shaped };
+        } catch (err) {
+            setFlash(err.message || 'Failed to export results.');
+            return null;
+        }
+    };
+
+    const exportPftAllClasses = async () => {
+        const res = await buildPftRows();
+        if (!res) return;
+        const { headers, prefix, shaped } = res;
+        const dataRows = shaped.map(row => {
+            const cols = headers.map(h => {
+                const v = row[h];
+                return v == null ? '' : (typeof v === 'string' ? '"' + v.replace(/"/g,'""') + '"' : v);
+            });
+            cols.push('*END*');
+            return cols.join(',');
+        });
+        const finalCsv = "\uFEFF" + prefix + dataRows.join('\n');
+        const blob = new Blob([finalCsv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const title = String(session?.title || 'Session');
+        const safeTitle = title.replace(/[^A-Za-z0-9_-]+/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '');
+        const d = new Date(session?.session_date);
+        const dd = String(d.getDate()).padStart(2, '0');
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        const yyyy = d.getFullYear();
+        const ddmmyyyy = `${dd}${mm}${yyyy}`;
+        a.download = `PFT_${safeTitle}_${ddmmyyyy}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    };
+
+    const exportPftPerClass = async () => {
+        const res = await buildPftRows();
+        if (!res) return;
+        const { headers, prefix, shaped } = res;
+        // Group by class and generate one file per class, with Sl.No reset per class
+        const byClass = new Map();
+        shaped.forEach(r => {
+            const k = (r['Class'] || '').toString().trim() || 'Unassigned';
+            if (!byClass.has(k)) byClass.set(k, []);
+            byClass.get(k).push(r);
+        });
+        const title = String(session?.title || 'Session');
+        const safeTitle = title.replace(/[^A-Za-z0-9_-]+/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '');
+        const d = new Date(session?.session_date);
+        const dd = String(d.getDate()).padStart(2, '0');
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        const yyyy = d.getFullYear();
+        const ddmmyyyy = `${dd}${mm}${yyyy}`;
+        for (const [klass, rowsForClass] of byClass.entries()) {
+            const rowsWithReset = rowsForClass.map((row, idx) => ({ ...row, 'Sl.No': idx + 1 }));
+            const dataRows = rowsWithReset.map(row => {
                 const cols = headers.map(h => {
                     const v = row[h];
                     return v == null ? '' : (typeof v === 'string' ? '"' + v.replace(/"/g,'""') + '"' : v);
                 });
-                // Add END marker in column O (after PFT Test Date column)
                 cols.push('*END*');
                 return cols.join(',');
             });
-
             const finalCsv = "\uFEFF" + prefix + dataRows.join('\n');
             const blob = new Blob([finalCsv], { type: 'text/csv;charset=utf-8;' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            // Filename: PFT_(session_title)_(session_date in ddmmyyyy)
-            const title = String(session?.title || 'Session');
-            const safeTitle = title.replace(/[^A-Za-z0-9_-]+/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '');
-            const d = new Date(session?.session_date);
-            const dd = String(d.getDate()).padStart(2, '0');
-            const mm = String(d.getMonth() + 1).padStart(2, '0');
-            const yyyy = d.getFullYear();
-            const ddmmyyyy = `${dd}${mm}${yyyy}`;
-            a.download = `PFT_${safeTitle}_${ddmmyyyy}.csv`;
+            const safeClass = klass.replace(/[^A-Za-z0-9_-]+/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '') || 'Unassigned';
+            a.download = `PFT_${safeTitle}_${ddmmyyyy}_${safeClass}.csv`;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
-        } catch (err) {
-            setFlash(err.message || 'Failed to export results.');
         }
     };
     const handleStatusChange = async (nextStatus) => {
@@ -440,7 +484,7 @@ export default function SessionDetail({ user }) {
             const truncateToWidth = (text, maxW, fontSize) => {
                 if (!text) return '';
                 doc.setFontSize(fontSize);
-                const ellipsis = '…';
+                const ellipsis = '�';
                 let t = String(text);
                 // Fast path: fits
                 if (doc.getTextWidth(t) <= maxW) return t;
@@ -819,12 +863,20 @@ export default function SessionDetail({ user }) {
                         <div className="px-3 py-2 border-b bg-gray-50 text-sm font-medium flex items-center justify-between">
                             <span>Scores</span>
                             {canManage && (
-                                <button
-                                    onClick={exportResults}
-                                    className="text-xs px-3 py-1.5 border rounded bg-white hover:bg-gray-50"
-                                >
-                                    Export Results
-                                </button>
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={exportPftAllClasses}
+                                        className="text-xs px-3 py-1.5 border rounded bg-white hover:bg-gray-50"
+                                    >
+                                        Export PFT (All Classes)
+                                    </button>
+                                    <button
+                                        onClick={exportPftPerClass}
+                                        className="text-xs px-3 py-1.5 border rounded bg-white hover:bg-gray-50"
+                                    >
+                                        Export PFT (Per Class)
+                                    </button>
+                                </div>
                             )}
                         </div>
                         <table className="w-full">
