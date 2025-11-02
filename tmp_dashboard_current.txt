@@ -1,9 +1,11 @@
-import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+﻿import { useEffect, useMemo, useState } from "react";
+import { NavLink, Link } from "react-router-dom";
+import { isPlatformOwner } from "../lib/roles";
 import { supabase } from "../lib/supabaseClient";
 
 export default function Dashboard({ user }) {
   const [memberships, setMemberships] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
 
   // Core overview
@@ -15,18 +17,28 @@ export default function Dashboard({ user }) {
   const [upcoming, setUpcoming] = useState([]);
   const [active, setActive] = useState([]);
 
+  const platformOwner = isPlatformOwner(user);
+  const canManage = useMemo(() => {
+    const roles = memberships.map(m => String(m.role || '').toLowerCase());
+    return platformOwner || roles.includes('admin') || roles.includes('superadmin');
+  }, [memberships, platformOwner]);
+
   useEffect(() => {
     let ignore = false;
     const load = async () => {
       if (!user?.id) return;
+      setLoading(true);
       try {
         const { data: mem } = await supabase
           .from('memberships')
           .select('role, school_id, schools!inner(name)')
           .eq('user_id', user.id);
-        if (!ignore) setMemberships(mem || []);
+        if (ignore) return;
+        setMemberships(mem || []);
       } catch (e) {
         if (!ignore) setErr(e?.message || 'Failed to load memberships');
+      } finally {
+        if (!ignore) setLoading(false);
       }
     };
     load();
@@ -138,21 +150,17 @@ export default function Dashboard({ user }) {
     return () => { ignore = true };
   }, [memberships]);
 
-  const kpi = (label, value) => (
+  const kpi = (label, value, sub) => (
     <div className="rounded-xl bg-white p-4 shadow-sm border border-gray-100">
       <div className="text-sm text-gray-500">{label}</div>
       <div className="mt-1 text-2xl font-semibold text-slate-900">{value}</div>
+      {sub ? <div className="text-sm text-gray-500 mt-1">{sub}</div> : null}
     </div>
   );
 
   return (
     <div className="bg-[#F9FAFB]">
       <div className="max-w-6xl mx-auto px-4 py-6 space-y-8">
-        {/* Temporary notice */}
-        <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-amber-900 text-sm">
-          Dashboard production is in progress. Please do not click on anything on this page yet.in
-        </div>
-
         {/* Header */}
         <div className="flex items-center gap-3">
           <img src="/icon.png" alt="NAPFA 5" className="w-8 h-8" />
@@ -228,6 +236,19 @@ export default function Dashboard({ user }) {
           </div>
         </section>
 
+        {/* Students & Enrollments */}
+        <section className="hidden">
+          <h2 className="text-xl font-semibold text-slate-900 mb-3">Students & Enrollments</h2>
+          <div className="rounded-xl bg-white p-4 shadow-sm border border-gray-100">
+            <div className="text-sm text-gray-600">Quick links</div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <NavLink to="/manage-students" className="px-3 py-1.5 border rounded hover:bg-gray-50">Manage Students</NavLink>
+              <NavLink to="/add-attempt" className="px-3 py-1.5 border rounded hover:bg-gray-50">Open Score Entry</NavLink>
+              <NavLink to="/view-score" className="px-3 py-1.5 border rounded hover:bg-gray-50">View Scores</NavLink>
+            </div>
+          </div>
+        </section>
+
         {/* Insights */}
         <section>
           <h2 className="text-xl font-semibold text-slate-900 mb-3">Insights</h2>
@@ -259,9 +280,30 @@ export default function Dashboard({ user }) {
           </div>
         </section>
 
+        {/* Help & Shortcuts */}
+        <section className="hidden">
+          <h2 className="text-xl font-semibold text-slate-900 mb-3">Help & Shortcuts</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <Link to="/add-attempt" className="rounded-xl bg-white p-4 shadow-sm border border-gray-100 hover:shadow-md transition">Score Entry</Link>
+            <Link to="/sessions" className="rounded-xl bg-white p-4 shadow-sm border border-gray-100 hover:shadow-md transition">Manage Sessions</Link>
+            <Link to="/manage-students" className="rounded-xl bg-white p-4 shadow-sm border border-gray-100 hover:shadow-md transition">Manage Students</Link>
+            <Link to="/pft-calculator" className="rounded-xl bg-white p-4 shadow-sm border border-gray-100 hover:shadow-md transition">PFT Calculator</Link>
+          </div>
+        </section>
+
+        {/* Roleâ€‘Specific Widgets */}
+        <section>
+          <h2 className="text-xl font-semibold text-slate-900 mb-3">Roleâ€‘Specific</h2>
+          <div className="rounded-xl bg-white p-4 shadow-sm border border-gray-100 text-sm text-slate-700">
+            {platformOwner && <div className="mb-1">Platform Owner: access Global Admin and Schools management.</div>}
+            {canManage && <div className="mb-1">Admin: create sessions, edit rosters, manage users/students.</div>}
+            {!platformOwner && !canManage && <div>Teacher/Viewer: record attempts and view results for assigned sessions.</div>}
+          </div>
+        </section>
+
         {/* What's new */}
         <section>
-          <h2 className="text-xl font-semibold text-slate-900 mb-3">What’s new</h2>
+          <h2 className="text-xl font-semibold text-slate-900 mb-3">Whatâ€™s new</h2>
           <div className="rounded-xl bg-white p-4 shadow-sm border border-gray-100">
             <ul className="list-disc pl-5 text-sm text-slate-700 space-y-1">
               <li>Dual-list roster with filters and pagination.</li>

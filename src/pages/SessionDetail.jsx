@@ -57,6 +57,13 @@ export default function SessionDetail({ user }) {
     const [scoredSet, setScoredSet] = useState(new Set());
     const [inProgressSet, setInProgressSet] = useState(new Set());
     const [completedSet, setCompletedSet] = useState(new Set());
+    const [scoresByStudent, setScoresByStudent] = useState(new Map());
+    const [scoresPage, setScoresPage] = useState(1);
+    const [scoresPageSize, setScoresPageSize] = useState(100);
+    const [filterClass, setFilterClass] = useState("");
+    const [filterQuery, setFilterQuery] = useState("");
+    const [showCompleted, setShowCompleted] = useState(true);
+    const [showIncomplete, setShowIncomplete] = useState(true);
     const [statusUpdating, setStatusUpdating] = useState(false);
     const [summaryOpen, setSummaryOpen] = useState(false);
     const [activeTab, setActiveTab] = useState(() => (location.hash === '#scores' ? 'scores' : 'roster'));
@@ -141,6 +148,7 @@ export default function SessionDetail({ user }) {
         if (!id) return;
         loadRoster();
         loadScoresCount();
+        loadScoresMap();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [id]);
 
@@ -161,13 +169,76 @@ export default function SessionDetail({ user }) {
     const loadRoster = async () => {
         const { data, error: err } = await supabase
             .from("session_roster")
-            .select("student_id, students!inner(id, student_identifier, name)")
+            .select("student_id, students!inner(id, student_identifier, name, enrollments(class,academic_year))")
             .eq("session_id", id)
             .order("student_id", { ascending: true });
         if (err) return;
-        const list = (data || []).map((r) => ({ id: r.students.id, student_identifier: r.students.student_identifier, name: r.students.name }));
+        const sessionYear = session?.session_date ? new Date(session.session_date).getFullYear() : null;
+        const list = (data || []).map((r) => {
+            const s = r.students || {};
+            const ens = Array.isArray(s.enrollments) ? s.enrollments : [];
+            let cls = '';
+            if (sessionYear) {
+                const m = ens.find(e => String(e.academic_year) === String(sessionYear));
+                cls = m?.class || '';
+            }
+            if (!cls && ens.length) {
+                const sorted = [...ens].sort((a,b)=> (b.academic_year||0)-(a.academic_year||0));
+                cls = sorted[0]?.class || '';
+            }
+            return { id: s.id, student_identifier: s.student_identifier, name: s.name, class: cls };
+        });
         setRoster(list);
     };
+
+    // Reload roster when session year becomes available to compute class column
+    useEffect(() => {
+        if (!id) return;
+        loadRoster();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [session?.session_date]);
+
+    // Sort scores table by Class (asc, natural) then Name (asc)
+    const sortedRoster = useMemo(() => {
+        const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+        const copy = Array.isArray(roster) ? [...roster] : [];
+        copy.sort((a,b) => {
+            const ca = String(a.class || '');
+            const cb = String(b.class || '');
+            const cCmp = collator.compare(ca, cb);
+            if (cCmp !== 0) return cCmp;
+            const na = String(a.name || '');
+            const nb = String(b.name || '');
+            return collator.compare(na, nb);
+        });
+        return copy;
+    }, [roster]);
+
+    // Distinct classes for filter
+    const classOptions = useMemo(() => {
+        const set = new Set((roster || []).map(r => String(r.class || '').trim()).filter(Boolean));
+        return Array.from(set).sort((a,b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+    }, [roster]);
+
+    // Apply class and completion filters
+    const filteredSortedRoster = useMemo(() => {
+        const q = filterQuery.trim().toLowerCase();
+        const list = sortedRoster.filter(s => {
+            const matchClass = !filterClass || String(s.class||'') === filterClass;
+            if (!matchClass) return false;
+            const matchQuery = !q || (
+                String(s.name || '').toLowerCase().includes(q) ||
+                String(s.student_identifier || '').toLowerCase().includes(q) ||
+                String(s.class || '').toLowerCase().includes(q)
+            );
+            if (!matchQuery) return false;
+            const isCompleted = completedSet.has(s.id);
+            const includeCompleted = showCompleted && isCompleted;
+            const includeIncomplete = showIncomplete && !isCompleted;
+            return includeCompleted || includeIncomplete;
+        });
+        return list;
+    }, [sortedRoster, filterClass, filterQuery, showCompleted, showIncomplete, completedSet]);
 
     const loadScoresCount = async () => {
         // Pull all score rows for this session and derive status counts from non-null metrics
@@ -195,6 +266,25 @@ export default function SessionDetail({ user }) {
         setCompletedSet(completed);
         setScoresCount(completed.size);
     };
+
+    const loadScoresMap = async () => {
+        const { data: rows, error: err } = await supabase
+            .from('scores')
+            .select('student_id, situps, shuttle_run, sit_and_reach, pullups, broad_jump, run_2400')
+            .eq('session_id', id);
+        if (err) return;
+        const map = new Map();
+        (rows || []).forEach(r => { map.set(r.student_id, r); });
+        setScoresByStudent(map);
+    };
+
+    // Responsive scores table page size (100 desktop, 40 mobile)
+    useEffect(() => {
+        const calc = () => setScoresPageSize(window.innerWidth < 768 ? 40 : 100);
+        calc();
+        window.addEventListener('resize', calc);
+        return () => window.removeEventListener('resize', calc);
+    }, []);
 
     useEffect(() => {
         if (!flash) return;
@@ -860,8 +950,40 @@ export default function SessionDetail({ user }) {
             ) : (
                 <section className="space-y-4">
                     <div className="border rounded-lg overflow-x-auto bg-white">
-                        <div className="px-3 py-2 border-b bg-gray-50 text-sm font-medium flex items-center justify-between">
-                            <span>Scores</span>
+                        <div className="px-3 py-2 border-b bg-gray-50 text-sm font-medium flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-3 flex-wrap">
+                                <span>Scores</span>
+                                <div className="flex items-center gap-2">
+                                    <label className="text-xs text-gray-600">Class</label>
+                                    <select value={filterClass} onChange={e => { setScoresPage(1); setFilterClass(e.target.value) }} className="text-xs border rounded px-2 py-1 bg-white">
+                                        <option value="">All</option>
+                                        {classOptions.map(c => (
+                                            <option key={c} value={c}>{c}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <label className="text-xs text-gray-600">Search</label>
+                                    <input
+                                        type="text"
+                                        value={filterQuery}
+                                        onChange={e => { setScoresPage(1); setFilterQuery(e.target.value) }}
+                                        placeholder="Name or ID"
+                                        className="text-xs border rounded px-2 py-1 bg-white"
+                                    />
+                                </div>
+                                <div className="flex items-center gap-3 text-xs">
+                                    <label className="inline-flex items-center gap-1">
+                                        <input type="checkbox" className="align-middle" checked={showCompleted} onChange={e => { setScoresPage(1); setShowCompleted(e.target.checked) }} />
+                                        <span>Show completed</span>
+                                    </label>
+                                    <label className="inline-flex items-center gap-1">
+                                        <input type="checkbox" className="align-middle" checked={showIncomplete} onChange={e => { setScoresPage(1); setShowIncomplete(e.target.checked) }} />
+                                        <span>Show incomplete</span>
+                                    </label>
+                                </div>
+                                <div className="text-xs text-gray-500">Sorting: Class ▲, Name ▲</div>
+                            </div>
                             {canManage && (
                                 <div className="flex gap-2">
                                     <button
@@ -884,27 +1006,110 @@ export default function SessionDetail({ user }) {
                                 <tr className="bg-gray-100 text-left">
                                     <th className="px-3 py-2 border">Student ID</th>
                                     <th className="px-3 py-2 border">Name</th>
-                                    <th className="px-3 py-2 border w-48">Actions</th>
+                                    <th className="px-3 py-2 border">Class</th>
+                                    <th className="px-3 py-2 border">Sit-ups</th>
+                                    <th className="px-3 py-2 border">Shuttle Run</th>
+                                    <th className="px-3 py-2 border">Sit & Reach</th>
+                                    <th className="px-3 py-2 border">Pull-ups</th>
+                                    <th className="px-3 py-2 border">Broad Jump</th>
+                                    {/** Run temporarily hidden */}
+                                    <th className="px-3 py-2 border w-40">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
-                            {roster.length === 0 ? (
-                                <tr><td colSpan="3" className="px-3 py-4 text-center text-gray-500">No students in this session yet.</td></tr>
-                            ) : roster.map((s) => (
-                                <RosterRow
-                                    key={s.id}
-                                    s={s}
-                                    sessionId={id}
-                                    canRecord={session.status === 'active' && ['admin','superadmin','score_taker'].includes(membership?.role)}
-                                    onSaved={() => { loadRoster(); loadScoresCount(); }}
-                                />
-                            ))}
+                            {(() => {
+                                const total = filteredSortedRoster.length;
+                                if (total === 0) return (
+                                    <tr><td colSpan="9" className="px-3 py-4 text-center text-gray-500">No students in this session yet.</td></tr>
+                                );
+                                const totalPages = Math.max(1, Math.ceil(total / scoresPageSize));
+                                const cur = Math.min(scoresPage, totalPages);
+                                const start = (cur - 1) * scoresPageSize;
+                                const pageItems = filteredSortedRoster.slice(start, start + scoresPageSize);
+                                return pageItems.flatMap((s) => {
+                                    const row = scoresByStudent.get(s.id) || {};
+                                    const canRecord = session.status === 'active' && ['admin','superadmin','score_taker'].includes(membership?.role);
+                                    const isCompleted = completedSet.has(s.id);
+                                    const isInProgress = inProgressSet.has(s.id);
+                                    const statusLeft = isCompleted
+                                        ? 'border-l-4 border-l-green-500'
+                                        : (isInProgress ? 'border-l-4 border-l-amber-500' : 'border-l-4 border-l-gray-300');
+                                    return [
+                                        <tr key={s.id}>
+                                            <td className={`px-3 py-2 border align-top ${statusLeft}`}>{normalizeStudentId(s.student_identifier)}</td>
+                                            <td className="px-3 py-2 border align-top">{s.name}</td>
+                                            <td className="px-3 py-2 border align-top">{s.class || '-'}</td>
+                                            <td className="px-3 py-2 border align-top">{row.situps ?? '-'}</td>
+                                            <td className="px-3 py-2 border align-top">{row.shuttle_run ?? '-'}</td>
+                                            <td className="px-3 py-2 border align-top">{row.sit_and_reach ?? '-'}</td>
+                                            <td className="px-3 py-2 border align-top">{row.pullups ?? '-'}</td>
+                                            <td className="px-3 py-2 border align-top">{row.broad_jump ?? '-'}</td>
+                                            {/** Run temporarily hidden */}
+                                            <td className="px-3 py-2 border align-top">
+                                                <ScoreRowActions student={s} canRecord={canRecord} onSaved={async () => { await loadScoresMap(); await loadScoresCount(); }} sessionId={id} />
+                                            </td>
+                                        </tr>
+                                    ];
+                                });
+                            })()}
                             </tbody>
                         </table>
+                        {/* Pagination footer */}
+                        <ScoresPager
+                            total={roster.length}
+                            page={scoresPage}
+                            pageSize={scoresPageSize}
+                            onPageChange={setScoresPage}
+                        />
                     </div>
                 </section>
             )}
         </div>
+    );
+}
+
+function ScoresPager({ total, page, pageSize, onPageChange }) {
+    const totalPages = Math.max(1, Math.ceil((total || 0) / (pageSize || 1)));
+    const cur = Math.min(page, totalPages);
+    const start = total ? (cur - 1) * pageSize + 1 : 0;
+    const end = Math.min(cur * pageSize, total);
+    if (!total) return null;
+    return (
+        <div className="flex items-center justify-between px-3 py-2 border-t bg-gray-50 text-sm">
+            <div>Showing {start}-{end} of {total}</div>
+            <div className="flex items-center gap-2">
+                <button className="px-2 py-1 border rounded disabled:opacity-50" disabled={cur <= 1} onClick={() => onPageChange(cur - 1)}>Prev</button>
+                <span className="text-gray-600">Page {cur} of {totalPages}</span>
+                <button className="px-2 py-1 border rounded disabled:opacity-50" disabled={cur >= totalPages} onClick={() => onPageChange(cur + 1)}>Next</button>
+            </div>
+        </div>
+    );
+}
+
+function ScoreRowActions({ student, sessionId, canRecord, onSaved }) {
+    const [open, setOpen] = useState(false);
+    return (
+        <>
+            <button onClick={() => canRecord && setOpen(true)} disabled={!canRecord} className="px-3 py-1.5 border rounded hover:bg-gray-100 text-sm">
+                {canRecord ? 'Edit' : 'View'}
+            </button>
+            {open && (
+                <div className="fixed inset-0 z-40">
+                    <div className="absolute inset-0 bg-black/30" onClick={() => setOpen(false)} aria-hidden="true" />
+                    <div className="absolute inset-0 flex items-center justify-center p-4">
+                        <div role="dialog" aria-modal="true" className="w-full max-w-2xl bg-white rounded-xl shadow-lg">
+                            <div className="px-4 py-3 border-b flex items-center justify-between">
+                                <div className="font-medium">Edit Scores — {student.name}</div>
+                                <button className="text-gray-500 hover:text-gray-800" aria-label="Close" onClick={() => setOpen(false)}>×</button>
+                            </div>
+                            <div className="p-4">
+                                <AttemptEditor sessionId={sessionId} studentId={student.id} onSaved={() => { setOpen(false); onSaved && onSaved(); }} />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </>
     );
 }
 
