@@ -16,7 +16,7 @@ export default function Home() {
   }
   return (
     <div className="bg-[#F9FAFB] font-sans">
-      <main className="max-w-6xl mx-auto px-4 py-16 space-y-16 md:space-y-24">
+      <main className="max-w-6xl mx-auto px-4 py-10 space-y-8 md:space-y-12">
         {/* Hero Banner */}
         <motion.section className="relative overflow-hidden" initial="hidden" whileInView="show" viewport={{ once: true, amount: 0.2 }} variants={sectionVariants}>
           <div className="bg-gradient-to-r from-blue-50 via-sky-50 to-indigo-50">
