@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { isPlatformOwner } from "../lib/roles";
 import { supabase } from "../lib/supabaseClient";
 
 export default function Dashboard({ user }) {
@@ -14,6 +15,26 @@ export default function Dashboard({ user }) {
   // Upcoming & Active
   const [upcoming, setUpcoming] = useState([]);
   const [active, setActive] = useState([]);
+
+  // Roles present for this user
+  const roleSet = useMemo(() => new Set((memberships || []).map(m => String(m.role || '').toLowerCase())), [memberships]);
+  const isOwner = isPlatformOwner(user);
+  const isAdmin = roleSet.has('admin') || roleSet.has('superadmin') || isOwner;
+  const isTeacher = roleSet.has('score_taker');
+  const isViewer = roleSet.has('viewer');
+
+  // Role Workflows tab
+  const availableTabs = useMemo(() => {
+    const tabs = [];
+    if (isTeacher || (!isAdmin && !isOwner && !isViewer)) tabs.push({ id: 'teacher', label: 'Teacher' });
+    if (isAdmin) tabs.push({ id: 'admin', label: 'Admin' });
+    if (isViewer && !isAdmin && !isOwner) tabs.push({ id: 'viewer', label: 'Viewer' });
+    if (isOwner) tabs.push({ id: 'owner', label: 'Owner' });
+    return tabs.length ? tabs : [{ id: 'teacher', label: 'Teacher' }];
+  }, [isTeacher, isAdmin, isViewer, isOwner]);
+  const defaultTab = availableTabs[0]?.id || 'teacher';
+  const [wfTab, setWfTab] = useState(defaultTab);
+  useEffect(() => { setWfTab(defaultTab) }, [defaultTab]);
 
   useEffect(() => {
     let ignore = false;
@@ -166,29 +187,148 @@ export default function Dashboard({ user }) {
           <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div>
         )}
 
-        {/* Core Overview */}
+        {/* Role Workflows (moved to top) */}
         <section>
-          <h2 className="text-xl font-semibold text-slate-900 mb-3">Core Overview</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {kpi('Today: Draft Sessions', todaySessions.draft)}
-            {kpi('Today: Active Sessions', todaySessions.active)}
-            {kpi('Today: Completed Sessions', todaySessions.completed)}
-            {kpi('Attempts Recorded (today)', attemptsToday)}
+          <h2 className="text-xl font-semibold text-slate-900 mb-3">Role Workflows</h2>
+          {/* Segmented control */}
+          <div className="inline-flex rounded-lg bg-gray-100 p-1 text-sm mb-3">
+            {availableTabs.map(t => (
+              <button
+                key={t.id}
+                className={(wfTab === t.id ? 'bg-white text-blue-700 shadow border border-gray-200' : 'text-gray-700 hover:text-gray-900') + ' px-3 py-1.5 rounded-md transition-colors'}
+                onClick={() => setWfTab(t.id)}
+              >
+                {t.label}
+              </button>
+            ))}
           </div>
-          <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="rounded-xl bg-white p-4 shadow-sm border border-gray-100">
-              <div className="text-sm text-gray-500">Not started</div>
-              <div className="mt-1 text-2xl font-semibold text-slate-900">{rosterCompletion.notStarted}</div>
+
+          {/* Panels */}
+          {wfTab === 'teacher' && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Run */}
+              <div className="rounded-xl bg-white p-4 shadow-sm border border-gray-100">
+                <div className="text-xs text-gray-500 mb-1 uppercase tracking-wide">Run</div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div>Record scores</div>
+                    <Link to="/add-attempt" className="text-xs px-2 py-1 border rounded hover:bg-gray-50">Open</Link>
+                  </div>
+                </div>
+              </div>
+              {/* View */}
+              <div className="rounded-xl bg-white p-4 shadow-sm border border-gray-100">
+                <div className="text-xs text-gray-500 mb-1 uppercase tracking-wide">View</div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div>View scores</div>
+                    <Link to="/view-score" className="text-xs px-2 py-1 border rounded hover:bg-gray-50">Open</Link>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div className="rounded-xl bg-white p-4 shadow-sm border border-gray-100">
-              <div className="text-sm text-gray-500">In progress</div>
-              <div className="mt-1 text-2xl font-semibold text-slate-900">{rosterCompletion.inProgress}</div>
+          )}
+
+          {wfTab === 'admin' && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Plan */}
+              <div className="rounded-xl bg-white p-4 shadow-sm border border-gray-100">
+                <div className="text-xs text-gray-500 mb-1 uppercase tracking-wide">Plan</div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div>Draft sessions <span className="ml-1 text-xs text-gray-500">({todaySessions.draft})</span></div>
+                    <Link to="/sessions" className="text-xs px-2 py-1 border rounded hover:bg-gray-50">Manage</Link>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div>Manage students & enrollments</div>
+                    <Link to="/manage-students" className="text-xs px-2 py-1 border rounded hover:bg-gray-50">Open</Link>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div>Manage users</div>
+                    <Link to="/modify-user" className="text-xs px-2 py-1 border rounded hover:bg-gray-50">Open</Link>
+                  </div>
+                </div>
+              </div>
+              {/* Run */}
+              <div className="rounded-xl bg-white p-4 shadow-sm border border-gray-100">
+                <div className="text-xs text-gray-500 mb-1 uppercase tracking-wide">Run</div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div>Active sessions <span className="ml-1 text-xs text-gray-500">({active.length})</span></div>
+                    <Link to="/sessions" className="text-xs px-2 py-1 border rounded hover:bg-gray-50">View</Link>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div>Score entry</div>
+                    <Link to="/add-attempt" className="text-xs px-2 py-1 border rounded hover:bg-gray-50">Open</Link>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div>View scores</div>
+                    <Link to="/view-score" className="text-xs px-2 py-1 border rounded hover:bg-gray-50">Open</Link>
+                  </div>
+                </div>
+              </div>
+              {/* Wrap up */}
+              <div className="rounded-xl bg-white p-4 shadow-sm border border-gray-100">
+                <div className="text-xs text-gray-500 mb-1 uppercase tracking-wide">Wrap Up</div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div>Export PFT (all / per class)</div>
+                    <Link to="/sessions" className="text-xs px-2 py-1 border rounded hover:bg-gray-50">Open</Link>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div>Review recent exports</div>
+                    <Link to="/sessions" className="text-xs px-2 py-1 border rounded hover:bg-gray-50">View</Link>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div className="rounded-xl bg-white p-4 shadow-sm border border-gray-100">
-              <div className="text-sm text-gray-500">Completed</div>
-              <div className="mt-1 text-2xl font-semibold text-slate-900">{rosterCompletion.completed} / {rosterCompletion.total}</div>
+          )}
+
+          {wfTab === 'viewer' && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="rounded-xl bg-white p-4 shadow-sm border border-gray-100">
+                <div className="text-xs text-gray-500 mb-1 uppercase tracking-wide">View</div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div>View scores</div>
+                    <Link to="/view-score" className="text-xs px-2 py-1 border rounded hover:bg-gray-50">Open</Link>
+                  </div>
+                </div>
+              </div>
             </div>
-          </div>
+          )}
+
+          {wfTab === 'owner' && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="rounded-xl bg-white p-4 shadow-sm border border-gray-100">
+                <div className="text-xs text-gray-500 mb-1 uppercase tracking-wide">Plan</div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div>Manage schools</div>
+                    <Link to="/create-school" className="text-xs px-2 py-1 border rounded hover:bg-gray-50">Open</Link>
+                  </div>
+                </div>
+              </div>
+              <div className="rounded-xl bg-white p-4 shadow-sm border border-gray-100">
+                <div className="text-xs text-gray-500 mb-1 uppercase tracking-wide">Run</div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div>Global admin</div>
+                    <Link to="/admin-global" className="text-xs px-2 py-1 border rounded hover:bg-gray-50">Open</Link>
+                  </div>
+                </div>
+              </div>
+              <div className="rounded-xl bg-white p-4 shadow-sm border border-gray-100">
+                <div className="text-xs text-gray-500 mb-1 uppercase tracking-wide">Wrap Up</div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div>Manage users</div>
+                    <Link to="/modify-user" className="text-xs px-2 py-1 border rounded hover:bg-gray-50">Open</Link>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </section>
 
         {/* Upcoming & Active */}
@@ -247,17 +387,7 @@ export default function Dashboard({ user }) {
           </div>
         </section>
 
-        {/* Recent Activity & Audit */}
-        <section>
-          <h2 className="text-xl font-semibold text-slate-900 mb-3">Recent Activity & Audit</h2>
-          <div className="rounded-xl bg-white p-4 shadow-sm border border-gray-100">
-            <ul className="list-disc pl-5 text-sm text-slate-700 space-y-1">
-              <li>Recent score entries and exports will appear here.</li>
-              <li>Roster changes (added/removed students) show with timestamps.</li>
-              <li>Imports summary and any errors.</li>
-            </ul>
-          </div>
-        </section>
+        
 
         {/* What's new */}
         <section>
@@ -272,6 +402,8 @@ export default function Dashboard({ user }) {
             </ul>
           </div>
         </section>
+
+        
       </div>
     </div>
   );
