@@ -1,4 +1,4 @@
-﻿-- Run this in Supabase SQL editor (Postgres)
+-- Run this in Supabase SQL editor (Postgres)
 -- Idempotent schema + RLS policies for sessions, roster, scores
 
 create extension if not exists pgcrypto;
@@ -784,3 +784,180 @@ $func$;
 
 
 
+
+-- =========================
+-- Audit schema and events
+-- =========================
+create schema if not exists audit;
+
+create table if not exists audit.audit_events (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  actor_user_id uuid,
+  school_id uuid,
+  session_id uuid,
+  entity_type text not null,
+  entity_id text,
+  action text not null,
+  origin text not null check (origin in ('db_trigger','app')),
+  old_data jsonb,
+  new_data jsonb,
+  diff jsonb,
+  details jsonb,
+  request_id uuid,
+  user_agent text,
+  ip inet,
+  client_version text
+);
+
+create index if not exists audit_events_created_at_idx on audit.audit_events (created_at desc);
+create index if not exists audit_events_school_idx on audit.audit_events (school_id, created_at desc);
+create index if not exists audit_events_session_idx on audit.audit_events (session_id, created_at desc);
+create index if not exists audit_events_actor_idx on audit.audit_events (actor_user_id, created_at desc);
+create index if not exists audit_events_entity_idx on audit.audit_events (entity_type, created_at desc);
+
+-- Helper definer to insert into audit table (bypasses RLS for inserts)
+create or replace function audit._write_event(
+  p_actor_user_id uuid,
+  p_school_id uuid,
+  p_session_id uuid,
+  p_entity_type text,
+  p_entity_id text,
+  p_action text,
+  p_origin text,
+  p_old jsonb,
+  p_new jsonb,
+  p_diff jsonb,
+  p_details jsonb,
+  p_request_id uuid,
+  p_user_agent text,
+  p_ip inet,
+  p_client_version text
+) returns void
+language sql
+security definer
+set search_path = audit, public
+as $$
+  insert into audit.audit_events (
+    actor_user_id, school_id, session_id, entity_type, entity_id, action, origin,
+    old_data, new_data, diff, details, request_id, user_agent, ip, client_version
+  ) values (
+    p_actor_user_id, p_school_id, p_session_id, p_entity_type, p_entity_id, p_action, p_origin,
+    p_old, p_new, p_diff, p_details, p_request_id, p_user_agent, p_ip, p_client_version
+  );
+$$;
+
+-- Trigger function to log table changes
+create or replace function audit.log_change() returns trigger
+language plpgsql
+as $$
+declare
+  v_actor uuid := auth.uid();
+  v_school uuid;
+  v_session uuid;
+  v_old jsonb;
+  v_new jsonb;
+  v_entity text := tg_table_name;
+  v_id text;
+  v_action text := lower(tg_op);
+begin
+  if tg_op = 'INSERT' then
+    v_new := to_jsonb(NEW);
+  elsif tg_op = 'UPDATE' then
+    v_old := to_jsonb(OLD);
+    v_new := to_jsonb(NEW);
+  elsif tg_op = 'DELETE' then
+    v_old := to_jsonb(OLD);
+  end if;
+
+  -- derive ids by table
+  if tg_table_name = 'scores' then
+    v_session := coalesce((v_new->>'session_id')::uuid, (v_old->>'session_id')::uuid);
+    select s.school_id into v_school from public.sessions s where s.id = v_session;
+    v_id := coalesce(v_new->>'student_id', v_old->>'student_id');
+  elsif tg_table_name = 'session_roster' then
+    v_session := coalesce((v_new->>'session_id')::uuid, (v_old->>'session_id')::uuid);
+    select s.school_id into v_school from public.sessions s where s.id = v_session;
+    v_id := coalesce(v_new->>'student_id', v_old->>'student_id');
+  elsif tg_table_name = 'sessions' then
+    v_session := coalesce((v_new->>'id')::uuid, (v_old->>'id')::uuid);
+    v_school := coalesce((v_new->>'school_id')::uuid, (v_old->>'school_id')::uuid);
+    v_id := coalesce(v_new->>'id', v_old->>'id');
+  elsif tg_table_name = 'enrollments' then
+    v_school := coalesce((v_new->>'school_id')::uuid, (v_old->>'school_id')::uuid);
+    v_id := coalesce(v_new->>'id', v_old->>'id');
+  elsif tg_table_name = 'memberships' then
+    v_school := coalesce((v_new->>'school_id')::uuid, (v_old->>'school_id')::uuid);
+    v_id := coalesce(v_new->>'user_id', v_old->>'user_id');
+  else
+    v_id := coalesce(v_new->>'id', v_old->>'id');
+  end if;
+
+  perform audit._write_event(
+    v_actor, v_school, v_session, v_entity, v_id, v_action, 'db_trigger',
+    v_old, v_new, null, null, null, null, null, null
+  );
+
+  if tg_op = 'DELETE' then return OLD; else return NEW; end if;
+end;
+$$;
+
+-- Attach triggers on key tables
+do $$ begin
+  if not exists (
+    select 1 from pg_trigger where tgname = 'audit_scores_trg'
+  ) then
+    create trigger audit_scores_trg after insert or update or delete on public.scores
+      for each row execute function audit.log_change();
+  end if;
+  if not exists (
+    select 1 from pg_trigger where tgname = 'audit_session_roster_trg'
+  ) then
+    create trigger audit_session_roster_trg after insert or update or delete on public.session_roster
+      for each row execute function audit.log_change();
+  end if;
+  if not exists (
+    select 1 from pg_trigger where tgname = 'audit_sessions_trg'
+  ) then
+    create trigger audit_sessions_trg after insert or update or delete on public.sessions
+      for each row execute function audit.log_change();
+  end if;
+  if not exists (
+    select 1 from pg_trigger where tgname = 'audit_enrollments_trg'
+  ) then
+    create trigger audit_enrollments_trg after insert or update or delete on public.enrollments
+      for each row execute function audit.log_change();
+  end if;
+  if not exists (
+    select 1 from pg_trigger where tgname = 'audit_memberships_trg'
+  ) then
+    create trigger audit_memberships_trg after insert or update or delete on public.memberships
+      for each row execute function audit.log_change();
+  end if;
+end $$;
+
+-- RLS for audit table
+alter table audit.audit_events enable row level security;
+
+-- Public RPC wrapper for app-level events
+create or replace function public.audit_log_event(
+  p_entity_type text,
+  p_action text,
+  p_entity_id text,
+  p_school_id uuid,
+  p_session_id uuid,
+  p_details jsonb default null,
+  p_request_id uuid default null,
+  p_user_agent text default null,
+  p_ip inet default null,
+  p_client_version text default null
+) returns void
+language sql
+security definer
+set search_path = public, audit
+as $$
+  select audit._write_event(
+    auth.uid(), p_school_id, p_session_id, p_entity_type, p_entity_id, p_action, 'app',
+    null, null, null, p_details, p_request_id, p_user_agent, p_ip, p_client_version
+  );
+$$;
