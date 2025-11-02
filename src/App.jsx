@@ -2,6 +2,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate, useLocation, useNavig
 import { useEffect, useState, lazy, Suspense } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { supabase } from "./lib/supabaseClient";
+import { isPlatformOwner } from "./lib/roles";
 import Nav from "./components/Navbar";
 import LoadingOverlay from "./components/LoadingOverlay";
 const Home = lazy(() => import("./pages/Home"));
@@ -18,6 +19,7 @@ const Sessions = lazy(() => import("./pages/Sessions"));
 const SessionDetail = lazy(() => import("./pages/SessionDetail"));
 const SessionCards = lazy(() => import("./pages/SessionCards"));
 const ViewScore = lazy(() => import("./pages/ViewScore"));
+const PftCalculator = lazy(() => import("./pages/PftCalculator"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const Profile = lazy(() => import("./pages/Profile"));
 const ManageStudents = lazy(() => import("./pages/ManageStudents"));
@@ -52,6 +54,8 @@ function AdminGuard({ user, children }) {
     useEffect(() => {
         let ignore = false;
         async function check() {
+            // Platform owner always allowed
+            if (isPlatformOwner(user)) { if (!ignore) setAllowed(true); return; }
             if (!user?.id) { if (!ignore) setAllowed(false); return; }
             try {
                 const { data } = await supabase
@@ -115,6 +119,16 @@ function AnimatedRoutes({ user, setUser }) {
                         element={
                             user ? (
                                 <PageFade><ViewScore user={user} /></PageFade>
+                            ) : (
+                                <Navigate to="/login" replace />
+                            )
+                        }
+                    />
+                    <Route
+                        path="/pft-calculator"
+                        element={
+                            user ? (
+                                <PageFade><PftCalculator user={user} /></PageFade>
                             ) : (
                                 <Navigate to="/login" replace />
                             )

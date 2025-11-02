@@ -55,9 +55,11 @@ export default function Navbar({ user, onLogout }) {
             </svg>
           </button>
             <div className="hidden md:flex gap-3">
-              <NavLink to="/" end className={({ isActive }) => `${link} ${isActive ? active : ""}`}>
-                Home
-              </NavLink>
+              {!user && (
+                <NavLink to="/" end className={({ isActive }) => `${link} ${isActive ? active : ""}`}>
+                  Home
+                </NavLink>
+              )}
               {user && (
                 <>
                   <NavLink to="/dashboard" className={({ isActive }) => `${link} ${isActive ? active : ""}`}>
@@ -94,6 +96,11 @@ export default function Navbar({ user, onLogout }) {
                       </NavLink>
                     </>
                   )}
+                  {(canManageUsers || isOwner) && (
+                    <NavLink to="/pft-calculator" className={({ isActive }) => `${link} ${isActive ? active : ""}`}>
+                      PFT Calculator
+                    </NavLink>
+                  )}
                 </>
               )}
             <NavLink to="/contact" className={({ isActive }) => `${link} ${isActive ? active : ""}`}>
@@ -122,7 +129,9 @@ export default function Navbar({ user, onLogout }) {
             {/* Animated mobile panel */}
             <div className="md:hidden px-3">
                 <div className={open ? "border-t pb-3 space-y-2 transition-all duration-200" : "border-t pb-0 h-0 overflow-hidden transition-all duration-200"}>
-                  <NavLink to="/" end className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Home</NavLink>
+                  {!user && (
+                    <NavLink to="/" end className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Home</NavLink>
+                  )}
                   {user && (
                     <>
                       <NavLink to="/dashboard" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Dashboard</NavLink>
@@ -138,6 +147,9 @@ export default function Navbar({ user, onLogout }) {
                       <NavLink to="/create-school" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Manage Schools</NavLink>
                           <NavLink to="/admin-global" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Global Admin</NavLink>
                         </>
+                      )}
+                      {(canManageUsers || isOwner) && (
+                        <NavLink to="/pft-calculator" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>PFT Calculator</NavLink>
                       )}
                     </>
                   )}

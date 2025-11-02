@@ -96,7 +96,8 @@ export default function ViewScore() {
     const res = evaluateNapfa({ level, sex, age, run_km: runKm }, measures)
     const award = computeAward(res)
     const nextTargets = computeNextTargets({ level, sex, age, run_km: runKm }, res)
-    return { level, sex, age, runKm, res, award, nextTargets }
+    const awardInfo = computeAwardInfo({ level, sex, age, run_km: runKm }, res)
+    return { level, sex, age, runKm, res, award, nextTargets, awardInfo }
   }, [profile, selected])
 
   return (
@@ -208,7 +209,7 @@ export default function ViewScore() {
                     </table>
                   </div>
 
-                  <AwardBanner award={details.award} />
+                  <AwardBanner info={details.awardInfo} />
                 </div>
               )}
             </div>
@@ -325,6 +326,135 @@ function computeAward(res) {
   return { label: 'No Award', reason: `Total ${total} points or minimum grade conditions not met.` }
 }
 
+// Helpers for award guidance
+function ptsToGrade(p) {
+  return p >= 5 ? 'A' : p === 4 ? 'B' : p === 3 ? 'C' : p === 2 ? 'D' : p === 1 ? 'E' : null
+}
+
+function gradeMinForAward(label) {
+  // Minimum grade floor per station for each award
+  if (label === 'Gold') return 'C'
+  if (label === 'Silver') return 'D'
+  if (label === 'Bronze') return 'E'
+  return null
+}
+
+function awardThreshold(label) {
+  if (label === 'Gold') return 21
+  if (label === 'Silver') return 15
+  if (label === 'Bronze') return 6
+  return Infinity
+}
+
+function nextAwardLabel(current) {
+  if (current === 'Gold') return null
+  if (current === 'Silver') return 'Gold'
+  if (current === 'Bronze') return 'Silver'
+  return 'Bronze'
+}
+
+function sumFivePoints(res) {
+  const st = res?.stations || {}
+  return (st.situps?.points || 0)
+    + (st.broad_jump_cm?.points || 0)
+    + (st.sit_and_reach_cm?.points || 0)
+    + (st.pullups?.points || 0)
+    + (st.shuttle_s?.points || 0)
+}
+
+function fiveCompleted(res) {
+  const st = res?.stations || {}
+  return !!(st.situps?.grade && st.broad_jump_cm?.grade && st.sit_and_reach_cm?.grade && st.pullups?.grade && st.shuttle_s?.grade)
+}
+
+function sixCompleted(res) {
+  const st = res?.stations || {}
+  return fiveCompleted(res) && !!st.run?.grade
+}
+
+function worstGradeRank(keys, res) {
+  const st = res?.stations || {}
+  const ranks = keys.map(k => st[k]?.grade).filter(Boolean).map(gradeToRank)
+  return ranks.length ? Math.min(...ranks) : 0
+}
+
+function computeProvisionalAward(res) {
+  const total = sumFivePoints(res)
+  const minRank = worstGradeRank(['situps','broad_jump_cm','sit_and_reach_cm','pullups','shuttle_s'], res)
+  if (total >= 21 && minRank >= gradeToRank('C')) return { label: 'Gold', reason: `Five-station subtotal ${total} points and all ≥ C.` }
+  if (total >= 15 && minRank >= gradeToRank('D')) return { label: 'Silver', reason: `Five-station subtotal ${total} points and all ≥ D.` }
+  if (total >= 6 && minRank >= gradeToRank('E')) return { label: 'Bronze', reason: `Five-station subtotal ${total} points and all ≥ E.` }
+  return { label: 'No Award', reason: `Five-station subtotal ${total} points or minimum grade conditions not met.` }
+}
+
+function runTargetForPoints(ctx, points) {
+  // Find the boundary mm:ss for achieving the given run points under the cohort
+  const { level, sex, age, run_km } = ctx
+  const sexNorm = normalizeSex(sex)
+  const ageGroup = getAgeGroup(age)
+  const rows = findRows(level, sexNorm, ageGroup)
+  const want = Math.max(1, Math.min(5, Number(points || 0)))
+  for (const r of rows) {
+    if (r.points !== want) continue
+    const rowKm = r.stations?.run?.km
+    if (rowKm != null && run_km != null && rowKm !== run_km) continue
+    const s = r.stations?.run?.max_s
+    if (Number.isFinite(s)) return { seconds: s, mmss: secondsToMmss(s), grade: r.grade || ptsToGrade(want) }
+  }
+  return { seconds: null, mmss: null, grade: ptsToGrade(want) }
+}
+
+function computeAwardInfo(ctx, res) {
+  const hasFive = fiveCompleted(res)
+  const hasSix = sixCompleted(res)
+  const currentAward = hasSix ? computeAward(res) : null
+  const provisional = (!hasSix && hasFive) ? computeProvisionalAward(res) : null
+
+  // Determine basis totals and worst grade for guidance context
+  const total = hasSix ? (res?.totalPoints || 0) : sumFivePoints(res)
+  const worstKeys = hasSix ? ['situps','broad_jump_cm','sit_and_reach_cm','pullups','shuttle_s','run'] : ['situps','broad_jump_cm','sit_and_reach_cm','pullups','shuttle_s']
+  const minRank = worstGradeRank(worstKeys, res)
+
+  const baseLabel = hasSix ? currentAward?.label : provisional?.label
+  const nextLabel = nextAwardLabel(baseLabel)
+  let guidance = null
+
+  if (nextLabel) {
+    const threshold = awardThreshold(nextLabel)
+    const pointsShortfall = Math.max(0, threshold - total)
+    const requiredMinGrade = gradeMinForAward(nextLabel)
+    const floorRank = requiredMinGrade ? gradeToRank(requiredMinGrade) : 0
+    const floorNoteNeeded = minRank < floorRank
+
+    // Run-only feasibility calculation
+    const currentRun = res?.stations?.run?.points || 0
+    const totalMinusRun = hasSix ? (total - currentRun) : total
+    const neededIfRunAlone = threshold - totalMinusRun
+    const runOnlyReachable = neededIfRunAlone <= 5
+    const requiredRunPoints = Math.max(1, Math.min(5, neededIfRunAlone))
+    const runTarget = runTargetForPoints(ctx, requiredRunPoints)
+
+    guidance = {
+      nextLabel,
+      pointsShortfall,
+      runOnlyReachable,
+      requiredRunPoints,
+      runGrade: runTarget.grade,
+      runMmss: runTarget.mmss,
+      floorNoteNeeded,
+      requiredMinGrade,
+    }
+  }
+
+  return {
+    hasFive,
+    hasSix,
+    currentAward,
+    provisional,
+    guidance,
+  }
+}
+
 function computeNextTargets(ctx, res) {
   // For each station, find next higher points band and return the raw target required (no delta).
   const { level, sex, age, run_km } = ctx
@@ -398,20 +528,64 @@ function PointsBadge({ points, grade }) {
   return <span className={`inline-flex items-center rounded px-2 py-0.5 text-xs tabular-nums ${cls}`}>{p}</span>
 }
 
-function AwardBanner({ award }) {
-  const label = award?.label || 'No Award'
-  const reason = award?.reason || ''
-  const style = label === 'Gold' ? 'bg-yellow-100 text-yellow-900 border-yellow-200'
-    : label === 'Silver' ? 'bg-zinc-100 text-zinc-800 border-zinc-200'
-    : label === 'Bronze' ? 'bg-amber-100 text-amber-900 border-amber-200'
+function AwardBanner({ info }) {
+  // Determine display and base labels
+  const baseLabel = info?.hasSix ? (info?.currentAward?.label || 'No Award')
+    : info?.hasFive ? (info?.provisional?.label || 'No Award')
+    : 'No Award'
+  const displayLabel = baseLabel
+  const reason = info?.hasSix ? (info?.currentAward?.reason || '')
+    : info?.hasFive ? (info?.provisional?.reason || 'Run not completed.')
+    : 'Complete at least the five non-run stations.'
+
+  const style = baseLabel === 'Gold'
+    ? 'bg-yellow-100 text-yellow-900 border-yellow-200'
+    : baseLabel === 'Silver' ? 'bg-zinc-100 text-zinc-800 border-zinc-200'
+    : baseLabel === 'Bronze' ? 'bg-amber-100 text-amber-900 border-amber-200'
     : 'bg-slate-100 text-slate-800 border-slate-200'
+
+  const g = info?.guidance
+
   return (
     <div className={`p-3 rounded border ${style}`}>
       <div className="flex items-center gap-2">
         <Trophy className="w-4 h-4" />
-        <div className="font-semibold">{label}</div>
+        <div className="font-semibold">{displayLabel}</div>
+        {info?.hasFive && !info?.hasSix && (
+          <span className="ml-2 inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 text-indigo-700 px-2 py-0.5 text-[10px]">
+            Provisional (run not completed)
+          </span>
+        )}
       </div>
       {reason && <div className="text-sm text-slate-700 mt-1">{reason}</div>}
+
+      {g ? (
+        <div className="mt-2 text-sm">
+          <div className="font-medium">Next Award: {g.nextLabel}</div>
+          {g.pointsShortfall <= 0 ? (
+            <div className="text-slate-600">Already meets points threshold.</div>
+          ) : info?.hasSix ? (
+            g.runOnlyReachable ? (
+              <div className="text-slate-700">Need ≥ {g.pointsShortfall} points. Simplest: improve run to ≥ {g.requiredRunPoints} points (grade ≥ {g.runGrade}){g.runMmss ? `, ≤ ${g.runMmss}` : ''}.</div>
+            ) : (
+              <div className="text-slate-700">Need ≥ {g.pointsShortfall} points (from any station). Run alone can add up to 5.</div>
+            )
+          ) : (
+            g.runOnlyReachable ? (
+              <div className="text-slate-700">Run: ≥ {g.requiredRunPoints} points (grade ≥ {g.runGrade}){g.runMmss ? `, roughly ≤ ${g.runMmss}` : ''}.</div>
+            ) : (
+              <div className="text-slate-700">Improve other stations and run; need ≥ {g.pointsShortfall} total points; run alone provides up to 5.</div>
+            )
+          )}
+          {g.requiredMinGrade && g.floorNoteNeeded && (
+            <div className="text-xs text-slate-500 mt-1">Note: Requires all stations at least grade {g.requiredMinGrade}.</div>
+          )}
+        </div>
+      ) : (
+        info?.hasSix && (
+          <div className="mt-2 text-sm text-slate-600">Already at highest award.</div>
+        )
+      )}
     </div>
   )
 }
