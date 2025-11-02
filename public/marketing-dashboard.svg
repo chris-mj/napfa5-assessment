@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+  <rect width="1280" height="720" fill="#f3f4f6"/>
+  <rect x="80" y="80" width="1120" height="560" rx="16" fill="#ffffff" stroke="#e5e7eb"/>
+  <rect x="120" y="120" width="260" height="120" rx="12" fill="#eef2ff"/>
+  <rect x="420" y="120" width="260" height="120" rx="12" fill="#eff6ff"/>
+  <rect x="720" y="120" width="260" height="120" rx="12" fill="#ecfeff"/>
+  <rect x="120" y="280" width="860" height="40" rx="8" fill="#f1f5f9"/>
+  <rect x="120" y="340" width="860" height="40" rx="8" fill="#f1f5f9"/>
+  <rect x="120" y="400" width="860" height="40" rx="8" fill="#f1f5f9"/>
+  <rect x="120" y="460" width="860" height="40" rx="8" fill="#f1f5f9"/>
+  <text x="120" y="250" font-family="Inter, Arial" font-size="18" fill="#334155">Today's Sessions</text>
+</svg>
