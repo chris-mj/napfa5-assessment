@@ -441,6 +441,18 @@ export default function ManageStudents({ user }) {
     setImportResult({ created, updated, exists, failed, total: importPreview.rows.length })
     setImportParsing(false)
     showToast('success', `Import done. Created: ${created}, Updated: ${updated}, Already exists: ${exists}, Failed: ${failed}`)
+    try {
+      const validUuid = (v) => typeof v === 'string' && /[0-9a-fA-F-]{36}/.test(v)
+      const sch = validUuid(membership?.school_id) ? membership.school_id : null
+      await supabase.rpc('audit_log_event', {
+        p_entity_type: 'import_students',
+        p_action: 'complete',
+        p_entity_id: null,
+        p_school_id: sch,
+        p_session_id: null,
+        p_details: { created, updated, exists, failed, total: importPreview.rows.length }
+      })
+    } catch {}
   }
   return (
     <main className="w-full">

@@ -1,4 +1,49 @@
--- Run this in Supabase SQL editor (Postgres)
+-- Run this in Supabase SQL editor (Postgr
+-- Enriched readable view with joins to names/titles for UI
+create or replace view public.audit_events_readable as
+select
+  e.id,
+  e.created_at,
+  e.entity_type,
+  e.action,
+  e.origin,
+  e.entity_id,
+  e.actor_user_id,
+  p.full_name as actor_name,
+  coalesce(p.email, p.full_name) as actor_email,
+  e.school_id,
+  sc.name as school_name,
+  e.session_id,
+  s.title as session_title,
+  s.session_date,
+  case
+    when e.entity_type in ('scores','session_roster','students','enrollments')
+         and e.entity_id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+    then st.student_identifier
+    else null
+  end as student_identifier,
+  case
+    when e.entity_type in ('scores','session_roster','students','enrollments')
+         and e.entity_id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+    then st.name
+    else null
+  end as student_name,
+  e.details,
+  e.diff,
+  e.old_data,
+  e.new_data
+from audit.audit_events e
+left join public.profiles p on p.user_id = e.actor_user_id
+left join public.schools sc on sc.id = e.school_id
+left join public.sessions s on s.id = e.session_id
+left join public.students st on (
+  e.entity_type in ('scores','session_roster','students','enrollments')
+  and e.entity_id ~* '^[0-9a-f-]{36}$'
+  and st.id = e.entity_id::uuid
+);
+
+grant select on public.audit_events_readable to authenticated;
+revoke all on public.audit_events_readable from anon;es)
 -- Idempotent schema + RLS policies for sessions, roster, scores
 
 create extension if not exists pgcrypto;
@@ -939,25 +984,38 @@ end $$;
 -- RLS for audit table
 alter table audit.audit_events enable row level security;
 
--- Public RPC wrapper for app-level events
-create or replace function public.audit_log_event(
-  p_entity_type text,
-  p_action text,
-  p_entity_id text,
-  p_school_id uuid,
-  p_session_id uuid,
-  p_details jsonb default null,
-  p_request_id uuid default null,
-  p_user_agent text default null,
-  p_ip inet default null,
-  p_client_version text default null
-) returns void
-language sql
-security definer
-set search_path = public, audit
-as $$
-  select audit._write_event(
-    auth.uid(), p_school_id, p_session_id, p_entity_type, p_entity_id, p_action, 'app',
-    null, null, null, p_details, p_request_id, p_user_agent, p_ip, p_client_version
-  );
-$$;
+-- RLS policies: allow SELECT for admins/superadmins scoped to their schools
+do $$ begin
+  begin
+    create policy audit_select_admins on audit.audit_events
+      for select using (
+        exists (
+          select 1 from public.memberships m
+          where m.user_id = auth.uid()
+            and lower(coalesce(m.role,'')) in ('admin','superadmin')
+            and (audit.audit_events.school_id is null or m.school_id = audit.audit_events.school_id)
+        )
+        or exists (
+          select 1 from public.memberships m2
+          where m2.user_id = auth.uid() and lower(coalesce(m2.role,'')) = 'superadmin'
+        )
+      );
+  exception when others then null; end;
+  begin
+    -- Allow inserts by definer (typically postgres) only; apps should use RPC
+    create policy audit_insert_definer on audit.audit_events
+      for insert to postgres with check (true);
+  exception when others then null; end;
+end $$;
+
+-- Grants
+grant usage on schema audit to authenticated;
+grant select on audit.audit_events to authenticated;
+revoke all on audit.audit_events from anon;
+
+-- Allow calling the RPC from authenticated users
+grant execute on function public.audit_log_event(text, text, text, text, text, jsonb, uuid, text, inet, text) to authenticated;
+;
+
+
+
