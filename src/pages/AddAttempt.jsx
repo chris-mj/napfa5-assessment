@@ -36,9 +36,32 @@ export default function AddAttempt({ user }) {
   const [roster, setRoster] = useState([])
   const [rosterLoading, setRosterLoading] = useState(false)
   const [rosterQuery, setRosterQuery] = useState('')
+  const firstAttemptRef = useRef(null)
+  // Horizontal scroll + edge fade for stations bar
+  const tabsScrollRef = useRef(null)
+  const [tabsFadeLeft, setTabsFadeLeft] = useState(false)
+  const [tabsFadeRight, setTabsFadeRight] = useState(false)
   const navigate = useNavigate()
   const active = useMemo(() => stations.find(s => s.key === activeStation), [stations, activeStation])
   const { showToast } = useToast()
+
+  // Track scroll to show edge fade hints
+  useEffect(() => {
+    const el = tabsScrollRef.current
+    if (!el) return
+    const update = () => {
+      const { scrollLeft, scrollWidth, clientWidth } = el
+      setTabsFadeLeft(scrollLeft > 0)
+      setTabsFadeRight(scrollLeft + clientWidth < scrollWidth - 1)
+    }
+    update()
+    el.addEventListener('scroll', update, { passive: true })
+    window.addEventListener('resize', update)
+    return () => {
+      el.removeEventListener('scroll', update)
+      window.removeEventListener('resize', update)
+    }
+  }, [])
 
   // Live validation for current station + inputs
   const validation = useMemo(() => {
@@ -144,6 +167,7 @@ export default function AddAttempt({ user }) {
   const onSubmit = async (e) => {
     e.preventDefault()
     await doSearch(studentId)
+    setTimeout(() => { try { firstAttemptRef.current?.focus() } catch {} }, 0)
   }
 
   const openScanner = () => setScannerOpen(true)
@@ -350,16 +374,19 @@ export default function AddAttempt({ user }) {
         </div>
 
         <Tabs value={activeStation} onValueChange={setActiveStation}>
-          <div className="-mx-4 sm:mx-0 overflow-x-auto">
+          <div ref={tabsScrollRef} className="sticky top-0 z-30 -mx-4 sm:mx-0 backdrop-blur bg-white/85 supports-[backdrop-filter]:bg-white/70 border-b border-slate-200 overflow-x-auto overscroll-x-contain snap-x snap-proximity relative">
             <div className="px-4 sm:px-0 min-w-max">
-              <TabsList className="bg-gray-100 rounded-lg p-1 flex gap-1">
+              <TabsList className="bg-gray-100 rounded-lg p-1 flex flex-nowrap gap-1 whitespace-nowrap">
                 <TabsTrigger
                   value="situps"
-                  className="rounded-md px-3 py-1.5 text-sm flex items-center gap-2
-                             data-[state=active]:bg-white data-[state=active]:text-blue-700
-                             data-[state=active]:shadow data-[state=active]:border data-[state=active]:border-gray-200
-                             text-gray-700 hover:text-gray-900"
+                  className="relative rounded-full px-3 py-1.5 text-sm flex items-center gap-2
+                             bg-white text-slate-700 hover:bg-slate-50 ring-1 ring-slate-200
+                             border-b-4 border-transparent transition-colors
+                             data-[state=active]:bg-blue-600 data-[state=active]:text-white
+                             data-[state=active]:border-blue-600 data-[state=active]:ring-blue-600/20 data-[state=active]:shadow-sm"
                   aria-label="Sit-ups"
+                  data-snap
+                  style={{ scrollSnapAlign: 'start' }}
                 >
                   <SitupsIcon className="h-4 w-4" aria-hidden="true" />
                   <span className="font-medium whitespace-nowrap">Sit-ups</span>
@@ -367,11 +394,13 @@ export default function AddAttempt({ user }) {
 
                 <TabsTrigger
                   value="broad_jump"
-                  className="rounded-md px-3 py-1.5 text-sm flex items-center gap-2
-                             data-[state=active]:bg-white data-[state=active]:text-blue-700
-                             data-[state=active]:shadow data-[state=active]:border data-[state=active]:border-gray-200
-                             text-gray-700 hover:text-gray-900"
+                  className="relative rounded-full px-3 py-1.5 text-sm flex items-center gap-2
+                             bg-white text-slate-700 hover:bg-slate-50 ring-1 ring-slate-200
+                             border-b-4 border-transparent transition-colors
+                             data-[state=active]:bg-blue-600 data-[state=active]:text-white
+                             data-[state=active]:border-blue-600 data-[state=active]:ring-blue-600/20 data-[state=active]:shadow-sm"
                   aria-label="Broad Jump"
+                  style={{ scrollSnapAlign: 'start' }}
                 >
                   <BroadJumpIcon className="h-4 w-4" aria-hidden="true" />
                   <span className="font-medium whitespace-nowrap">Broad Jump</span>
@@ -379,11 +408,13 @@ export default function AddAttempt({ user }) {
 
                 <TabsTrigger
                   value="sit_and_reach"
-                  className="rounded-md px-3 py-1.5 text-sm flex items-center gap-2
-                             data-[state=active]:bg-white data-[state=active]:text-blue-700
-                             data-[state=active]:shadow data-[state=active]:border data-[state=active]:border-gray-200
-                             text-gray-700 hover:text-gray-900"
+                  className="relative rounded-full px-3 py-1.5 text-sm flex items-center gap-2
+                             bg-white text-slate-700 hover:bg-slate-50 ring-1 ring-slate-200
+                             border-b-4 border-transparent transition-colors
+                             data-[state=active]:bg-blue-600 data-[state=active]:text-white
+                             data-[state=active]:border-blue-600 data-[state=active]:ring-blue-600/20 data-[state=active]:shadow-sm"
                   aria-label="Sit & Reach"
+                  style={{ scrollSnapAlign: 'start' }}
                 >
                   <ReachIcon className="h-4 w-4" aria-hidden="true" />
                   <span className="font-medium whitespace-nowrap">Sit & Reach</span>
@@ -391,11 +422,13 @@ export default function AddAttempt({ user }) {
 
                 <TabsTrigger
                   value="pullups"
-                  className="rounded-md px-3 py-1.5 text-sm flex items-center gap-2
-                             data-[state=active]:bg-white data-[state=active]:text-blue-700
-                             data-[state=active]:shadow data-[state=active]:border data-[state=active]:border-gray-200
-                             text-gray-700 hover:text-gray-900"
+                  className="relative rounded-full px-3 py-1.5 text-sm flex items-center gap-2
+                             bg-white text-slate-700 hover:bg-slate-50 ring-1 ring-slate-200
+                             border-b-4 border-transparent transition-colors
+                             data-[state=active]:bg-blue-600 data-[state=active]:text-white
+                             data-[state=active]:border-blue-600 data-[state=active]:ring-blue-600/20 data-[state=active]:shadow-sm"
                   aria-label="Pull-ups"
+                  style={{ scrollSnapAlign: 'start' }}
                 >
                   <PullupsIcon className="h-4 w-4" aria-hidden="true" />
                   <span className="font-medium whitespace-nowrap">Pull-ups</span>
@@ -403,17 +436,22 @@ export default function AddAttempt({ user }) {
 
                 <TabsTrigger
                   value="shuttle_run"
-                  className="rounded-md px-3 py-1.5 text-sm flex items-center gap-2
-                             data-[state=active]:bg-white data-[state=active]:text-blue-700
-                             data-[state=active]:shadow data-[state=active]:border data-[state=active]:border-gray-200
-                             text-gray-700 hover:text-gray-900"
+                  className="relative rounded-full px-3 py-1.5 text-sm flex items-center gap-2
+                             bg-white text-slate-700 hover:bg-slate-50 ring-1 ring-slate-200
+                             border-b-4 border-transparent transition-colors
+                             data-[state=active]:bg-blue-600 data-[state=active]:text-white
+                             data-[state=active]:border-blue-600 data-[state=active]:ring-blue-600/20 data-[state=active]:shadow-sm"
                   aria-label="Shuttle Run"
+                  style={{ scrollSnapAlign: 'start' }}
                 >
                   <ShuttleIcon className="h-4 w-4" aria-hidden="true" />
                   <span className="font-medium whitespace-nowrap">Shuttle Run</span>
                 </TabsTrigger>
               </TabsList>
             </div>
+            {/* Edge fade hints */}
+            <div className={`pointer-events-none absolute inset-y-0 left-0 w-8 bg-gradient-to-r from-white/90 to-transparent transition-opacity ${tabsFadeLeft ? 'opacity-100' : 'opacity-0'}`} />
+            <div className={`pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-white/90 to-transparent transition-opacity ${tabsFadeRight ? 'opacity-100' : 'opacity-0'}`} />
           </div>
         </Tabs>
 
@@ -527,7 +565,7 @@ export default function AddAttempt({ user }) {
                       <>
                         <label htmlFor="attempt1" className="text-gray-700 text-sm">Repetitions</label>
                         <div className="text-xs text-gray-600">Unit: reps | Example: 25</div>
-                        <Input id="attempt1" inputMode="numeric" value={attempt1} onChange={(e)=> setAttempt1(onlyInt(e.target.value))} placeholder="e.g., 25" className="w-full" />
+                        <Input ref={firstAttemptRef} id="attempt1" inputMode="numeric" value={attempt1} onChange={(e)=> setAttempt1(onlyInt(e.target.value))} placeholder="e.g., 25" className="w-full" />
                         <div role="status" aria-live="polite" className={(validation.valid ? "text-gray-500" : "text-red-600") + " text-xs mt-1"}>{validation.message}</div>
                       </>
                     )}
@@ -536,7 +574,7 @@ export default function AddAttempt({ user }) {
                         <label className="text-gray-700 text-sm">Scores (2 attempts, best kept)</label>
                         <div className="text-xs text-gray-600">Unit: cm | Example: {activeStation === 'sit_and_reach' ? '34' : '190'}</div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                          <Input inputMode="numeric" value={attempt1} onChange={(e)=> setAttempt1(onlyInt(e.target.value))} placeholder="Attempt 1" />
+                          <Input ref={firstAttemptRef} inputMode="numeric" value={attempt1} onChange={(e)=> setAttempt1(onlyInt(e.target.value))} placeholder="Attempt 1" />
                           <Input inputMode="numeric" value={attempt2} onChange={(e)=> setAttempt2(onlyInt(e.target.value))} placeholder="Attempt 2" />
                         </div>
                         <div role="status" aria-live="polite" className={(validation.valid ? "text-gray-500" : "text-red-600") + " text-xs mt-1"}>{validation.message}</div>
@@ -547,7 +585,7 @@ export default function AddAttempt({ user }) {
                         <label className="text-gray-700 text-sm">Times (2 attempts, lower kept)</label>
                         <div className="text-xs text-gray-600">Unit: seconds (1 d.p.) | Example: 10.3</div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                          <Input inputMode="decimal" value={attempt1} onChange={(e)=> setAttempt1(oneDecimal(e.target.value))} placeholder="Attempt 1 (e.g., 10.3)" />
+                          <Input ref={firstAttemptRef} inputMode="decimal" value={attempt1} onChange={(e)=> setAttempt1(oneDecimal(e.target.value))} placeholder="Attempt 1 (e.g., 10.3)" />
                           <Input inputMode="decimal" value={attempt2} onChange={(e)=> setAttempt2(oneDecimal(e.target.value))} placeholder="Attempt 2 (e.g., 10.2)" />
                         </div>
                         <div role="status" aria-live="polite" className={(validation.valid ? "text-gray-500" : "text-red-600") + " text-xs mt-1"}>{validation.message}</div>
@@ -571,7 +609,15 @@ export default function AddAttempt({ user }) {
         </Card>
       </section>
       {scannerOpen && (
-        <ScannerModal onClose={() => setScannerOpen(false)} onDetected={(code) => { setStudentId(code); setScannerOpen(false); doSearch(code); }} />
+        <ScannerModal
+          onClose={() => setScannerOpen(false)}
+          onDetected={async (code) => {
+            setStudentId(code)
+            setScannerOpen(false)
+            await doSearch(code)
+            setTimeout(() => { try { firstAttemptRef.current?.focus() } catch {} }, 0)
+          }}
+        />
       )}
       {rosterOpen && (
         <RosterModal
@@ -580,7 +626,15 @@ export default function AddAttempt({ user }) {
           query={rosterQuery}
           setQuery={setRosterQuery}
           onClose={() => setRosterOpen(false)}
-          onSelect={(r) => { setStudentId(r.key); setRosterOpen(false); setTimeout(()=>onSubmit({ preventDefault: ()=>{} }), 0) }}
+          onSelect={async (r) => {
+            const id = r?.key || ''
+            setStudentId(id)
+            setRosterOpen(false)
+            try {
+              await doSearch(id)
+              setTimeout(() => { try { firstAttemptRef.current?.focus() } catch {} }, 0)
+            } catch {}
+          }}
         />
       )}
       </div>
