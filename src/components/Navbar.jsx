@@ -98,7 +98,7 @@ export default function Navbar({ user, onLogout }) {
                   )}
                   {(canManageUsers || isOwner) && (
                     <NavLink to="/pft-calculator" className={({ isActive }) => `${link} ${isActive ? active : ""}`}>
-                      PFT Calculator
+                      Award Calculator
                     </NavLink>
                   )}
                 </>

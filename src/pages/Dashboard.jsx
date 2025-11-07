@@ -235,18 +235,18 @@ export default function Dashboard({ user }) {
               <div className="rounded-xl bg-white p-4 shadow-sm border border-gray-100">
                 <div className="text-xs text-gray-500 mb-1 uppercase tracking-wide">Plan</div>
                 <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div>Draft sessions <span className="ml-1 text-xs text-gray-500">({todaySessions.draft})</span></div>
-                    <Link to="/sessions" className="text-xs px-2 py-1 border rounded hover:bg-gray-50">Manage</Link>
-                  </div>
-                  <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between">
                     <div>Manage students & enrollments</div>
                     <Link to="/manage-students" className="text-xs px-2 py-1 border rounded hover:bg-gray-50">Open</Link>
-                  </div>
-                  <div className="flex items-center justify-between">
+                    </div>
+                    <div className="flex items-center justify-between">
+                        <div>Plan NAPFA sessions <span className="ml-1 text-xs text-gray-500">({todaySessions.draft})</span></div>
+                        <Link to="/sessions" className="text-xs px-2 py-1 border rounded hover:bg-gray-50">Manage</Link>
+                    </div>
+                    <div className="flex items-center justify-between">
                     <div>Manage users</div>
                     <Link to="/modify-user" className="text-xs px-2 py-1 border rounded hover:bg-gray-50">Open</Link>
-                  </div>
+                    </div>
                 </div>
               </div>
               {/* Run */}

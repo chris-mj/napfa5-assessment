@@ -459,7 +459,10 @@ export default function ManageStudents({ user }) {
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 space-y-6">
         <header className="space-y-1">
           <h1 className="text-2xl font-semibold">Manage Students</h1>
-          <p className="text-sm text-gray-600">Enroll students in your school, manage active enrollments, and keep profiles up to date. Adding a student will automatically deactivate any existing active enrollment elsewhere.</p>
+          <p className="text-sm text-gray-600">
+              This manages all the students in your school.
+              <br />A student enrollment is a student who is enrolled in a school: assigned with an academic year and a class.
+              <br />Adding a student (with the same cockpit ID) will automatically deactivate any existing active enrollment, even from another school.</p>
         </header>
 
         {/* Add / Enroll */}

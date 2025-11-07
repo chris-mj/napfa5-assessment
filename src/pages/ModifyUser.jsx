@@ -360,7 +360,7 @@ export default function ModifyUser({ user }) {
           <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 space-y-6">
             <header className="space-y-1">
               <h1 className="text-2xl font-semibold">Manage Users</h1>
-              <p className="text-sm text-gray-600">Add users to your school, update roles, and remove access. UI aligned with Manage Students and Score Entry.</p>
+              <p className="text-sm text-gray-600">Add users to your school, update roles, and remove access.</p>
             </header>
 
             <section className="border rounded-lg p-4 bg-white shadow-sm">
