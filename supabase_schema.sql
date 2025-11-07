@@ -1,4 +1,49 @@
-﻿-- Run this in Supabase SQL editor (Postgres)
+-- Run this in Supabase SQL editor (Postgr
+-- Enriched readable view with joins to names/titles for UI
+create or replace view public.audit_events_readable as
+select
+  e.id,
+  e.created_at,
+  e.entity_type,
+  e.action,
+  e.origin,
+  e.entity_id,
+  e.actor_user_id,
+  p.full_name as actor_name,
+  coalesce(p.email, p.full_name) as actor_email,
+  e.school_id,
+  sc.name as school_name,
+  e.session_id,
+  s.title as session_title,
+  s.session_date,
+  case
+    when e.entity_type in ('scores','session_roster','students','enrollments')
+         and e.entity_id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+    then st.student_identifier
+    else null
+  end as student_identifier,
+  case
+    when e.entity_type in ('scores','session_roster','students','enrollments')
+         and e.entity_id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+    then st.name
+    else null
+  end as student_name,
+  e.details,
+  e.diff,
+  e.old_data,
+  e.new_data
+from audit.audit_events e
+left join public.profiles p on p.user_id = e.actor_user_id
+left join public.schools sc on sc.id = e.school_id
+left join public.sessions s on s.id = e.session_id
+left join public.students st on (
+  e.entity_type in ('scores','session_roster','students','enrollments')
+  and e.entity_id ~* '^[0-9a-f-]{36}$'
+  and st.id = e.entity_id::uuid
+);
+
+grant select on public.audit_events_readable to authenticated;
+revoke all on public.audit_events_readable from anon;es)
 -- Idempotent schema + RLS policies for sessions, roster, scores
 
 create extension if not exists pgcrypto;
@@ -781,6 +826,196 @@ begin
   end if;
 end;
 $func$;
+
+
+
+
+-- =========================
+-- Audit schema and events
+-- =========================
+create schema if not exists audit;
+
+create table if not exists audit.audit_events (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  actor_user_id uuid,
+  school_id uuid,
+  session_id uuid,
+  entity_type text not null,
+  entity_id text,
+  action text not null,
+  origin text not null check (origin in ('db_trigger','app')),
+  old_data jsonb,
+  new_data jsonb,
+  diff jsonb,
+  details jsonb,
+  request_id uuid,
+  user_agent text,
+  ip inet,
+  client_version text
+);
+
+create index if not exists audit_events_created_at_idx on audit.audit_events (created_at desc);
+create index if not exists audit_events_school_idx on audit.audit_events (school_id, created_at desc);
+create index if not exists audit_events_session_idx on audit.audit_events (session_id, created_at desc);
+create index if not exists audit_events_actor_idx on audit.audit_events (actor_user_id, created_at desc);
+create index if not exists audit_events_entity_idx on audit.audit_events (entity_type, created_at desc);
+
+-- Helper definer to insert into audit table (bypasses RLS for inserts)
+create or replace function audit._write_event(
+  p_actor_user_id uuid,
+  p_school_id uuid,
+  p_session_id uuid,
+  p_entity_type text,
+  p_entity_id text,
+  p_action text,
+  p_origin text,
+  p_old jsonb,
+  p_new jsonb,
+  p_diff jsonb,
+  p_details jsonb,
+  p_request_id uuid,
+  p_user_agent text,
+  p_ip inet,
+  p_client_version text
+) returns void
+language sql
+security definer
+set search_path = audit, public
+as $$
+  insert into audit.audit_events (
+    actor_user_id, school_id, session_id, entity_type, entity_id, action, origin,
+    old_data, new_data, diff, details, request_id, user_agent, ip, client_version
+  ) values (
+    p_actor_user_id, p_school_id, p_session_id, p_entity_type, p_entity_id, p_action, p_origin,
+    p_old, p_new, p_diff, p_details, p_request_id, p_user_agent, p_ip, p_client_version
+  );
+$$;
+
+-- Trigger function to log table changes
+create or replace function audit.log_change() returns trigger
+language plpgsql
+as $$
+declare
+  v_actor uuid := auth.uid();
+  v_school uuid;
+  v_session uuid;
+  v_old jsonb;
+  v_new jsonb;
+  v_entity text := tg_table_name;
+  v_id text;
+  v_action text := lower(tg_op);
+begin
+  if tg_op = 'INSERT' then
+    v_new := to_jsonb(NEW);
+  elsif tg_op = 'UPDATE' then
+    v_old := to_jsonb(OLD);
+    v_new := to_jsonb(NEW);
+  elsif tg_op = 'DELETE' then
+    v_old := to_jsonb(OLD);
+  end if;
+
+  -- derive ids by table
+  if tg_table_name = 'scores' then
+    v_session := coalesce((v_new->>'session_id')::uuid, (v_old->>'session_id')::uuid);
+    select s.school_id into v_school from public.sessions s where s.id = v_session;
+    v_id := coalesce(v_new->>'student_id', v_old->>'student_id');
+  elsif tg_table_name = 'session_roster' then
+    v_session := coalesce((v_new->>'session_id')::uuid, (v_old->>'session_id')::uuid);
+    select s.school_id into v_school from public.sessions s where s.id = v_session;
+    v_id := coalesce(v_new->>'student_id', v_old->>'student_id');
+  elsif tg_table_name = 'sessions' then
+    v_session := coalesce((v_new->>'id')::uuid, (v_old->>'id')::uuid);
+    v_school := coalesce((v_new->>'school_id')::uuid, (v_old->>'school_id')::uuid);
+    v_id := coalesce(v_new->>'id', v_old->>'id');
+  elsif tg_table_name = 'enrollments' then
+    v_school := coalesce((v_new->>'school_id')::uuid, (v_old->>'school_id')::uuid);
+    v_id := coalesce(v_new->>'id', v_old->>'id');
+  elsif tg_table_name = 'memberships' then
+    v_school := coalesce((v_new->>'school_id')::uuid, (v_old->>'school_id')::uuid);
+    v_id := coalesce(v_new->>'user_id', v_old->>'user_id');
+  else
+    v_id := coalesce(v_new->>'id', v_old->>'id');
+  end if;
+
+  perform audit._write_event(
+    v_actor, v_school, v_session, v_entity, v_id, v_action, 'db_trigger',
+    v_old, v_new, null, null, null, null, null, null
+  );
+
+  if tg_op = 'DELETE' then return OLD; else return NEW; end if;
+end;
+$$;
+
+-- Attach triggers on key tables
+do $$ begin
+  if not exists (
+    select 1 from pg_trigger where tgname = 'audit_scores_trg'
+  ) then
+    create trigger audit_scores_trg after insert or update or delete on public.scores
+      for each row execute function audit.log_change();
+  end if;
+  if not exists (
+    select 1 from pg_trigger where tgname = 'audit_session_roster_trg'
+  ) then
+    create trigger audit_session_roster_trg after insert or update or delete on public.session_roster
+      for each row execute function audit.log_change();
+  end if;
+  if not exists (
+    select 1 from pg_trigger where tgname = 'audit_sessions_trg'
+  ) then
+    create trigger audit_sessions_trg after insert or update or delete on public.sessions
+      for each row execute function audit.log_change();
+  end if;
+  if not exists (
+    select 1 from pg_trigger where tgname = 'audit_enrollments_trg'
+  ) then
+    create trigger audit_enrollments_trg after insert or update or delete on public.enrollments
+      for each row execute function audit.log_change();
+  end if;
+  if not exists (
+    select 1 from pg_trigger where tgname = 'audit_memberships_trg'
+  ) then
+    create trigger audit_memberships_trg after insert or update or delete on public.memberships
+      for each row execute function audit.log_change();
+  end if;
+end $$;
+
+-- RLS for audit table
+alter table audit.audit_events enable row level security;
+
+-- RLS policies: allow SELECT for admins/superadmins scoped to their schools
+do $$ begin
+  begin
+    create policy audit_select_admins on audit.audit_events
+      for select using (
+        exists (
+          select 1 from public.memberships m
+          where m.user_id = auth.uid()
+            and lower(coalesce(m.role,'')) in ('admin','superadmin')
+            and (audit.audit_events.school_id is null or m.school_id = audit.audit_events.school_id)
+        )
+        or exists (
+          select 1 from public.memberships m2
+          where m2.user_id = auth.uid() and lower(coalesce(m2.role,'')) = 'superadmin'
+        )
+      );
+  exception when others then null; end;
+  begin
+    -- Allow inserts by definer (typically postgres) only; apps should use RPC
+    create policy audit_insert_definer on audit.audit_events
+      for insert to postgres with check (true);
+  exception when others then null; end;
+end $$;
+
+-- Grants
+grant usage on schema audit to authenticated;
+grant select on audit.audit_events to authenticated;
+revoke all on audit.audit_events from anon;
+
+-- Allow calling the RPC from authenticated users
+grant execute on function public.audit_log_event(text, text, text, text, text, jsonb, uuid, text, inet, text) to authenticated;
+;
 
 
 

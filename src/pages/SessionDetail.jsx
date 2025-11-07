@@ -465,11 +465,25 @@ export default function SessionDetail({ user }) {
         const mm = String(d.getMonth() + 1).padStart(2, '0');
         const yyyy = d.getFullYear();
         const ddmmyyyy = `${dd}${mm}${yyyy}`;
-        a.download = `PFT_${safeTitle}_${ddmmyyyy}.csv`;
+        const fileName = `PFT_${safeTitle}_${ddmmyyyy}.csv`;
+        a.download = fileName;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
+        try {
+            const validUuid = (v) => typeof v === 'string' && /[0-9a-fA-F-]{36}/.test(v);
+            const sid = validUuid(id) ? id : null;
+            const sch = validUuid(membership?.school_id) ? membership.school_id : null;
+            await supabase.rpc('audit_log_event', {
+                p_entity_type: 'export_pft',
+                p_action: 'download',
+                p_entity_id: null,
+                p_school_id: sch,
+                p_session_id: sid,
+                p_details: { mode: 'all_classes', file: fileName, rows: shaped.length }
+            });
+        } catch {}
     };
 
     const exportPftPerClass = async () => {
@@ -506,11 +520,25 @@ export default function SessionDetail({ user }) {
             const a = document.createElement('a');
             a.href = url;
             const safeClass = klass.replace(/[^A-Za-z0-9_-]+/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '') || 'Unassigned';
-            a.download = `PFT_${safeTitle}_${ddmmyyyy}_${safeClass}.csv`;
+            const fileName = `PFT_${safeTitle}_${ddmmyyyy}_${safeClass}.csv`;
+            a.download = fileName;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
+            try {
+                const validUuid = (v) => typeof v === 'string' && /[0-9a-fA-F-]{36}/.test(v);
+                const sid = validUuid(id) ? id : null;
+                const sch = validUuid(membership?.school_id) ? membership.school_id : null;
+                await supabase.rpc('audit_log_event', {
+                    p_entity_type: 'export_pft',
+                    p_action: 'download',
+                    p_entity_id: null,
+                    p_school_id: sch,
+                    p_session_id: sid,
+                    p_details: { mode: 'per_class', class: klass, file: fileName, rows: rowsForClass.length }
+                });
+            } catch {}
         }
     };
     const handleStatusChange = async (nextStatus) => {
@@ -675,6 +703,19 @@ export default function SessionDetail({ user }) {
                 .replace(/[\\/:*?"<>|]+/g, '')
                 .replace(/\s+/g, '_');
             doc.save(`${safeTitle}_${ddmmyyyy}_profilecards.pdf`);
+            try {
+                const validUuid = (v) => typeof v === 'string' && /[0-9a-fA-F-]{36}/.test(v);
+                const sid = validUuid(id) ? id : null;
+                const sch = validUuid(membership?.school_id) ? membership.school_id : null;
+                await supabase.rpc('audit_log_event', {
+                    p_entity_type: 'profile_cards',
+                    p_action: 'download',
+                    p_entity_id: null,
+                    p_school_id: sch,
+                    p_session_id: sid,
+                    p_details: { file: `${safeTitle}_${ddmmyyyy}_profilecards.pdf`, count: list.length }
+                });
+            } catch {}
         } catch (err) {
             setFlash(err.message || 'Failed to generate cards PDF.');
         }

@@ -1,5 +1,6 @@
 ﻿import { useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
+import { isPlatformOwner } from "../lib/roles";
 import { supabase } from "../lib/supabaseClient";
 import { useToast } from "../components/ToastProvider";
 
@@ -13,6 +14,7 @@ export default function Profile({ user }) {
   const [memberships, setMemberships] = useState([]);
   const [memLoading, setMemLoading] = useState(true);
   const [memOpId, setMemOpId] = useState(null);
+  const owner = isPlatformOwner(user);
 
   useEffect(() => {
     let ignore = false;
@@ -142,6 +144,7 @@ return (
         <section className="border rounded-lg p-4 bg-white shadow-sm">
           <div className="flex items-center justify-between mb-2">
             <h2 className="text-lg font-semibold">Memberships</h2>
+            <NavLink to="/audit" className="text-sm text-blue-700 underline">Open Audit</NavLink>
           </div>
           {memLoading ? (
             <div className="text-sm text-gray-600">Loading memberships...</div>

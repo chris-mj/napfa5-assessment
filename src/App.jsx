@@ -20,6 +20,7 @@ const SessionDetail = lazy(() => import("./pages/SessionDetail"));
 const SessionCards = lazy(() => import("./pages/SessionCards"));
 const ViewScore = lazy(() => import("./pages/ViewScore"));
 const PftCalculator = lazy(() => import("./pages/PftCalculator"));
+const Audit = lazy(() => import("./pages/Audit"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const Profile = lazy(() => import("./pages/Profile"));
 const ManageStudents = lazy(() => import("./pages/ManageStudents"));
@@ -182,6 +183,18 @@ function AnimatedRoutes({ user, setUser }) {
                             user ? (
                                 <PageFade>
                                   <AdminGuard user={user}><ManageStudents user={user} /></AdminGuard>
+                                </PageFade>
+                            ) : (
+                                <Navigate to="/login" replace />
+                            )
+                        }
+                    />
+                    <Route
+                        path="/audit"
+                        element={
+                            user ? (
+                                <PageFade>
+                                  <AdminGuard user={user}><Audit user={user} /></AdminGuard>
                                 </PageFade>
                             ) : (
                                 <Navigate to="/login" replace />

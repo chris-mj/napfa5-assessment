@@ -171,7 +171,7 @@ export default function Dashboard({ user }) {
       <div className="max-w-6xl mx-auto px-4 py-6 space-y-8">
         {/* Temporary notice */}
         <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-amber-900 text-sm">
-          Dashboard production is in progress. Please do not click on anything on this page yet.in
+          Dashboard production is in progress. Please do not click on anything on this page yet.
         </div>
 
         {/* Header */}
@@ -333,7 +333,7 @@ export default function Dashboard({ user }) {
 
         {/* Upcoming & Active */}
         <section>
-          <h2 className="text-xl font-semibold text-slate-900 mb-3">Upcoming & Active</h2>
+          <h2 className="text-xl font-semibold text-slate-900 mb-3">Active & Upcoming</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="rounded-xl bg-white p-4 shadow-sm border border-gray-100">
               <div className="flex items-center justify-between mb-2">
