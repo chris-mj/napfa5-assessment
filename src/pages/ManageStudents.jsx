@@ -197,6 +197,19 @@ export default function ManageStudents({ user }) {
 
   const handleForm = (e) => setForm(f => ({ ...f, [e.target.name]: e.target.value }))
 
+  const parseDdMmYyyyToIso = (val) => {
+    if (!val) return null
+    const s = String(val).trim()
+    const m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/)
+    if (!m) return null
+    const dd = String(parseInt(m[1], 10)).padStart(2, '0')
+    const mm = String(parseInt(m[2], 10)).padStart(2, '0')
+    const yyyy = m[3]
+    const iso = `${yyyy}-${mm}-${dd}`
+    if (isNaN(Date.parse(iso))) return null
+    return iso
+  }
+
   const formatDob = (d) => {
     if (!d) return '-'
     try {
@@ -215,11 +228,15 @@ export default function ManageStudents({ user }) {
     setError('')
     try {
       // 1) Upsert student by student_identifier (update profile fields if provided)
+      const dobIso = form.dob ? parseDdMmYyyyToIso(form.dob) : null
+      if (form.dob && !dobIso) {
+        throw new Error('DOB must be in DD/MM/YYYY format')
+      }
       const payloadStudent = {
         student_identifier: normalizeStudentId(form.student_identifier),
         name: form.name?.trim(),
         gender: form.gender?.trim() || null,
-        dob: form.dob || null,
+        dob: dobIso,
       }
       const { data: student, error: sErr } = await supabase
         .from('students')
@@ -327,7 +344,7 @@ export default function ManageStudents({ user }) {
       if (importSummaryUrl) { try { URL.revokeObjectURL(importSummaryUrl) } catch {} setImportSummaryUrl('') }
       // Build diffs by comparing with current enrollments
       const ids = Array.from(new Set(rows.map(r => normalizeStudentId(r.id || "")).filter(Boolean)))
-      try { console.log('[Import][parse]', { parsed: rows.length, parseErrors: errors.length, ids: ids.length, headerIndex: summary?.headerIndex }) } catch {}
+      
       if (!ids.length) { setImportDiffs([]); return }
       const { data: foundStudents } = await supabase.from('students').select('id, student_identifier').in('student_identifier', ids)
       const idMap = new Map((foundStudents||[]).map(s => [s.student_identifier.toUpperCase(), s.id]))
@@ -345,7 +362,7 @@ export default function ManageStudents({ user }) {
         const matchActive = eAll.find(e => e.school_id === tgt.school_id && (e.class||null) === tgt.class && e.academic_year === tgt.year && e.is_active)
         if (matchActive) return { id: r.id, name: r.name, action: 'no change', detail: `${tgt.class || '-'} / ${tgt.year}` }
         const sameYear = eAll.find(e => e.school_id === tgt.school_id && e.academic_year === tgt.year)
-        if (sameYear) return { id: r.id, name: r.name, action: `update class ${sameYear.class||'-'} â†’ ${tgt.class||'-'}`, detail: `${tgt.year}` }
+        if (sameYear) return { id: r.id, name: r.name, action: `update class ${sameYear.class||'-'} {'\u2192'} ${tgt.class||'-'}`, detail: `${tgt.year}` }
         return { id: r.id, name: r.name, action: 'new enrollment', detail: `${tgt.class || '-'} / ${tgt.year}` }
       })
       setImportDiffs(diffs)
@@ -355,12 +372,12 @@ export default function ManageStudents({ user }) {
     } finally { setImportParsing(false) }
   }
   const runImport = async () => {
-    try { console.log('[Import][guard]', { rows: importPreview?.rows?.length || 0, school: membership?.school_id }) } catch {}
+    
     if (!importPreview?.rows?.length || !membership?.school_id) { try { showToast('error', `Import cannot start. Rows: ${importPreview?.rows?.length||0}, School: ${membership?.school_id||'-'}`) } catch {} ; return }
     setImportParsing(true)
     setImportProgress(0)
-    try { showToast('info', `Starting import of ${importPreview?.rows?.length||0} rowsâ€¦`) } catch {}
-    try { console.log('[Import][start]', { rows: importPreview?.rows?.length||0, membership }) } catch {}
+    try { showToast('info', `Starting import of ${importPreview?.rows?.length||0} rows…`) } catch {}
+    
     let created = 0, updated = 0, exists = 0, failed = 0
     const details = []
     const total = importPreview.rows.length
@@ -373,14 +390,14 @@ export default function ManageStudents({ user }) {
         // Upsert student
         const payloadStudent = { student_identifier: normalizeStudentId(r.id), name: r.name, gender: r.gender, dob: r.dob }
         const { data: st, error: sErr } = await supabase.from('students').upsert(payloadStudent, { onConflict: 'student_identifier' }).select('id').maybeSingle()
-        if (sErr || !st?.id) { try { console.error('[Import][student upsert][error]', { row: r, error: { code: sErr?.code, message: sErr?.message, details: sErr?.details, hint: sErr?.hint } }) } catch {} ; throw sErr || new Error('no student id') }
+        if (sErr || !st?.id) { throw sErr || new Error('no student id') }
 
         // Fetch enrollments for this student
         const { data: enrolls, error: eFetchErr } = await supabase
           .from('enrollments')
           .select('id, school_id, class, academic_year, is_active')
           .eq('student_id', st.id)
-        if (eFetchErr) { try { console.error('[Import][enroll fetch][error]', { row: r, error: { code: eFetchErr?.code, message: eFetchErr?.message, details: eFetchErr?.details, hint: eFetchErr?.hint } }) } catch {} ; throw eFetchErr }
+        if (eFetchErr) { throw eFetchErr }
 
         const matchActive = (enrolls || []).find(e => e.school_id === targetSchool && (e.class || null) === targetClass && e.academic_year === targetYear && e.is_active)
         if (matchActive) { exists++; details.push({ id: r.id, name: r.name, result: 'already exists', detail: `${targetClass || '-'} / ${targetYear}` }); continue }
@@ -397,13 +414,13 @@ export default function ManageStudents({ user }) {
               .eq('student_id', st.id)
               .eq('is_active', true)
               .neq('id', sameYearRow.id)
-            if (deactErr) { try { console.error('[Import][enroll deactivate][error]', deactErr) } catch {} }
+            if (deactErr) { }
           }
           // Update this row to target class and activate
           const { error: uErr } = await supabase.from('enrollments').update({ class: targetClass, is_active: true }).eq('id', sameYearRow.id)
-          if (uErr) { try { console.error('[Import][enroll update][error]', { row: r, error: { code: uErr?.code, message: uErr?.message, details: uErr?.details, hint: uErr?.hint } }) } catch {} ; throw uErr }
+          if (uErr) { throw uErr }
           updated++
-          details.push({ id: r.id, name: r.name, result: `updated`, detail: `class ${sameYearRow.class||'-'} â†’ ${targetClass||'-'} @ ${targetYear}` })
+          details.push({ id: r.id, name: r.name, result: `updated`, detail: `class ${sameYearRow.class||'-'} {'\u2192'} ${targetClass||'-'} @ ${targetYear}` })
         } else {
           // Deactivate any active enrollments; then insert new (skip if none active)
             const hasActive = (enrolls || []).some(e => e.is_active)
@@ -413,10 +430,10 @@ export default function ManageStudents({ user }) {
                 .update({ is_active: false })
                 .eq('student_id', st.id)
                 .eq('is_active', true)
-              if (deact2Err) { try { console.error('[Import][enroll deactivate2][error]', deact2Err) } catch {} }
+              if (deact2Err) { }
             }
             const { error: iErr } = await supabase.from('enrollments').insert({ student_id: st.id, school_id: targetSchool, class: targetClass, academic_year: targetYear, is_active: true })
-            if (iErr) { try { console.error('[Import][enroll insert][error]', { row: r, error: { code: iErr?.code, message: iErr?.message, details: iErr?.details, hint: iErr?.hint } }) } catch {} ; throw iErr }
+            if (iErr) { throw iErr }
           created++
           details.push({ id: r.id, name: r.name, result: 'created', detail: `${targetClass || '-'} / ${targetYear}` })
         }
@@ -487,11 +504,11 @@ export default function ManageStudents({ user }) {
             </label>
             <label className="text-sm">
               DOB
-              <input name="dob" type="date" value={form.dob} onChange={handleForm} className="w-full p-2 border rounded mt-1" />
+              <input name="dob" type="text" inputMode="numeric" placeholder="DD/MM/YYYY" value={form.dob} onChange={handleForm} className="w-full p-2 border rounded mt-1" />
             </label>
             <label className="text-sm">
               Class
-              <input name="class" value={form.class} onChange={handleForm} className="w-full p-2 border rounded mt-1" placeholder="e.g., Sec 2E1" />
+              <input name="class" value={form.class} onChange={handleForm} className="w-full p-2 border rounded mt-1" placeholder="e.g., 2E1" />
             </label>
             <label className="text-sm">
               Academic Year
@@ -504,7 +521,25 @@ export default function ManageStudents({ user }) {
               {error && <div className="text-sm text-red-600 self-center">{error}</div>}
             </div>
           </form>
-          <div className="text-xs text-gray-600 mt-2">Note: If the student already exists, their profile is updated and any previous active enrollment is automatically set inactive. A new active enrollment is created in this school.</div>
+          <div className="text-xs text-gray-600 mt-2">Note: If the student already exists, their profile is updated and any previous active enrollment is automatically set inactive.</div>
+          {/* ID format helper */}
+          <div className="mt-3 text-sm text-gray-700 border border-blue-200 bg-blue-50 rounded p-3">
+            <div className="font-medium text-blue-900 mb-1">Tip: If you want to use your own Student ID format</div>
+            <ul className="list-disc pl-5 space-y-1 text-blue-900">
+                <li>
+                    Do use the same cockpit student ID from the PFT file.
+                </li>
+                <li>
+                If really necessary, you can use your own Student IDs. Use your school acronym, year, class and index. Example: <span className="font-mono">ABSS25_2A-1</span>
+              </li>
+              <li>
+                Allowed characters: A-Z, 0-9, underscore <span className="font-mono">_</span> and hyphen <span className="font-mono">-</span>. Avoid spaces.
+              </li>
+              <li>
+                IDs are stored uppercased. Numeric-only IDs are left-padded to 14 digits; alphanumeric IDs (like the example above) are not padded.
+              </li>
+            </ul>
+          </div>
         </section>
 
         {/* Search, Filters & Import */}
@@ -519,12 +554,12 @@ export default function ManageStudents({ user }) {
               <option value="">All years</option>
               {distinctYears.map(y => (<option key={y} value={y}>{y}</option>))}
             </select>
-            <div class="inline-flex items-center rounded border overflow-hidden">
+            <div className="inline-flex items-center rounded border overflow-hidden">
   <button
     type="button"
     aria-pressed={!showInactiveOnly}
     onClick={() => { if (showInactiveOnly) { setShowInactiveOnly(false); setPage(1) } }}
-    class={(!showInactiveOnly)
+    className={(!showInactiveOnly)
       ? "px-3 py-2 bg-green-600 text-white"
       : "px-3 py-2 bg-white text-gray-700 hover:bg-gray-50"}
   >
@@ -534,7 +569,7 @@ export default function ManageStudents({ user }) {
     type="button"
     aria-pressed={showInactiveOnly}
     onClick={() => { if (!showInactiveOnly) { setShowInactiveOnly(true); setPage(1) } }}
-    class={(showInactiveOnly)
+    className={(showInactiveOnly)
       ? "px-3 py-2 bg-gray-600 text-white"
       : "px-3 py-2 bg-white text-gray-700 hover:bg-gray-50"}
   >
@@ -693,11 +728,11 @@ export default function ManageStudents({ user }) {
               </div>
               <textarea className="w-full h-48 p-2 border rounded font-mono text-xs" placeholder="Paste CSV here..." value={importText} onChange={(e)=>setImportText(e.target.value)} />
               <div className="flex items-center gap-2">
-                <button className="px-3 py-2 border rounded hover:bg-gray-50" onClick={() => { try { console.log("[Import][parse button click]") } catch {}; parseImport() }} disabled={importParsing}>Parse</button>
+                <button className="px-3 py-2 border rounded hover:bg-gray-50" onClick={() => { parseImport() }} disabled={importParsing}>Parse</button>
                 {importPreview && (
                   <>
                     <div className="text-sm text-gray-700">Parsed: {importPreview.summary?.parsed || 0} rows • Errors: {importPreview.errors?.length || 0}</div>
-                    <button className="px-3 py-2 bg-blue-600 text-white rounded disabled:opacity-60" onClick={() => { try { console.log("[Import][button click]") } catch {}; try { showToast("info", "Import clicked") } catch {}; runImport() }} disabled={importParsing || !(importPreview.rows?.length)}>Import</button>
+                    <button className="px-3 py-2 bg-blue-600 text-white rounded disabled:opacity-60" onClick={() => { try { showToast("info", "Import clicked") } catch {}; runImport() }} disabled={importParsing || !(importPreview.rows?.length)}>Import</button>
                   </>
                 )}
               </div>
@@ -743,7 +778,7 @@ export default function ManageStudents({ user }) {
               )}
               {importPreview?.errors?.length ? (
                 <div className="max-h-40 overflow-auto border rounded p-2 bg-red-50 text-sm">
-                  {importPreview.errors.slice(0,50).map((e, i)=> (<div key={i}>â€¢ {e.message || JSON.stringify(e)}</div>))}
+                  {importPreview.errors.slice(0,50).map((e, i)=> (<div key={i}>{'\u2022'} {e.message || JSON.stringify(e)}</div>))}
                   {importPreview.errors.length > 50 && <div>...and more</div>}
                 </div>
               ) : null}

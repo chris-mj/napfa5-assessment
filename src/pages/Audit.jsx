@@ -84,6 +84,7 @@ export default function Audit({ user }) {
         ev.session_title,
         ev.student_identifier,
         ev.student_name,
+        ev.details_text,
         JSON.stringify(ev.details||{}),
         JSON.stringify(ev.diff||{})
       ];
@@ -140,7 +141,24 @@ export default function Audit({ user }) {
     const d = ev.details || {};
     const t = String(ev.entity_type||'');
     const chips = [];
-    if (t === 'export_pft') {
+    if (t === 'scores') {
+      // Prefer structured details array for scores
+      const arr = Array.isArray(d) ? d : [];
+      if (arr.length) {
+        return (
+          <div className="flex flex-wrap gap-1">
+            {arr.map((it, i) => (
+              <span key={i} className="inline-flex items-center px-2 py-0.5 rounded bg-gray-100 border text-xs text-gray-700">
+                {it.display || (it.label ? `${it.label} ${it.new ?? it.value ?? ''}` : JSON.stringify(it))}
+              </span>
+            ))}
+          </div>
+        );
+      }
+      if (ev.details_text) {
+        return <span className="text-gray-700">{ev.details_text}</span>;
+      }
+    } else if (t === 'export_pft') {
       if (d.mode) chips.push(`mode: ${d.mode}`);
       if (d.class) chips.push(`class: ${d.class}`);
       if (d.rows!=null) chips.push(`rows: ${d.rows}`);
@@ -151,8 +169,12 @@ export default function Audit({ user }) {
     } else if (t === 'import_students') {
       ['created','updated','exists','failed','total'].forEach(k => { if (d[k]!=null) chips.push(`${k}: ${d[k]}`) });
     } else {
-      const s = JSON.stringify(d);
-      if (s && s !== '{}') chips.push(s);
+      if (ev.details_text) {
+        chips.push(ev.details_text);
+      } else {
+        const s = JSON.stringify(d);
+        if (s && s !== '{}') chips.push(s);
+      }
     }
     return (
       <div className="flex flex-wrap gap-1">

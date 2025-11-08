@@ -29,6 +29,21 @@ select
     else null
   end as student_name,
   e.details,
+  case
+    when jsonb_typeof(e.details) = 'array' then (
+      select string_agg(
+        coalesce(d->>'display',
+                 case
+                   when (d->>'label') is not null and (d ? 'new') then (d->>'label') || ' ' || coalesce(d->>'new', d->>'value','')
+                   when (d->>'label') is not null and (d ? 'value') then (d->>'label') || ' ' || coalesce(d->>'value','')
+                   else d::text
+                 end
+        ), '; ')
+      from jsonb_array_elements(e.details) as d
+    )
+    when jsonb_typeof(e.details) = 'object' then coalesce(e.details->>'display', e.details->>'message', e.details::text)
+    else null
+  end as details_text,
   e.diff,
   e.old_data,
   e.new_data
@@ -43,7 +58,7 @@ left join public.students st on (
 );
 
 grant select on public.audit_events_readable to authenticated;
-revoke all on public.audit_events_readable from anon;es)
+revoke all on public.audit_events_readable from anon;
 -- Idempotent schema + RLS policies for sessions, roster, scores
 
 create extension if not exists pgcrypto;
@@ -905,6 +920,9 @@ declare
   v_entity text := tg_table_name;
   v_id text;
   v_action text := lower(tg_op);
+  v_details jsonb;
+  -- helpers for scores formatting
+  v_has_any boolean := false;
 begin
   if tg_op = 'INSERT' then
     v_new := to_jsonb(NEW);
@@ -938,9 +956,106 @@ begin
     v_id := coalesce(v_new->>'id', v_old->>'id');
   end if;
 
+  -- Build details for scores inserts/updates
+  if tg_table_name = 'scores' and tg_op in ('INSERT','UPDATE') then
+    -- Only include the five core stations (exclude run_2400 per current policy)
+    -- On INSERT: list non-null values. On UPDATE: list only changed fields with old->new
+    v_details := '[]'::jsonb;
+
+    -- situps (reps)
+    if tg_op = 'INSERT' then
+      if NEW.situps is not null then
+        v_details := v_details || jsonb_build_array(jsonb_build_object(
+          'key','situps','label','Sit-ups (reps)','new', NEW.situps,
+          'display', concat('Sit-ups ', NEW.situps)
+        )); v_has_any := true;
+      end if;
+    else
+      if (OLD.situps is distinct from NEW.situps) then
+        v_details := v_details || jsonb_build_array(jsonb_build_object(
+          'key','situps','label','Sit-ups (reps)','old', OLD.situps,'new', NEW.situps,
+          'display', concat('Sit-ups ', coalesce(OLD.situps::text,'-'),' -> ', coalesce(NEW.situps::text,'-'))
+        )); v_has_any := true;
+      end if;
+    end if;
+
+    -- broad_jump (cm)
+    if tg_op = 'INSERT' then
+      if NEW.broad_jump is not null then
+        v_details := v_details || jsonb_build_array(jsonb_build_object(
+          'key','broad_jump','label','Standing Broad Jump (cm)','new', round(NEW.broad_jump)::int,
+          'display', concat('Standing Broad Jump ', round(NEW.broad_jump)::int, ' cm')
+        )); v_has_any := true;
+      end if;
+    else
+      if (OLD.broad_jump is distinct from NEW.broad_jump) then
+        v_details := v_details || jsonb_build_array(jsonb_build_object(
+          'key','broad_jump','label','Standing Broad Jump (cm)','old', (case when OLD.broad_jump is null then null else round(OLD.broad_jump)::int end),'new', (case when NEW.broad_jump is null then null else round(NEW.broad_jump)::int end),
+          'display', concat('Standing Broad Jump ', coalesce((case when OLD.broad_jump is null then null else round(OLD.broad_jump)::int end)::text,'-'), ' -> ', coalesce((case when NEW.broad_jump is null then null else round(NEW.broad_jump)::int end)::text,'-'),' cm')
+        )); v_has_any := true;
+      end if;
+    end if;
+
+    -- sit_and_reach (cm)
+    if tg_op = 'INSERT' then
+      if NEW.sit_and_reach is not null then
+        v_details := v_details || jsonb_build_array(jsonb_build_object(
+          'key','sit_and_reach','label','Sit & Reach (cm)','new', round(NEW.sit_and_reach)::int,
+          'display', concat('Sit & Reach ', round(NEW.sit_and_reach)::int, ' cm')
+        )); v_has_any := true;
+      end if;
+    else
+      if (OLD.sit_and_reach is distinct from NEW.sit_and_reach) then
+        v_details := v_details || jsonb_build_array(jsonb_build_object(
+          'key','sit_and_reach','label','Sit & Reach (cm)','old', (case when OLD.sit_and_reach is null then null else round(OLD.sit_and_reach)::int end),'new', (case when NEW.sit_and_reach is null then null else round(NEW.sit_and_reach)::int end),
+          'display', concat('Sit & Reach ', coalesce((case when OLD.sit_and_reach is null then null else round(OLD.sit_and_reach)::int end)::text,'-'), ' -> ', coalesce((case when NEW.sit_and_reach is null then null else round(NEW.sit_and_reach)::int end)::text,'-'),' cm')
+        )); v_has_any := true;
+      end if;
+    end if;
+
+    -- pullups (reps)
+    if tg_op = 'INSERT' then
+      if NEW.pullups is not null then
+        v_details := v_details || jsonb_build_array(jsonb_build_object(
+          'key','pullups','label','Inclined Pull-ups (reps)','new', NEW.pullups,
+          'display', concat('Inclined Pull-ups ', NEW.pullups)
+        )); v_has_any := true;
+      end if;
+    else
+      if (OLD.pullups is distinct from NEW.pullups) then
+        v_details := v_details || jsonb_build_array(jsonb_build_object(
+          'key','pullups','label','Inclined Pull-ups (reps)','old', OLD.pullups,'new', NEW.pullups,
+          'display', concat('Inclined Pull-ups ', coalesce(OLD.pullups::text,'-'),' -> ', coalesce(NEW.pullups::text,'-'))
+        )); v_has_any := true;
+      end if;
+    end if;
+
+    -- shuttle_run (s, 1 decimal)
+    if tg_op = 'INSERT' then
+      if NEW.shuttle_run is not null then
+        v_details := v_details || jsonb_build_array(jsonb_build_object(
+          'key','shuttle_run','label','Shuttle Run (s)','new', round(NEW.shuttle_run::numeric,1),
+          'display', concat('Shuttle Run ', round(NEW.shuttle_run::numeric,1), ' s')
+        )); v_has_any := true;
+      end if;
+    else
+      if (OLD.shuttle_run is distinct from NEW.shuttle_run) then
+        v_details := v_details || jsonb_build_array(jsonb_build_object(
+          'key','shuttle_run','label','Shuttle Run (s)','old', (case when OLD.shuttle_run is null then null else round(OLD.shuttle_run::numeric,1) end),'new', (case when NEW.shuttle_run is null then null else round(NEW.shuttle_run::numeric,1) end),
+          'display', concat('Shuttle Run ', coalesce((case when OLD.shuttle_run is null then null else round(OLD.shuttle_run::numeric,1) end)::text,'-'), ' -> ', coalesce((case when NEW.shuttle_run is null then null else round(NEW.shuttle_run::numeric,1) end)::text,'-'), ' s')
+        )); v_has_any := true;
+      end if;
+    end if;
+
+    -- If insert with no values or update with no changes, skip logging to avoid noise
+    if v_has_any is false then
+      if tg_op = 'DELETE' then return OLD; else return NEW; end if;
+    end if;
+  end if;
+
   perform audit._write_event(
     v_actor, v_school, v_session, v_entity, v_id, v_action, 'db_trigger',
-    v_old, v_new, null, null, null, null, null, null
+    v_old, v_new, null, v_details, null, null, null, null
   );
 
   if tg_op = 'DELETE' then return OLD; else return NEW; end if;
