@@ -221,6 +221,8 @@ export default function ManageStudents({ user }) {
     } catch { return '-' }
   }
 
+  // Purge flow removed
+
   const addOrEnroll = async (e) => {
     e.preventDefault()
     if (!membership?.school_id) return
@@ -577,14 +579,16 @@ export default function ManageStudents({ user }) {
   </button>
 </div>
             <div className="ml-auto flex items-center gap-2">
-              <button onClick={bulkActivate} disabled={selectedEnrollments.size===0} className="px-3 py-2 border rounded bg-white hover:bg-gray-50 disabled:opacity-60">Activate Selected</button>
-              <button onClick={bulkDeactivate} disabled={selectedEnrollments.size===0} className="px-3 py-2 border rounded bg-white hover:bg-gray-50 disabled:opacity-60">Deactivate Selected</button>
-              <a href="/pft_template.csv" download className="px-3 py-2 border rounded hover:bg-gray-50">Download PFT template</a>
-              <button onClick={()=> setImportOpen(true)} className="px-3 py-2 border rounded hover:bg-gray-50">Import PFT</button>
-            </div>
+                <button onClick={bulkActivate} disabled={selectedEnrollments.size===0} className="px-3 py-2 border rounded bg-white hover:bg-gray-50 disabled:opacity-60">Activate Selected</button>
+                <button onClick={bulkDeactivate} disabled={selectedEnrollments.size===0} className="px-3 py-2 border rounded bg-white hover:bg-gray-50 disabled:opacity-60">Deactivate Selected</button>
+                <a href="/pft_template.csv" download className="px-3 py-2 border rounded hover:bg-gray-50">Download PFT template</a>
+                <button onClick={()=> setImportOpen(true)} className="px-3 py-2 border rounded hover:bg-gray-50">Import PFT</button>
+                {/* Purge School Data button removed */}
+              </div>
+              {/* Danger zone note removed */}
           </div>
 
-          <div className="overflow-x-auto border rounded">
+            <div className="overflow-x-auto border rounded">
             <table className="min-w-[1050px] w-full">
               <thead>
                 <tr className="bg-gray-100 text-left">

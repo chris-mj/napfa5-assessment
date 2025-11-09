@@ -106,7 +106,7 @@ export default function SessionDetail({ user }) {
             .finally(() => setMembershipLoading(false));
     }, [user]);
 
-    // Load school name for PDF/profile cards context
+    // Load school name for context (PDF/profile cards)
     useEffect(() => {
         if (!membership?.school_id) return;
         supabase
@@ -114,7 +114,7 @@ export default function SessionDetail({ user }) {
             .select('id,name')
             .eq('id', membership.school_id)
             .maybeSingle()
-            .then(({ data }) => setSchoolName(data?.name || ""));
+            .then(({ data }) => { setSchoolName(data?.name || ""); });
     }, [membership?.school_id]);
 
     useEffect(() => {
@@ -602,7 +602,7 @@ export default function SessionDetail({ user }) {
             const truncateToWidth = (text, maxW, fontSize) => {
                 if (!text) return '';
                 doc.setFontSize(fontSize);
-                const ellipsis = '�';
+                const ellipsis = '...';
                 let t = String(text);
                 // Fast path: fits
                 if (doc.getTextWidth(t) <= maxW) return t;
@@ -923,6 +923,7 @@ export default function SessionDetail({ user }) {
                                 Delete Session
                             </button>
                         </div>
+                        
                     )
                 ) : (
                     <p className="text-sm text-gray-500">You have view-only access to this session.</p>
@@ -954,31 +955,7 @@ export default function SessionDetail({ user }) {
                 </div>
             </nav>
 
-            {/*/!* Tabs *!/*/}
-            {/*<nav className="flex items-center justify-start">*/}
-            {/*    <div role="tablist" aria-label="Session sections" className="inline-flex rounded-lg bg-gray-100 p-1 text-sm">*/}
-            {/*        <button*/}
-            {/*            role="tab"*/}
-            {/*            aria-selected={activeTab === 'roster'}*/}
-            {/*            className={(activeTab === 'roster'*/}
-            {/*                ? 'bg-white text-blue-700 shadow border border-gray-200'*/}
-            {/*                : 'text-gray-600 hover:text-gray-800') + ' px-3 py-1.5 rounded-md transition-colors'}*/}
-            {/*            onClick={() => setActiveTab('roster')}*/}
-            {/*        >*/}
-            {/*            Roster*/}
-            {/*        </button>*/}
-            {/*        <button*/}
-            {/*            role="tab"*/}
-            {/*            aria-selected={activeTab === 'scores'}*/}
-            {/*            className={(activeTab === 'scores'*/}
-            {/*                ? 'bg-white text-blue-700 shadow border border-gray-200'*/}
-            {/*                : 'text-gray-600 hover:text-gray-800') + ' px-3 py-1.5 rounded-md transition-colors'}*/}
-            {/*            onClick={() => setActiveTab('scores')}*/}
-            {/*        >*/}
-            {/*            Scores*/}
-            {/*        </button>*/}
-            {/*    </div>*/}
-            {/*</nav>*/}
+            {/* old tabs markup removed */}
 
             {activeTab === 'roster' ? (
                 <RosterDualList
@@ -1155,6 +1132,7 @@ function ScoreRowActions({ student, sessionId, canRecord, onSaved }) {
 }
 
  
+
 
 
 

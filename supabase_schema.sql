@@ -107,6 +107,8 @@ do $$ begin
     add constraint schools_type_check check (type in ('primary','secondaryJC'));
 exception when others then null; end $$;
 
+-- (removed) purge flag
+
 -- Memberships: user roles per school
 create table if not exists memberships (
   id uuid primary key default gen_random_uuid(),
@@ -1131,6 +1133,13 @@ revoke all on audit.audit_events from anon;
 -- Allow calling the RPC from authenticated users
 grant execute on function public.audit_log_event(text, text, text, text, text, jsonb, uuid, text, inet, text) to authenticated;
 ;
+
+-- =========================
+-- Purge authorization helpers and RPCs
+-- =========================
+
+-- Platform owner: any membership with role 'superadmin' (global override)
+-- (removed) purge authorization helpers and RPCs
 
 
 
