@@ -277,7 +277,7 @@ function TestimonialCard({ quote, name, school }) {
 function DeviceFrame({ children }) {
   return (
     <div className="aspect-video bg-white">
-      <div className="h-6 bg-slate-100 border-b border-slate-200 flex items-center justify-center text-[10px] text-slate-500">Device Mock</div>
+      {/*<div className="h-6 bg-slate-100 border-b border-slate-200 flex items-center justify-center text-[10px] text-slate-500"></div>*/}
       <div className="h-[calc(100%-1.5rem)] bg-slate-50 flex items-center justify-center overflow-hidden">
         <div className="w-full h-full">{children}</div>
       </div>

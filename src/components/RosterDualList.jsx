@@ -61,14 +61,15 @@ export default function RosterDualList({ user, session, membership, canManage, o
         .from('scores')
         .select('student_id, situps, shuttle_run, sit_and_reach, pullups, run_2400, broad_jump')
         .eq('session_id', sessionId);
-      const requiredMetrics = ['situps','shuttle_run','sit_and_reach','pullups','broad_jump'];
+      // Consider any of the 6 stations (including run) as having scores for lock purposes
+      const anyMetrics = ['situps','shuttle_run','sit_and_reach','pullups','broad_jump','run_2400'];
       const byStudent = new Map((scoreRows || []).map(r => [r.student_id, r]));
       const scored = new Set();
       (rosterList || []).forEach(s => {
         const row = byStudent.get(s.id);
         if (!row) return;
-        const nonNullCount = requiredMetrics.reduce((acc, k) => acc + (row[k] == null ? 0 : 1), 0);
-        if (nonNullCount > 0) scored.add(s.id);
+        const hasAny = anyMetrics.some(k => row[k] != null);
+        if (hasAny) scored.add(s.id);
       });
 
       // Load eligible enrollments for session year, minus already in roster
@@ -286,7 +287,12 @@ export default function RosterDualList({ user, session, membership, canManage, o
                   <tr key={s.id} className="hover:bg-gray-50">
                     <td className="px-3 py-2 border">
                       {scoredSet.has(s.id) ? (
-                        <LockIcon title="Has scores; cannot remove" />
+                        <span className="relative inline-flex items-center group" role="img" aria-label="Has scores (any station, including run); cannot remove">
+                          <LockIcon title="Has scores (any station, including run); cannot remove" />
+                          <span className="pointer-events-none absolute z-10 -top-8 left-0 whitespace-nowrap rounded bg-gray-800 px-2 py-1 text-[11px] text-white text-left opacity-0 group-hover:opacity-100 shadow">
+                            Has scores (any station, including run); cannot remove
+                          </span>
+                        </span>
                       ) : (
                         <input type="checkbox" checked={rightSelected.has(s.id)} onChange={() => toggleRight(s.id)} />
                       )}
@@ -294,7 +300,14 @@ export default function RosterDualList({ user, session, membership, canManage, o
                     <td className="px-3 py-2 border whitespace-nowrap">{normalizeStudentId(s.student_identifier)}</td>
                     <td className="px-3 py-2 border">
                       {s.name}
-                      {scoredSet.has(s.id) && <span className="ml-2 text-[11px] text-green-700" title="Has scores">scored</span>}
+                      {scoredSet.has(s.id) && (
+                        <span className="relative inline-flex items-center ml-2 group">
+                          <span className="text-[11px] text-green-700">scored</span>
+                          <span className="pointer-events-none absolute z-10 -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-gray-800 px-2 py-1 text-[11px] text-white opacity-0 group-hover:opacity-100 shadow">
+                            Has scores (any station, including run)
+                          </span>
+                        </span>
+                      )}
                     </td>
                     <td className="px-3 py-2 border">{s.class || ''}</td>
                   </tr>

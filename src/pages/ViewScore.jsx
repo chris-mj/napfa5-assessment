@@ -3,6 +3,7 @@ import { SitupsIcon, BroadJumpIcon, ReachIcon, PullupsIcon, ShuttleIcon } from '
 import { supabase } from '../lib/supabaseClient'
 import { normalizeStudentId } from '../utils/ids'
 import { evaluateNapfa, normalizeSex, getAgeGroup, findRows } from '../utils/napfaStandards'
+import { fmtRun } from '../lib/scores'
 
 export default function ViewScore() {
   const [studentId, setStudentId] = useState('')
@@ -91,7 +92,10 @@ export default function ViewScore() {
       sit_and_reach_cm: toIntOrNull(selected.sit_and_reach_cm),
       pullups: toIntOrNull(selected.pullups),
       shuttle_s: toFloatOrNull(selected.shuttle_run_s),
-      run_seconds: (runKm === 2.4 && isFinite(selected.run_2400_min)) ? Math.round(selected.run_2400_min * 60) : null,
+      // Treat null/undefined/empty as null; only accept numeric minutes
+      run_seconds: (selected.run_2400_min != null && typeof selected.run_2400_min === 'number' && Number.isFinite(selected.run_2400_min))
+        ? Math.round(selected.run_2400_min * 60)
+        : null,
     }
     const res = evaluateNapfa({ level, sex, age, run_km: runKm }, measures)
     const award = computeAward(res)
@@ -108,16 +112,22 @@ export default function ViewScore() {
           <div className="flex-1 min-w-[240px]">
             <label className="block text-sm mb-1 text-slate-700">Student ID</label>
             <div className="flex gap-2">
-              <input value={studentId} onChange={(e)=>setStudentId(e.target.value)} placeholder="Type or scan Student ID" className="border rounded p-2 w-full"/>
+              <input
+                value={studentId}
+                onChange={(e)=>setStudentId(e.target.value)}
+                onKeyDown={(e)=>{ if (e.key === 'Enter') { e.preventDefault(); handleSearch(); } }}
+                placeholder="Type or scan Student ID"
+                className="border rounded p-2 w-full"
+              />
               <button onClick={()=>setScannerOpen(true)} className="h-10 w-10 border rounded-full inline-flex items-center justify-center hover:bg-slate-50" aria-label="Open camera to scan student card" title="Scan">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h3l2-3h8l2 3h3a2 2 0 0 1 2 2Z" /><circle cx="12" cy="13" r="4" /></svg>
               </button>
             </div>
             {/* helper removed per request */}
           </div>
-          <div className="flex items-center gap-2">
-            <button onClick={clearSearch} className="px-4 py-2 border rounded hover:bg-gray-50" disabled={loading && !profile && !studentId}>Clear</button>
+          <div className="flex items-center gap-2 flex-1 md:flex-none">
             <button onClick={()=>handleSearch()} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700" disabled={loading}>{loading? 'Searching...' : 'Search'}</button>
+            <button onClick={clearSearch} className="ml-auto px-4 py-2 border rounded hover:bg-gray-50" disabled={loading && !profile && !studentId}>Clear</button>
           </div>
         </div>
         {error && <div className="mt-2 text-sm text-red-600">{error}</div>}
@@ -209,7 +219,7 @@ export default function ViewScore() {
                     </table>
                   </div>
 
-                  <AwardBanner info={details.awardInfo} />
+                  <AwardBanner2 info={details.awardInfo} />
                 </div>
               )}
             </div>
@@ -251,8 +261,8 @@ function renderRow(label, key, raw, band, nextTarget, unit, isTime = false) {
 }
 
 function renderRunRow(run2400Min, details) {
-  const hasRun = (details?.runKm === 2.4 && isFinite(run2400Min)) || (details?.runKm === 1.6 && details?.res?.stations?.run)
-  const raw = details?.runKm === 2.4 && isFinite(run2400Min) ? secondsToMmss(Math.round(run2400Min * 60)) : '-'
+  const hasRun = ((typeof run2400Min === 'number') && Number.isFinite(run2400Min)) || !!details?.res?.stations?.run
+  const raw = ((typeof run2400Min === 'number') && Number.isFinite(run2400Min)) ? fmtRun(run2400Min) : '-'
   const band = details?.res?.stations?.run
   const nextTarget = details?.nextTargets?.run
   return (
@@ -381,9 +391,9 @@ function worstGradeRank(keys, res) {
 function computeProvisionalAward(res) {
   const total = sumFivePoints(res)
   const minRank = worstGradeRank(['situps','broad_jump_cm','sit_and_reach_cm','pullups','shuttle_s'], res)
-  if (total >= 21 && minRank >= gradeToRank('C')) return { label: 'Gold', reason: `Five-station subtotal ${total} points and all ≥ C.` }
-  if (total >= 15 && minRank >= gradeToRank('D')) return { label: 'Silver', reason: `Five-station subtotal ${total} points and all ≥ D.` }
-  if (total >= 6 && minRank >= gradeToRank('E')) return { label: 'Bronze', reason: `Five-station subtotal ${total} points and all ≥ E.` }
+  if (total >= 21 && minRank >= gradeToRank('C')) return { label: 'Gold', reason: `Five-station subtotal ${total} points and all â‰¥ C.` }
+  if (total >= 15 && minRank >= gradeToRank('D')) return { label: 'Silver', reason: `Five-station subtotal ${total} points and all â‰¥ D.` }
+  if (total >= 6 && minRank >= gradeToRank('E')) return { label: 'Bronze', reason: `Five-station subtotal ${total} points and all â‰¥ E.` }
   return { label: 'No Award', reason: `Five-station subtotal ${total} points or minimum grade conditions not met.` }
 }
 
@@ -452,6 +462,22 @@ function computeAwardInfo(ctx, res) {
     currentAward,
     provisional,
     guidance,
+    // Basis for checklist display
+    base: {
+      label: baseLabel,
+      total,
+      minRank,
+      threshold: awardThreshold(baseLabel),
+      requiredMinGrade: gradeMinForAward(baseLabel),
+      worstKeys,
+    },
+    next: nextLabel ? {
+      label: nextLabel,
+      total,
+      minRank,
+      threshold: awardThreshold(nextLabel),
+      requiredMinGrade: gradeMinForAward(nextLabel),
+    } : null,
   }
 }
 
@@ -528,6 +554,83 @@ function PointsBadge({ points, grade }) {
   return <span className={`inline-flex items-center rounded px-2 py-0.5 text-xs tabular-nums ${cls}`}>{p}</span>
 }
 
+// New: Side-by-side award comparison with robust SVG ticks
+function AwardBanner2({ info }) {
+  const baseLabel = info?.hasSix ? (info?.currentAward?.label || 'No Award') : (info?.hasFive ? (info?.provisional?.label || 'No Award') : 'No Award')
+  const reason = info?.hasSix ? (info?.currentAward?.reason || '') : (info?.hasFive ? (info?.provisional?.reason || 'Run not completed.') : 'Complete at least the five non-run stations.')
+  const style = baseLabel === 'Gold'
+    ? 'bg-yellow-100 text-yellow-900 border-yellow-200'
+    : baseLabel === 'Silver' ? 'bg-zinc-100 text-zinc-800 border-zinc-200'
+    : baseLabel === 'Bronze' ? 'bg-amber-100 text-amber-900 border-amber-200'
+    : 'bg-slate-100 text-slate-800 border-slate-200'
+
+  const CheckIcon = ({ ok }) => (
+    <span className={'inline-block w-4 text-center ' + (ok ? 'text-green-600' : 'text-rose-600')} aria-hidden>
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        {ok ? (
+          <path d="M20 6L9 17l-5-5" />
+        ) : (
+          <path d="M18 6L6 18M6 6l12 12" />
+        )}
+      </svg>
+    </span>
+  )
+
+  const CurrentList = () => {
+    const base = info?.base
+    if (!base) return null
+    const ptsOk = Number(base.total || 0) >= Number(base.threshold || Infinity)
+    const needMin = base.requiredMinGrade != null
+    const floorOk = !needMin || (base.minRank >= gradeToRank(base.requiredMinGrade))
+    return (
+      <ul className="mt-2 text-sm space-y-1">
+        <li className="flex items-start gap-2"><CheckIcon ok={!!info.hasFive} /><span>Five non-run stations completed</span></li>
+        <li className="flex items-start gap-2"><CheckIcon ok={!!info.hasSix} /><span>Run completed</span></li>
+        <li className="flex items-start gap-2"><CheckIcon ok={ptsOk} /><span>Points >= {Number.isFinite(base.threshold) ? base.threshold : '-'}</span></li>
+        {base.requiredMinGrade ? (<li className="flex items-start gap-2"><CheckIcon ok={floorOk} /><span>All stations >= grade {base.requiredMinGrade}</span></li>) : null}
+      </ul>
+    )
+  }
+
+  const NextList = () => {
+    const next = info?.next
+    if (!next?.label) return null
+    const pointsOk = Number(next.total || 0) >= Number(next.threshold || Infinity)
+    const needMin = next.requiredMinGrade != null
+    const floorOk = !needMin || (next.minRank >= gradeToRank(next.requiredMinGrade))
+    return (
+      <ul className="mt-1 space-y-1 text-sm">
+        <li className="flex items-start gap-2"><CheckIcon ok={!!info.hasFive} /><span>Five non-run stations completed</span></li>
+        <li className="flex items-start gap-2"><CheckIcon ok={!!info.hasSix} /><span>Run completed</span></li>
+        <li className="flex items-start gap-2"><CheckIcon ok={pointsOk} /><span>Points >= {Number.isFinite(next.threshold) ? next.threshold : '-'}</span></li>
+        {next.requiredMinGrade ? (<li className="flex items-start gap-2"><CheckIcon ok={floorOk} /><span>All stations >= grade {next.requiredMinGrade}</span></li>) : null}
+      </ul>
+    )
+  }
+
+  return (
+    <div className={`p-3 rounded border ${style}`}>
+      <div className="flex items-center gap-2">
+        <Trophy className="w-4 h-4" />
+        <div className="font-semibold">{baseLabel}</div>
+        {info?.hasFive && !info?.hasSix && (
+          <span className="ml-2 inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 text-indigo-700 px-2 py-0.5 text-[10px]">Provisional (run not completed)</span>
+        )}
+      </div>
+      {reason && <div className="text-sm text-slate-700 mt-1">{reason}</div>}
+      <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div>
+          <div className="font-medium">Current Award</div>
+          <CurrentList />
+        </div>
+        <div>
+          {info?.next?.label && <div className="font-medium">Next Award: {info.next.label}</div>}
+          <NextList />
+        </div>
+      </div>
+    </div>
+  )
+}
 function AwardBanner({ info }) {
   // Determine display and base labels
   const baseLabel = info?.hasSix ? (info?.currentAward?.label || 'No Award')
@@ -559,24 +662,113 @@ function AwardBanner({ info }) {
       </div>
       {reason && <div className="text-sm text-slate-700 mt-1">{reason}</div>}
 
-      {g ? (
+      <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div>
+      {/* Criteria checklist */}
+      {info?.base && (
+        <ul className="mt-2 text-sm space-y-1">
+          {(() => {
+            const base = info.base
+            const tick = (ok) => (
+              <span className={"inline-block w-4 text-center " + (ok ? 'text-green-600' : 'text-rose-600')} aria-hidden>
+                
+              </span>
+            )
+            const ptsOk = Number(base.total || 0) >= Number(base.threshold || Infinity)
+            const needMin = base.requiredMinGrade != null
+            const floorOk = !needMin || (base.minRank >= gradeToRank(base.requiredMinGrade))
+            const fiveOk = !!info.hasFive
+            const sixOk = !!info.hasSix
+            const items = []
+            items.push(
+              <li key="five" className="flex items-start gap-2">
+                {tick(fiveOk)}
+                <span>Five non-run stations completed</span>
+              </li>
+            )
+            items.push(
+              <li key="run" className="flex items-start gap-2">
+                {tick(sixOk)}
+                <span>Run completed</span>
+              </li>
+            )
+            items.push(
+              <li key="pts" className="flex items-start gap-2">
+                {tick(ptsOk)}
+                <span>Points â‰¥ {Number.isFinite(base.threshold) ? base.threshold : '-'}</span>
+              </li>
+            )
+            if (base.requiredMinGrade) {
+              items.push(
+                <li key="floor" className="flex items-start gap-2">
+                  {tick(floorOk)}
+                  <span>All stations â‰¥ grade {base.requiredMinGrade}</span>
+                </li>
+              )
+            }
+            return items
+          })()}
+        </ul>
+      )}
+      </div>
+
+      {/* Next Award checklist (identical structure) */}
+      <div>
+      {info?.next?.label && (
+        <div className="text-sm">
+          <div className="font-medium">Next Award: {info.next.label}</div>
+          <ul className="mt-1 space-y-1">
+            {(() => {
+              const tick = (ok) => (
+                <span className={"inline-block w-4 text-center " + (ok ? 'text-green-600' : 'text-rose-600')} aria-hidden>
+                  
+                </span>
+              )
+              const pointsOk = Number(info.next.total || 0) >= Number(info.next.threshold || Infinity)
+              const needMin = info.next.requiredMinGrade != null
+              const floorOk = !needMin || (info.next.minRank >= gradeToRank(info.next.requiredMinGrade))
+              const items = []
+              items.push(
+                <li key="five" className="flex items-start gap-2">{tick(!!info.hasFive)}<span>Five non-run stations completed</span></li>
+              )
+              items.push(
+                <li key="run" className="flex items-start gap-2">{tick(!!info.hasSix)}<span>Run completed</span></li>
+              )
+              items.push(
+                <li key="pts" className="flex items-start gap-2">{tick(pointsOk)}<span>Points â‰¥ {Number.isFinite(info.next.threshold) ? info.next.threshold : '-'}</span></li>
+              )
+              if (info.next.requiredMinGrade) {
+                items.push(
+                  <li key="floor" className="flex items-start gap-2">{tick(floorOk)}<span>All stations â‰¥ grade {info.next.requiredMinGrade}</span></li>
+                )
+              }
+              return items
+            })()}
+          </ul>
+        </div>
+      )}
+      </div>
+      </div>
+
+      {false && g ? (
         <div className="mt-2 text-sm">
           <div className="font-medium">Next Award: {g.nextLabel}</div>
           {g.pointsShortfall <= 0 ? (
             <div className="text-slate-600">Already meets points threshold.</div>
           ) : info?.hasSix ? (
             g.runOnlyReachable ? (
-              <div className="text-slate-700">Need ≥ {g.pointsShortfall} points. Simplest: improve run to ≥ {g.requiredRunPoints} points (grade ≥ {g.runGrade}){g.runMmss ? `, ≤ ${g.runMmss}` : ''}.</div>
+              <div className="text-slate-700">Need â‰¥ {g.pointsShortfall} points. Simplest: improve run to â‰¥ {g.requiredRunPoints} points (grade â‰¥ {g.runGrade}){g.runMmss ? `, â‰¤ ${g.runMmss}` : ''}.</div>
             ) : (
-              <div className="text-slate-700">Need ≥ {g.pointsShortfall} points (from any station). Run alone can add up to 5.</div>
+              <div className="text-slate-700">Need â‰¥ {g.pointsShortfall} points (from any station). Run alone can add up to 5.</div>
             )
           ) : (
             g.runOnlyReachable ? (
-              <div className="text-slate-700">Run: ≥ {g.requiredRunPoints} points (grade ≥ {g.runGrade}){g.runMmss ? `, roughly ≤ ${g.runMmss}` : ''}.</div>
+              <div className="text-slate-700">Run: â‰¥ {g.requiredRunPoints} points (grade â‰¥ {g.runGrade}){g.runMmss ? `, roughly â‰¤ ${g.runMmss}` : ''}.</div>
             ) : (
-              <div className="text-slate-700">Improve other stations and run; need ≥ {g.pointsShortfall} total points; run alone provides up to 5.</div>
+              <div className="text-slate-700">Improve other stations and run; need â‰¥ {g.pointsShortfall} total points; run alone provides up to 5.</div>
             )
           )}
+          {/* Non-run single-station options removed to restore original */}
           {g.requiredMinGrade && g.floorNoteNeeded && (
             <div className="text-xs text-slate-500 mt-1">Note: Requires all stations at least grade {g.requiredMinGrade}.</div>
           )}
@@ -710,9 +902,9 @@ function formatNext(key, next, unit) {
 
 function formatNextChip(key, next, unit) {
   if (!next) return '-'
-  if (key === 'run') return next.target_mmss ? `≤ ${next.target_mmss}` : '-'
-  if (key === 'shuttle_s') return Number.isFinite(next.target) ? `≤ ${Number(next.target).toFixed(1)} s` : '-'
-  return next.target != null ? `≥ ${next.target}${unit ? ' ' + unit : ''}` : '-'
+  if (key === 'run') return next.target_mmss ? `â‰¤ ${next.target_mmss}` : '-'
+  if (key === 'shuttle_s') return Number.isFinite(next.target) ? `â‰¤ ${Number(next.target).toFixed(1)} s` : '-'
+  return next.target != null ? `â‰¥ ${next.target}${unit ? ' ' + unit : ''}` : '-'
 }
 
 function formatLadderScore(key, selected, runKm) {
@@ -723,8 +915,9 @@ function formatLadderScore(key, selected, runKm) {
   if (key === 'pullups') return selected.pullups != null ? `${selected.pullups} reps` : '-'
   if (key === 'shuttle_s') return Number.isFinite(selected.shuttle_run_s) ? `${Number(selected.shuttle_run_s).toFixed(1)} s` : '-'
   if (key === 'run') {
-    if (runKm === 2.4 && Number.isFinite(selected.run_2400_min)) return secondsToMmss(Math.round(selected.run_2400_min * 60))
-    return '-'
+    return (typeof selected.run_2400_min === 'number' && Number.isFinite(selected.run_2400_min))
+      ? fmtRun(selected.run_2400_min)
+      : '-'
   }
   return '-'
 }
@@ -841,6 +1034,7 @@ function ScannerModal({ onClose, onDetected }) {
     </div>
   )
 }
+
 
 
 

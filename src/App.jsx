@@ -15,6 +15,7 @@ const AddAttempt = lazy(() => import("./pages/AddAttempt"));
 const AdminGlobal = lazy(() => import("./pages/AdminGlobal"));
 const ChangePassword = lazy(() => import("./pages/ChangePassword"));
 const Contact = lazy(() => import("./pages/Contact"));
+const UserGuide = lazy(() => import("./pages/UserGuide"));
 const Sessions = lazy(() => import("./pages/Sessions"));
 const SessionDetail = lazy(() => import("./pages/SessionDetail"));
 const SessionCards = lazy(() => import("./pages/SessionCards"));
@@ -277,6 +278,9 @@ function AnimatedRoutes({ user, setUser }) {
                             )
                         }
                     />
+
+                    <Route path="/contact" element={<PageFade><Contact /></PageFade>} />
+                    <Route path="/user-guide" element={<PageFade><UserGuide user={user} /></PageFade>} />
 
                     {/* Catch-all */}
                     <Route path="*" element={<PageFade><NotFound /></PageFade>} />

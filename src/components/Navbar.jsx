@@ -10,6 +10,7 @@ export default function Navbar({ user, onLogout }) {
   const isOwner = isPlatformOwner(user);
   const [canManageUsers, setCanManageUsers] = useState(false);
   const [roleLabel, setRoleLabel] = useState("");
+  const [contactOpen, setContactOpen] = useState(false);
 
   useEffect(() => {
     let ignore = false;
@@ -103,9 +104,38 @@ export default function Navbar({ user, onLogout }) {
                   )}
                 </>
               )}
-            <NavLink to="/contact" className={({ isActive }) => `${link} ${isActive ? active : ""}`}>
-              Contact Us
-            </NavLink>
+            <div
+              className="relative"
+              onMouseEnter={() => setContactOpen(true)}
+              onMouseLeave={() => setContactOpen(false)}
+            >
+              <NavLink
+                to="/contact"
+                aria-haspopup="menu"
+                aria-expanded={contactOpen}
+                className={({ isActive }) => `${link} ${isActive ? active : ""} flex items-center gap-1`}
+              >
+                <span>Contact Us</span>
+                <svg
+                  className={`w-4 h-4 text-gray-700 transition-transform ${contactOpen ? 'rotate-180' : ''}`}
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                  aria-hidden="true"
+                >
+                  <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.065l3.71-3.835a.75.75 0 111.08 1.04l-4.24 4.385a.75.75 0 01-1.08 0L5.25 8.27a.75.75 0 01-.02-1.06z" clipRule="evenodd" />
+                </svg>
+              </NavLink>
+              {contactOpen && (
+                <div className="absolute right-0 top-full mt-0 w-48 bg-white border rounded shadow z-20" role="menu" aria-label="Contact menu">
+                  <NavLink to="/contact" onClick={() => setContactOpen(false)} className={({ isActive }) => `block px-3 py-2 hover:bg-gray-100 ${isActive ? 'bg-gray-100' : ''}`} role="menuitem">
+                    Contact Us
+                  </NavLink>
+                  <NavLink to="/user-guide" onClick={() => setContactOpen(false)} className={({ isActive }) => `block px-3 py-2 hover:bg-gray-100 ${isActive ? 'bg-gray-100' : ''}`} role="menuitem">
+                    User Guide & FAQ
+                  </NavLink>
+                </div>
+              )}
+            </div>
             {user ? (
               <>
                 <div className="text-sm text-gray-600 whitespace-nowrap text-right">
@@ -154,6 +184,7 @@ export default function Navbar({ user, onLogout }) {
                     </>
                   )}
                   <NavLink to="/contact" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Contact Us</NavLink>
+                  <NavLink to="/user-guide" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>User Guide & FAQ</NavLink>
                   <div className="pt-2 flex items-center justify-between gap-2">
                     {user ? (
                       <>

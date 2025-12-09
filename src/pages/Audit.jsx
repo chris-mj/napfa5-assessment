@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
 import { isPlatformOwner } from "../lib/roles";
 
 export default function Audit({ user }) {
+  const location = useLocation();
   const [membership, setMembership] = useState(null);
   const [memberships, setMemberships] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -13,6 +15,15 @@ export default function Audit({ user }) {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const [selectedSchool, setSelectedSchool] = useState("");
+
+  const schoolParam = useMemo(() => {
+    try {
+      const sp = new URLSearchParams(location.search);
+      return sp.get('school') || "";
+    } catch {
+      return "";
+    }
+  }, [location.search]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -31,7 +42,11 @@ export default function Audit({ user }) {
   const loadEvents = async () => {
     const owner = isPlatformOwner(user);
     const validUuid = (v) => typeof v === 'string' && /^[0-9a-fA-F-]{36}$/.test(v);
-    const schoolFilter = owner ? (selectedSchool || null) : (membership?.school_id || null);
+    // Allow platform owner to filter by either UI selection or URL param.
+    // For non-owners, respect URL param only if it matches one of their memberships; otherwise default to their membership context.
+    const candidate = owner ? (selectedSchool || schoolParam || null) : (schoolParam || null);
+    const hasMembership = (sid) => (memberships||[]).some(m => m.school_id === sid);
+    const schoolFilter = owner ? candidate : (candidate && hasMembership(candidate) ? candidate : (membership?.school_id || null));
     setLoading(true);
     setError("");
     try {
@@ -66,7 +81,7 @@ export default function Audit({ user }) {
     }
   };
 
-  useEffect(() => { loadEvents(); /* eslint-disable-next-line */ }, [membership?.school_id, selectedSchool, entityType]);
+  useEffect(() => { loadEvents(); /* eslint-disable-next-line */ }, [membership?.school_id, selectedSchool, entityType, schoolParam, memberships]);
   useEffect(() => { setPage(1); }, [entityType, query]);
 
   const filtered = useMemo(() => {

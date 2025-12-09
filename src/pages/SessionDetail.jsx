@@ -7,6 +7,7 @@ import { normalizeStudentId } from "../utils/ids";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { isPlatformOwner } from "../lib/roles";
 import { supabase } from "../lib/supabaseClient";
+import { fmtRun } from "../lib/scores";
 import RosterDualList from "../components/RosterDualList";
 
 const ROLE_CAN_MANAGE = ["superadmin", "admin"];
@@ -152,6 +153,14 @@ export default function SessionDetail({ user }) {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [id]);
 
+    // Recompute counts whenever roster changes to keep progress in sync
+    useEffect(() => {
+        if (!id) return;
+        // When roster updates (often after async fetch), refresh status sets
+        loadScoresCount();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [roster, id]);
+
     // Keep tab state in sync with URL hash
     useEffect(() => {
         const fromHash = location.hash === '#scores' ? 'scores' : 'roster';
@@ -247,7 +256,7 @@ export default function SessionDetail({ user }) {
             .select('student_id, situps, shuttle_run, sit_and_reach, pullups, run_2400, broad_jump')
             .eq('session_id', id);
         if (err) return;
-        // For completion, run_2400 is not required
+        // Completion requires the 5 non-run stations; run is optional for completion
         const requiredMetrics = ['situps','shuttle_run','sit_and_reach','pullups','broad_jump'];
         const byStudent = new Map((rows || []).map(r => [r.student_id, r]));
         const scored = new Set();
@@ -257,9 +266,13 @@ export default function SessionDetail({ user }) {
             const row = byStudent.get(s.id);
             if (!row) return; // no row yet => not started
             const nonNullCount = requiredMetrics.reduce((acc, k) => acc + (row[k] == null ? 0 : 1), 0);
-            if (nonNullCount > 0) scored.add(s.id);
-            if (nonNullCount === requiredMetrics.length) completed.add(s.id);
-            else if (nonNullCount > 0) inprog.add(s.id);
+            const hasAny = (nonNullCount > 0) || (row.run_2400 != null);
+            if (hasAny) scored.add(s.id);
+            if (nonNullCount === requiredMetrics.length) {
+                completed.add(s.id);
+            } else if (hasAny) {
+                inprog.add(s.id);
+            }
         });
         setScoredSet(scored);
         setInProgressSet(inprog);
@@ -1030,7 +1043,7 @@ export default function SessionDetail({ user }) {
                                     <th className="px-3 py-2 border">Sit & Reach</th>
                                     <th className="px-3 py-2 border">Pull-ups</th>
                                     <th className="px-3 py-2 border">Broad Jump</th>
-                                    {/** Run temporarily hidden */}
+                                    <th className="px-3 py-2 border">Run (mm:ss)</th>
                                     <th className="px-3 py-2 border w-40">Actions</th>
                                 </tr>
                             </thead>
@@ -1038,7 +1051,7 @@ export default function SessionDetail({ user }) {
                             {(() => {
                                 const total = filteredSortedRoster.length;
                                 if (total === 0) return (
-                                    <tr><td colSpan="9" className="px-3 py-4 text-center text-gray-500">No students in this session yet.</td></tr>
+                                    <tr><td colSpan="10" className="px-3 py-4 text-center text-gray-500">No students in this session yet.</td></tr>
                                 );
                                 const totalPages = Math.max(1, Math.ceil(total / scoresPageSize));
                                 const cur = Math.min(scoresPage, totalPages);
@@ -1062,7 +1075,7 @@ export default function SessionDetail({ user }) {
                                             <td className="px-3 py-2 border align-top">{row.sit_and_reach ?? '-'}</td>
                                             <td className="px-3 py-2 border align-top">{row.pullups ?? '-'}</td>
                                             <td className="px-3 py-2 border align-top">{row.broad_jump ?? '-'}</td>
-                                            {/** Run temporarily hidden */}
+                                            <td className="px-3 py-2 border align-top">{fmtRun(row.run_2400) || '-'}</td>
                                             <td className="px-3 py-2 border align-top">
                                                 <ScoreRowActions student={s} canRecord={canRecord} onSaved={async () => { await loadScoresMap(); await loadScoresCount(); }} sessionId={id} />
                                             </td>

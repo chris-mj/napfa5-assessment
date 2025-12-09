@@ -57,7 +57,7 @@ export default function Profile({ user }) {
             showToast('error', error.message || 'Failed to load memberships');
             setMemberships([]);
           } else {
-            setMemberships((data || []).map(r => ({ id: r.id, role: r.role, schoolName: r.schools?.name || r.schools?.id })));
+            setMemberships((data || []).map(r => ({ id: r.id, role: r.role, schoolId: r?.schools?.id, schoolName: r?.schools?.name || r?.schools?.id })));
           }
         }
       } finally {
@@ -109,7 +109,7 @@ export default function Profile({ user }) {
         .select('id, role, schools:schools!inner(id, name)')
         .eq('user_id', user.id)
         .order('role');
-      setMemberships((data||[]).map(r => ({ id: r.id, role: r.role, schoolName: r.schools?.name || r.schools?.id })));
+      setMemberships((data||[]).map(r => ({ id: r.id, role: r.role, schoolId: r?.schools?.id, schoolName: r?.schools?.name || r?.schools?.id })));
     } finally {
       setMemOpId(null);
     }
@@ -144,7 +144,6 @@ return (
         <section className="border rounded-lg p-4 bg-white shadow-sm">
           <div className="flex items-center justify-between mb-2">
             <h2 className="text-lg font-semibold">Memberships</h2>
-            <NavLink to="/audit" className="text-sm text-blue-700 underline">Open Audit</NavLink>
           </div>
           {memLoading ? (
             <div className="text-sm text-gray-600">Loading memberships...</div>
@@ -156,7 +155,7 @@ return (
                 <tr className="bg-gray-100 text-left">
                   <th className="px-3 py-2 border">School</th>
                   <th className="px-3 py-2 border">Role</th>
-                  <th className="px-3 py-2 border w-40">Actions</th>
+                  <th className="px-3 py-2 border w-56">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -165,13 +164,23 @@ return (
                     <td className="px-3 py-2 border">{m.schoolName}</td>
                     <td className="px-3 py-2 border">{m.role}</td>
                     <td className="px-3 py-2 border">
-                      <button
-                        className="px-2 py-1 border rounded text-red-600 disabled:opacity-50"
-                        onClick={() => deactivateMembership(m)}
-                        disabled={memOpId === m.id}
-                      >
-                        {memOpId === m.id ? 'Processing...' : 'Deactivate'}
-                      </button>
+                      <div className="flex items-center gap-2">
+                        {String(m.role||'').toLowerCase() === 'superadmin' && m.schoolId && (
+                          <NavLink
+                            to={`/audit?school=${encodeURIComponent(m.schoolId)}`}
+                            className="px-2 py-1 border rounded text-blue-700 hover:bg-blue-50"
+                          >
+                            Open Audit
+                          </NavLink>
+                        )}
+                        <button
+                          className="px-2 py-1 border rounded text-red-600 disabled:opacity-50"
+                          onClick={() => deactivateMembership(m)}
+                          disabled={memOpId === m.id}
+                        >
+                          {memOpId === m.id ? 'Processing...' : 'Deactivate'}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}

@@ -2,6 +2,8 @@
 import { useMemo, useRef, useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
+import { SCORE_SELECT_FIELDS, fetchScoreRow, fmtRun } from '../lib/scores'
+import { evaluateNapfa } from '../utils/napfaStandards'
 import { normalizeStudentId } from '../utils/ids'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '../components/ui/select'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '../components/ui/card'
@@ -15,12 +17,14 @@ import { SitupsIcon, BroadJumpIcon, ReachIcon, PullupsIcon, ShuttleIcon } from '
 export default function AddAttempt({ user }) {
   const [sessionId, setSessionId] = useState('')
   const [sessions, setSessions] = useState([])
+  const [schoolType, setSchoolType] = useState(null)
   const stations = useMemo(() => ([
     { key: 'situps', name: 'Sit-ups', Icon: SitupsIcon, description: 'Count repetitions | 1 attempt' },
     { key: 'broad_jump', name: 'Broad Jump', Icon: BroadJumpIcon, description: 'Measure distance (cm) | 2 attempts, record best' },
     { key: 'sit_and_reach', name: 'Sit & Reach', Icon: ReachIcon, description: 'Measure distance (cm) | 2 attempts, record best' },
     { key: 'pullups', name: 'Pull-ups', Icon: PullupsIcon, description: 'Count repetitions | 1 attempt' },
     { key: 'shuttle_run', name: 'Shuttle Run', Icon: ShuttleIcon, description: 'Record time (sec, 1dp) | 1 attempt' },
+    { key: 'run', name: '1.6/2.4km Run', Icon: Timer, description: 'Record time (MSS/MMSS digits) | 1 attempt' },
   ]), [])
   const [activeStation, setActiveStation] = useState('situps')
   const [studentId, setStudentId] = useState('')
@@ -91,6 +95,15 @@ export default function AddAttempt({ user }) {
       if ((a !== null && !inRange(a, 0.0, 20.0)) || (b !== null && !inRange(b, 0.0, 20.0))) return make(false, 'Times must be 0.0–20.0 seconds (1 d.p.).')
       return make(true, 'Lower of two is saved.')
     }
+    if (activeStation === 'run') {
+      if (attempt1 === '') return make(false, 'Enter a time in MSS/MMSS (digits only).')
+      const raw = onlyInt(attempt1)
+      if (!/^\d{3,4}$/.test(raw)) return make(false, 'Use 3 or 4 digits without colon (e.g., 930 or 1330).')
+      const mm = raw.length === 3 ? parseInt(raw.slice(0,1), 10) : parseInt(raw.slice(0,2), 10)
+      const ss = parseInt(raw.slice(-2), 10)
+      if (!Number.isFinite(mm) || !Number.isFinite(ss) || ss >= 60) return make(false, 'Seconds must be 00-59.')
+      return make(true, 'OK')
+    }
     return make(false, 'Select a station.')
   }, [activeStation, attempt1, attempt2, student, sessionId])
 
@@ -105,6 +118,15 @@ export default function AddAttempt({ user }) {
           .eq('user_id', user.id)
           .maybeSingle()
         if (mErr || !mem?.school_id) return
+        // Load school type for standards evaluation (Primary/Secondary)
+        try {
+          const { data: sch } = await supabase
+            .from('schools')
+            .select('type')
+            .eq('id', mem.school_id)
+            .maybeSingle()
+          setSchoolType(sch?.type || null)
+        } catch {}
         const { data: sess } = await supabase
           .from('sessions')
           .select('id, title, session_date, status')
@@ -227,7 +249,7 @@ export default function AddAttempt({ user }) {
         const sid = await getStudentRowId()
         const { data } = await supabase
           .from('scores')
-          .select('situps, pullups, broad_jump, sit_and_reach, shuttle_run')
+          .select(SCORE_SELECT_FIELDS)
           .eq('session_id', sessionId)
           .eq('student_id', sid)
           .maybeSingle()
@@ -246,6 +268,7 @@ export default function AddAttempt({ user }) {
       broad_jump: 'broad_jump',
       sit_and_reach: 'sit_and_reach',
       shuttle_run: 'shuttle_run',
+      run: 'run_2400',
     }
     const col = colMap[activeStation] || 'situps'
     let num = null
@@ -277,6 +300,14 @@ export default function AddAttempt({ user }) {
         err('Shuttle Run time must be between 0.0 and 20.0 seconds (1 d.p.).')
       }
       num = bestRounded
+    } else if (activeStation === 'run') {
+      const raw = onlyInt(attempt1 || '')
+      if (!/^\d{3,4}$/.test(raw)) return
+      const mm = raw.length === 3 ? parseInt(raw.slice(0,1), 10) : parseInt(raw.slice(0,2), 10)
+      const ss = parseInt(raw.slice(-2), 10)
+      if (!Number.isFinite(mm) || !Number.isFinite(ss) || ss >= 60) err('Time must be MSS/MMSS with seconds 00-59.')
+      const minutes = mm + (ss / 60)
+      num = Number.parseFloat(minutes.toFixed(2))
     }
     if (num == null || !Number.isFinite(num)) return
     try {
@@ -297,17 +328,60 @@ export default function AddAttempt({ user }) {
           .from('scores')
           .insert({ session_id: sessionId, student_id: await getStudentRowId(), [col]: num })
       }
-      showToast('success', 'Score saved successfully')
+      // Compute points attained for the saved station
+      try {
+        const sessionMeta = Array.isArray(sessions) ? sessions.find(s => s.id === sessionId) : null
+        const testDate = sessionMeta?.session_date ? new Date(sessionMeta.session_date) : new Date()
+        // Determine standards level label from school type
+        const levelLabel = String(schoolType || '').toLowerCase() === 'primary' ? 'Primary' : 'Secondary'
+        const sex = student?.gender
+        const age = calcAgeAt(student?.dob, testDate)
+        const runKm = (() => {
+          if (age == null) return null
+          return age >= 14 ? 2.4 : (levelLabel === 'Primary' ? 1.6 : 2.4)
+        })()
+        const measures = {}
+        if (activeStation === 'situps') measures.situps = num
+        else if (activeStation === 'pullups') measures.pullups = num
+        else if (activeStation === 'broad_jump') measures.broad_jump_cm = num
+        else if (activeStation === 'sit_and_reach') measures.sit_and_reach_cm = num
+        else if (activeStation === 'shuttle_run') measures.shuttle_s = num
+        else if (activeStation === 'run') measures.run_seconds = Math.round(num * 60)
+        const res = evaluateNapfa({ level: levelLabel, sex, age, run_km: runKm }, measures)
+        const stationKey = (
+          activeStation === 'broad_jump' ? 'broad_jump_cm'
+          : activeStation === 'sit_and_reach' ? 'sit_and_reach_cm'
+          : activeStation === 'shuttle_run' ? 'shuttle_s'
+          : activeStation === 'run' ? 'run'
+          : activeStation // situps / pullups
+        )
+        const pts = res?.stations?.[stationKey]?.points
+        // Display value formatting per station
+        const valueLabel = (() => {
+          if (activeStation === 'shuttle_run') return `${num.toFixed(1)}s`
+          if (activeStation === 'run') return fmtRun(num) || `${Math.round(num*60)}s`
+          return String(num)
+        })()
+        const base = `${active.name}: ${valueLabel}`
+        if (Number.isFinite(pts)) {
+          showToast('success', `${base} — ${pts} pts saved`)
+        } else {
+          showToast('success', `${base} - saved`)
+        }
+      } catch {
+        // If standards don't match or any error occurs, just state the saved value
+        const valueLabel = (() => {
+          if (activeStation === 'shuttle_run') return `${num.toFixed(1)}s`
+          if (activeStation === 'run') return fmtRun(num) || `${Math.round(num*60)}s`
+          return String(num)
+        })()
+        showToast('success', `${active.name}: ${valueLabel} - saved`)
+      }
       setAttempt1('')
       setAttempt2('')
       try {
         const sid = await getStudentRowId()
-        const { data } = await supabase
-          .from('scores')
-          .select('situps, pullups, broad_jump, sit_and_reach, shuttle_run')
-          .eq('session_id', sessionId)
-          .eq('student_id', sid)
-          .maybeSingle()
+        const data = await fetchScoreRow(supabase, sessionId, sid)
         setExisting(data || null)
       } catch {}
     } catch (e) {
@@ -447,6 +521,19 @@ export default function AddAttempt({ user }) {
                   <ShuttleIcon className="h-4 w-4" aria-hidden="true" />
                   <span className="font-medium whitespace-nowrap">Shuttle Run</span>
                 </TabsTrigger>
+                <TabsTrigger
+                  value="run"
+                  className="relative rounded-full px-3 py-1.5 text-sm flex items-center gap-2
+                             bg-white text-slate-700 hover:bg-slate-50 ring-1 ring-slate-200
+                             border-b-4 border-transparent transition-colors
+                             data-[state=active]:bg-blue-600 data-[state=active]:text-white
+                             data-[state=active]:border-blue-600 data-[state=active]:ring-blue-600/20 data-[state=active]:shadow-sm"
+                  aria-label="1.6/2.4km Run"
+                  style={{ scrollSnapAlign: 'start' }}
+                >
+                  <Timer className="h-4 w-4" aria-hidden="true" />
+                  <span className="font-medium whitespace-nowrap">Run 1.6/2.4km</span>
+                </TabsTrigger>
               </TabsList>
             </div>
             {/* Edge fade hints */}
@@ -555,6 +642,7 @@ export default function AddAttempt({ user }) {
                         <div>Broad Jump (cm): <span className="font-semibold">{existing.broad_jump ?? '-'}</span></div>
                         <div>Sit & Reach (cm): <span className="font-semibold">{existing.sit_and_reach ?? '-'}</span></div>
                         <div>Shuttle Run (s): <span className="font-semibold">{existing.shuttle_run ?? '-'}</span></div>
+                        <div>Run (mm:ss): <span className="font-semibold">{fmtRun(existing.run_2400) ?? '-'}</span></div>
                       </div>
                     </div>
                   )}
@@ -587,6 +675,16 @@ export default function AddAttempt({ user }) {
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                           <Input ref={firstAttemptRef} inputMode="decimal" value={attempt1} onChange={(e)=> setAttempt1(oneDecimal(e.target.value))} placeholder="Attempt 1 (e.g., 10.3)" />
                           <Input inputMode="decimal" value={attempt2} onChange={(e)=> setAttempt2(oneDecimal(e.target.value))} placeholder="Attempt 2 (e.g., 10.2)" />
+                        </div>
+                        <div role="status" aria-live="polite" className={(validation.valid ? "text-gray-500" : "text-red-600") + " text-xs mt-1"}>{validation.message}</div>
+                      </>
+                    )}
+                    {activeStation === 'run' && (
+                      <>
+                        <label className="text-gray-700 text-sm">Time</label>
+                        <div className="text-xs text-gray-600">Format: MSS/MMSS (digits only) | Example: 930 or 1330</div>
+                        <div className="grid grid-cols-1 gap-2">
+                          <Input ref={firstAttemptRef} inputMode="numeric" value={attempt1} onChange={(e)=> setAttempt1(onlyInt(e.target.value))} placeholder="e.g., 1330 for 13:30" />
                         </div>
                         <div role="status" aria-live="polite" className={(validation.valid ? "text-gray-500" : "text-red-600") + " text-xs mt-1"}>{validation.message}</div>
                       </>
@@ -797,7 +895,16 @@ function RosterModal({ loading, roster, query, setQuery, onClose, onSelect }) {
   )
 }
 
-// Minimal inline icon set (stroke-based, currentColor)
+  // Minimal inline icon set (stroke-based, currentColor)
+  function calcAgeAt(dobISO, when) {
+    if (!dobISO) return null
+    const birth = new Date(dobISO)
+    const d = when instanceof Date ? when : new Date(when)
+    let age = d.getFullYear() - birth.getFullYear()
+    const m = d.getMonth() - birth.getMonth()
+    if (m < 0 || (m === 0 && d.getDate() < birth.getDate())) age--
+    return age
+  }
 function formatDob(dob) {
   if (!dob) return '-'
   try {
@@ -808,6 +915,8 @@ function formatDob(dob) {
     return `${day}/${mon}/${yr}`
   } catch { return dob }
 }
+
+// fmtRun is imported from ../lib/scores
 
 function IconBase({ children, className, ...rest }) {
   return (
