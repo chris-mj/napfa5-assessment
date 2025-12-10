@@ -110,6 +110,32 @@ export default function ManageStudents({ user }) {
 
   const [selectedEnrollments, setSelectedEnrollments] = useState(new Set())
   const headerSelectRef = useRef(null)
+  // Per-row actions expander (kebab menu)
+  const [openActions, setOpenActions] = useState(new Set())
+  const toggleActionsFor = (rowId) => {
+    setOpenActions(prev => {
+      const next = new Set()
+      if (!prev.has(rowId)) next.add(rowId) // only one open at a time
+      return next
+    })
+  }
+  // Close popovers on outside click or Escape
+  useEffect(() => {
+    const onDocDown = (e) => {
+      try {
+        const t = e.target
+        const inside = t && typeof t.closest === 'function' && t.closest('[data-actions-rowid]')
+        if (!inside) setOpenActions(new Set())
+      } catch { setOpenActions(new Set()) }
+    }
+    const onKey = (e) => { if (e.key === 'Escape') setOpenActions(new Set()) }
+    document.addEventListener('mousedown', onDocDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDocDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [])
 
   const paged = useMemo(() => {
     const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
@@ -169,6 +195,34 @@ export default function ManageStudents({ user }) {
       try { showToast('error', e?.message || 'Bulk deactivation failed.') } catch {}
     }
   }
+
+  // Indicator: has enrollment(s) in other schools (any status)
+  const [otherSchoolMap, setOtherSchoolMap] = useState(new Map())
+  useEffect(() => {
+    const load = async () => {
+      const curSchool = membership?.school_id
+      if (!curSchool) return
+      const missing = (paged.items || [])
+        .map(r => r?.students?.id)
+        .filter(Boolean)
+        .filter(id => !otherSchoolMap.has(id))
+      if (!missing.length) return
+      const next = new Map(otherSchoolMap)
+      for (const sid of missing) {
+        try {
+          const { count } = await supabase
+            .from('enrollments')
+            .select('*', { count: 'exact', head: true })
+            .eq('student_id', sid)
+            .neq('school_id', curSchool)
+          next.set(sid, (count || 0) > 0)
+        } catch {}
+      }
+      setOtherSchoolMap(next)
+    }
+    load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paged.items, membership?.school_id])
 
   // Delete helpers (RPC-backed)
   const reloadEnrollments = async () => {
@@ -686,10 +740,42 @@ export default function ManageStudents({ user }) {
                             ) : (
                               <button onClick={()=>toggleActive(r, true)} className="px-2 py-1 text-sm border rounded hover:bg-gray-50">Reactivate</button>
                             )}
-                            <button onClick={()=>removeFromSchool(r)} className="px-2 py-1 text-sm border rounded text-red-700 hover:bg-red-50" title="Remove this student from your school">Remove from school</button>
-                            {String(membership?.role).toLowerCase() === 'superadmin' && (
-                              <button onClick={()=>deleteGlobally(r)} className="px-2 py-1 text-sm border rounded text-red-800 hover:bg-red-50" title="Delete student globally">Delete globally</button>
+                            {otherSchoolMap.get(r?.students?.id) && (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] rounded-full bg-amber-50 text-amber-800 border border-amber-200" title="Has enrollment in other school(s)">Other school</span>
                             )}
+                            {/* Kebab (vertical triple-dot) opens a small popover menu */}
+                            <div className="relative" data-actions-rowid={r.id}>
+                              <button
+                                onClick={() => toggleActionsFor(r.id)}
+                                className="px-2 py-1 border rounded hover:bg-gray-50"
+                                aria-expanded={openActions.has(r.id)}
+                                title={openActions.has(r.id) ? 'Hide actions' : 'More actions'}
+                              >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                                  <circle cx="12" cy="5" r="2"></circle>
+                                  <circle cx="12" cy="12" r="2"></circle>
+                                  <circle cx="12" cy="19" r="2"></circle>
+                                </svg>
+                              </button>
+                              {openActions.has(r.id) && (
+                                <div className="absolute right-0 top-full mt-1 w-56 bg-white border rounded shadow-lg z-20">
+                                  <button
+                                    onClick={() => { toggleActionsFor(r.id); removeFromSchool(r) }}
+                                    className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 text-red-700"
+                                  >
+                                    Remove from school
+                                  </button>
+                                  {String(membership?.role).toLowerCase() === 'superadmin' && (
+                                    <button
+                                      onClick={() => { toggleActionsFor(r.id); deleteGlobally(r) }}
+                                      className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 text-red-800"
+                                    >
+                                      Delete globally
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                            </div>
                           </div>
                         )}
                       </td>
