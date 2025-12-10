@@ -170,6 +170,45 @@ export default function ManageStudents({ user }) {
     }
   }
 
+  // Delete helpers (RPC-backed)
+  const reloadEnrollments = async () => {
+    const { data: latest } = await supabase
+      .from('enrollments')
+      .select('id, class, academic_year, is_active, created_at, students(id, student_identifier, name, gender, dob)')
+      .eq('school_id', membership.school_id)
+      .order('class', { ascending: true })
+      .order('academic_year', { ascending: false })
+    setRows(latest || [])
+  }
+  const removeFromSchool = async (row) => {
+    try {
+      if (!row?.students?.id || !membership?.school_id) return
+      const idDisp = normalizeStudentId(row.students.student_identifier)
+      const ok = window.confirm(`Remove ${row.students.name} (${idDisp}) from this school? This deletes this school's enrollments, roster, and scores for this student.`)
+      if (!ok) return
+      const { error } = await supabase.rpc('delete_student_in_school', { p_student: row.students.id, p_school: membership.school_id })
+      if (error) throw error
+      try { showToast('success', 'Removed from school.') } catch {}
+      await reloadEnrollments()
+    } catch (e) {
+      try { showToast('error', e?.message || 'Remove failed.') } catch {}
+    }
+  }
+  const deleteGlobally = async (row) => {
+    try {
+      if (!row?.students?.id) return
+      const idDisp = normalizeStudentId(row.students.student_identifier)
+      const ok = window.confirm(`DELETE ${row.students.name} (${idDisp}) globally? This deletes all enrollments, roster, scores and the student identity. This cannot be undone.`)
+      if (!ok) return
+      const { error } = await supabase.rpc('delete_student_global', { p_student: row.students.id })
+      if (error) throw error
+      try { showToast('success', 'Deleted globally.') } catch {}
+      await reloadEnrollments()
+    } catch (e) {
+      try { showToast('error', e?.message || 'Global delete failed.') } catch {}
+    }
+  }
+
 
   const bulkActivate = async () => {
     const ids = Array.from(selectedEnrollments)
@@ -646,6 +685,10 @@ export default function ManageStudents({ user }) {
                               <button onClick={()=>toggleActive(r, false)} className="px-2 py-1 text-sm border rounded hover:bg-gray-50">Deactivate</button>
                             ) : (
                               <button onClick={()=>toggleActive(r, true)} className="px-2 py-1 text-sm border rounded hover:bg-gray-50">Reactivate</button>
+                            )}
+                            <button onClick={()=>removeFromSchool(r)} className="px-2 py-1 text-sm border rounded text-red-700 hover:bg-red-50" title="Remove this student from your school">Remove from school</button>
+                            {String(membership?.role).toLowerCase() === 'superadmin' && (
+                              <button onClick={()=>deleteGlobally(r)} className="px-2 py-1 text-sm border rounded text-red-800 hover:bg-red-50" title="Delete student globally">Delete globally</button>
                             )}
                           </div>
                         )}
