@@ -28,7 +28,13 @@ export default function Login({ onLogin }) {
 
         try {
             if (useMagic) {
-                const { error } = await supabase.auth.signInWithOtp({ email });
+                const { error } = await supabase.auth.signInWithOtp({
+                    email,
+                    options: {
+                        // Redirect back to this app (works for dev and prod)
+                        emailRedirectTo: `${window.location.origin}/login`,
+                    },
+                });
                 if (error) throw error;
                 setMessage("Magic link sent! Check your email.");
             } else {
