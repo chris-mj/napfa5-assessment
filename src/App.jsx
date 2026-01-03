@@ -21,6 +21,7 @@ const SessionDetail = lazy(() => import("./pages/SessionDetail"));
 const SessionCards = lazy(() => import("./pages/SessionCards"));
 const ViewScore = lazy(() => import("./pages/ViewScore"));
 const PftCalculator = lazy(() => import("./pages/PftCalculator"));
+const TargetScore = lazy(() => import("./pages/TargetScore"));
 const Audit = lazy(() => import("./pages/Audit"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const Profile = lazy(() => import("./pages/Profile"));
@@ -116,6 +117,7 @@ function AnimatedRoutes({ user, setUser }) {
                         }
                     />
                     <Route path="/contact" element={<PageFade><Contact /></PageFade>} />
+                    <Route path="/target-score" element={<PageFade><TargetScore /></PageFade>} />
                     <Route
                         path="/view-score"
                         element={

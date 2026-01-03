@@ -169,10 +169,6 @@ export default function Dashboard({ user }) {
   return (
     <div className="bg-[#F9FAFB]">
       <div className="max-w-6xl mx-auto px-4 py-6 space-y-8">
-        {/* Temporary notice */}
-        <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-amber-900 text-sm">
-          Dashboard production is in progress. Please do not click on anything on this page yet.
-        </div>
 
         {/* Header */}
         <div className="flex items-center gap-3">

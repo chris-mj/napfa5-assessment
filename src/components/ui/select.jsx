@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useMemo, useRef, useState } from "react";
+import React, { createContext, useContext, useMemo, useRef, useState, useEffect } from "react";
 
 const SelectCtx = createContext(null);
 
@@ -31,10 +31,31 @@ export function SelectValue({ placeholder }) {
 }
 
 export function SelectContent({ className = "", children }) {
-  const { open } = useRequiredCtx();
+  const { open, setOpen } = useRequiredCtx();
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e) => {
+      const el = ref.current;
+      if (!el) return;
+      if (e.target instanceof Node && !el.contains(e.target)) {
+        setOpen(false);
+      }
+    };
+    const onKey = (e) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', onDoc);
+    document.addEventListener('touchstart', onDoc, { passive: true });
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDoc);
+      document.removeEventListener('touchstart', onDoc, { passive: true });
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open, setOpen]);
   if (!open) return null;
   return (
     <div
+      ref={ref}
       className={
         "absolute left-0 mt-1 border rounded-md bg-white shadow-sm p-1 z-50 w-full " +
         className
