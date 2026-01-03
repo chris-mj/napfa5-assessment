@@ -268,13 +268,15 @@ export default function Navbar({ user, onLogout }) {
                           )}
                         </div>
                       )}
-                      {/* Score Entry and View Score */}
-                      <NavLink to="/add-attempt" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Score Entry</NavLink>
-                      <NavLink to="/view-score" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>View Score</NavLink>
-                      {/* Award Calculator */}
-                      {(canManageUsers || isOwner) && (
-                        <NavLink to="/pft-calculator" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Award Calculator</NavLink>
-                      )}
+                      {/* Scoring Admin group */}
+                      <div className="pt-1">
+                        <div className="text-xs uppercase tracking-wide text-gray-400 px-1">Scoring Admin</div>
+                        <NavLink to="/add-attempt" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Score Entry</NavLink>
+                        <NavLink to="/view-score" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>View Score</NavLink>
+                        {(canManageUsers || isOwner) && (
+                          <NavLink to="/pft-calculator" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Award Calculator</NavLink>
+                        )}
+                      </div>
                     </>
                   )}
                   <NavLink to="/target-score" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Target Score</NavLink>
