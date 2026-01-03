@@ -848,6 +848,155 @@ $func$;
 
 
 -- =========================
+-- Student deletion RPCs
+-- =========================
+
+-- Remove a student's data scoped to a specific school (scores for that school's sessions,
+-- roster rows in that school's sessions, and that school's enrollments). Does not delete
+-- the student row. Caller must be admin/superadmin of the target school.
+do $$ begin
+create or replace function delete_student_in_school(p_student uuid, p_school uuid)
+returns table (
+  deleted_scores integer,
+  deleted_roster integer,
+  deleted_enrollments integer
+)
+language plpgsql
+security definer
+set search_path = public
+as $fn$
+declare
+  v_allowed boolean;
+  v_scores integer := 0;
+  v_roster integer := 0;
+  v_enroll integer := 0;
+begin
+  -- Authorization: admin/superadmin at target school
+  select exists (
+    select 1 from memberships m
+    where m.user_id = auth.uid()
+      and m.school_id = p_school
+      and m.role in ('admin','superadmin')
+  ) into v_allowed;
+  if not v_allowed then
+    raise exception 'Not authorized to remove student for this school';
+  end if;
+
+  -- Delete scores linked to sessions from this school
+  with s_ids as (
+    select sc.id
+    from scores sc
+    join sessions s on s.id = sc.session_id
+    where sc.student_id = p_student
+      and s.school_id = p_school
+  ), del as (
+    delete from scores sc using s_ids
+    where sc.id = s_ids.id
+    returning 1
+  ) select count(*) into v_scores from del;
+
+  -- Delete roster rows for sessions from this school
+  with r_ids as (
+    select r.id
+    from session_roster r
+    join sessions s on s.id = r.session_id
+    where r.student_id = p_student
+      and s.school_id = p_school
+  ), del as (
+    delete from session_roster r using r_ids
+    where r.id = r_ids.id
+    returning 1
+  ) select count(*) into v_roster from del;
+
+  -- Delete this school's enrollments for the student
+  with del as (
+    delete from enrollments e
+    where e.student_id = p_student
+      and e.school_id = p_school
+    returning 1
+  ) select count(*) into v_enroll from del;
+
+  -- Optional audit (best-effort)
+  begin
+    perform public.audit_log_event('students','delete_in_school', p_student::text, null, null,
+      jsonb_build_object('scores',v_scores,'roster',v_roster,'enrollments',v_enroll), p_school, null, null, null);
+  exception when others then null; end;
+
+  return query select v_scores, v_roster, v_enroll;
+end;
+$fn$;
+exception when others then null; end $$;
+
+do $$ begin
+  grant execute on function delete_student_in_school(uuid, uuid) to authenticated;
+  revoke execute on function delete_student_in_school(uuid, uuid) from anon;
+exception when others then null; end $$;
+
+-- Globally delete a student and all related data across schools.
+-- Caller must be a superadmin.
+do $$ begin
+create or replace function delete_student_global(p_student uuid)
+returns table (
+  deleted_scores integer,
+  deleted_roster integer,
+  deleted_enrollments integer,
+  deleted_students integer
+)
+language plpgsql
+security definer
+set search_path = public
+as $fn$
+declare
+  v_allowed boolean;
+  v_scores integer := 0;
+  v_roster integer := 0;
+  v_enroll integer := 0;
+  v_student integer := 0;
+begin
+  -- Authorization: any superadmin
+  select exists (
+    select 1 from memberships m
+    where m.user_id = auth.uid()
+      and m.role = 'superadmin'
+  ) into v_allowed;
+  if not v_allowed then
+    raise exception 'Not authorized to delete student globally';
+  end if;
+
+  -- Delete dependents explicitly under definer
+  with del as (
+    delete from scores sc where sc.student_id = p_student returning 1
+  ) select count(*) into v_scores from del;
+
+  with del as (
+    delete from session_roster r where r.student_id = p_student returning 1
+  ) select count(*) into v_roster from del;
+
+  with del as (
+    delete from enrollments e where e.student_id = p_student returning 1
+  ) select count(*) into v_enroll from del;
+
+  with del as (
+    delete from students st where st.id = p_student returning 1
+  ) select count(*) into v_student from del;
+
+  -- Optional audit (best-effort)
+  begin
+    perform public.audit_log_event('students','delete_global', p_student::text, null, null,
+      jsonb_build_object('scores',v_scores,'roster',v_roster,'enrollments',v_enroll,'students',v_student), null, null, null, null);
+  exception when others then null; end;
+
+  return query select v_scores, v_roster, v_enroll, v_student;
+end;
+$fn$;
+exception when others then null; end $$;
+
+do $$ begin
+  grant execute on function delete_student_global(uuid) to authenticated;
+  revoke execute on function delete_student_global(uuid) from anon;
+exception when others then null; end $$;
+
+-- =========================
 -- Audit schema and events
 -- =========================
 create schema if not exists audit;

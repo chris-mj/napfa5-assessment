@@ -108,8 +108,37 @@ export default function ManageStudents({ user }) {
     return Array.from(set).sort((a,b)=>b-a)
   }, [rows])
 
+  // Convenience lower-cased role for gating actions
+  const roleLower = String(membership?.role || '').toLowerCase()
+
   const [selectedEnrollments, setSelectedEnrollments] = useState(new Set())
   const headerSelectRef = useRef(null)
+  // Per-row actions expander (kebab menu)
+  const [openActions, setOpenActions] = useState(new Set())
+  const toggleActionsFor = (rowId) => {
+    setOpenActions(prev => {
+      const next = new Set()
+      if (!prev.has(rowId)) next.add(rowId) // only one open at a time
+      return next
+    })
+  }
+  // Close popovers on outside click or Escape
+  useEffect(() => {
+    const onDocDown = (e) => {
+      try {
+        const t = e.target
+        const inside = t && typeof t.closest === 'function' && t.closest('[data-actions-rowid]')
+        if (!inside) setOpenActions(new Set())
+      } catch { setOpenActions(new Set()) }
+    }
+    const onKey = (e) => { if (e.key === 'Escape') setOpenActions(new Set()) }
+    document.addEventListener('mousedown', onDocDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDocDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [])
 
   const paged = useMemo(() => {
     const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
@@ -167,6 +196,116 @@ export default function ManageStudents({ user }) {
       try { showToast('success', `Deactivated ${ids.length} enrollment(s).`) } catch {}
     } catch (e) {
       try { showToast('error', e?.message || 'Bulk deactivation failed.') } catch {}
+    }
+  }
+
+  // Indicator: has enrollment(s) in other schools (any status)
+  const [otherSchoolMap, setOtherSchoolMap] = useState(new Map())
+  useEffect(() => {
+    const load = async () => {
+      const curSchool = membership?.school_id
+      if (!curSchool) return
+      const missing = (paged.items || [])
+        .map(r => r?.students?.id)
+        .filter(Boolean)
+        .filter(id => !otherSchoolMap.has(id))
+      if (!missing.length) return
+      const next = new Map(otherSchoolMap)
+      for (const sid of missing) {
+        try {
+          const { count } = await supabase
+            .from('enrollments')
+            .select('*', { count: 'exact', head: true })
+            .eq('student_id', sid)
+            .neq('school_id', curSchool)
+          next.set(sid, (count || 0) > 0)
+        } catch {}
+      }
+      setOtherSchoolMap(next)
+    }
+    load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paged.items, membership?.school_id])
+
+  // Delete helpers (RPC-backed)
+  const reloadEnrollments = async () => {
+    const { data: latest } = await supabase
+      .from('enrollments')
+      .select('id, class, academic_year, is_active, created_at, students(id, student_identifier, name, gender, dob)')
+      .eq('school_id', membership.school_id)
+      .order('class', { ascending: true })
+      .order('academic_year', { ascending: false })
+    setRows(latest || [])
+  }
+  const removeFromSchool = async (row) => {
+    try {
+      if (!row?.students?.id || !membership?.school_id) return
+      const idDisp = normalizeStudentId(row.students.student_identifier)
+      const ok = window.confirm(`Remove ${row.students.name} (${idDisp}) from this school? This deletes this school's enrollments, roster, and scores for this student.`)
+      if (!ok) return
+      const { error } = await supabase.rpc('delete_student_in_school', { p_student: row.students.id, p_school: membership.school_id })
+      if (error) throw error
+      try { showToast('success', 'Removed from school.') } catch {}
+      await reloadEnrollments()
+    } catch (e) {
+      try { showToast('error', e?.message || 'Remove failed.') } catch {}
+    }
+  }
+  const deleteGlobally = async (row) => {
+    try {
+      if (!row?.students?.id) return
+      const idDisp = normalizeStudentId(row.students.student_identifier)
+      const ok = window.confirm(`DELETE ${row.students.name} (${idDisp}) globally? This deletes all enrollments, roster, scores and the student identity. This cannot be undone.`)
+      if (!ok) return
+      const { error } = await supabase.rpc('delete_student_global', { p_student: row.students.id })
+      if (error) throw error
+      try { showToast('success', 'Deleted globally.') } catch {}
+      await reloadEnrollments()
+    } catch (e) {
+      try { showToast('error', e?.message || 'Global delete failed.') } catch {}
+    }
+  }
+
+  // Bulk actions
+  const bulkRemoveFromSchool = async () => {
+    try {
+      const ids = Array.from(selectedEnrollments)
+      if (!ids.length || !membership?.school_id) return
+      const selected = rows.filter(r => ids.includes(r.id))
+      const studentIds = Array.from(new Set(selected.map(r => r?.students?.id).filter(Boolean)))
+      if (!studentIds.length) return
+      const ok = window.confirm(`Remove ${studentIds.length} student(s) from this school? This deletes this school's enrollments, roster, and scores for these students.`)
+      if (!ok) return
+      for (const sid of studentIds) {
+        const { error } = await supabase.rpc('delete_student_in_school', { p_student: sid, p_school: membership.school_id })
+        if (error) throw error
+      }
+      try { showToast('success', `Removed ${studentIds.length} student(s) from school.`) } catch {}
+      await reloadEnrollments()
+      setSelectedEnrollments(new Set())
+    } catch (e) {
+      try { showToast('error', e?.message || 'Bulk remove failed.') } catch {}
+    }
+  }
+
+  const bulkDeleteGlobally = async () => {
+    try {
+      const ids = Array.from(selectedEnrollments)
+      if (!ids.length) return
+      const selected = rows.filter(r => ids.includes(r.id))
+      const studentIds = Array.from(new Set(selected.map(r => r?.students?.id).filter(Boolean)))
+      if (!studentIds.length) return
+      const ok = window.confirm(`DELETE ${studentIds.length} student(s) globally? This deletes all enrollments, roster, scores and the student identity. This cannot be undone.`)
+      if (!ok) return
+      for (const sid of studentIds) {
+        const { error } = await supabase.rpc('delete_student_global', { p_student: sid })
+        if (error) throw error
+      }
+      try { showToast('success', `Deleted ${studentIds.length} student(s) globally.`) } catch {}
+      await reloadEnrollments()
+      setSelectedEnrollments(new Set())
+    } catch (e) {
+      try { showToast('error', e?.message || 'Bulk delete failed.') } catch {}
     }
   }
 
@@ -578,13 +717,25 @@ export default function ManageStudents({ user }) {
     Inactive
   </button>
 </div>
-            <div className="ml-auto flex items-center gap-2">
-                <button onClick={bulkActivate} disabled={selectedEnrollments.size===0} className="px-3 py-2 border rounded bg-white hover:bg-gray-50 disabled:opacity-60">Activate Selected</button>
-                <button onClick={bulkDeactivate} disabled={selectedEnrollments.size===0} className="px-3 py-2 border rounded bg-white hover:bg-gray-50 disabled:opacity-60">Deactivate Selected</button>
-                <a href="/pft_template.csv" download className="px-3 py-2 border rounded hover:bg-gray-50">Download PFT template</a>
+            <div className="w-full flex items-center gap-2">
+              {/* Left group: Import + Template */}
+              <div className="flex items-center gap-2">
                 <button onClick={()=> setImportOpen(true)} className="px-3 py-2 border rounded hover:bg-gray-50">Import PFT</button>
-                {/* Purge School Data button removed */}
+                <a href="/pft_template.csv" download className="px-3 py-2 border rounded hover:bg-gray-50">Download PFT template</a>
               </div>
+              {/* Right group: Bulk actions */}
+              <div className="ml-auto flex items-center gap-2">
+                <button onClick={bulkActivate} disabled={selectedEnrollments.size===0} className="px-3 py-2 border rounded bg-white hover:bg-gray-50 disabled:opacity-60">Activate</button>
+                <button onClick={bulkDeactivate} disabled={selectedEnrollments.size===0} className="px-3 py-2 border rounded bg-white hover:bg-gray-50 disabled:opacity-60">Deactivate</button>
+                {(roleLower === 'admin' || roleLower === 'superadmin') && (
+                  <button onClick={bulkRemoveFromSchool} disabled={selectedEnrollments.size===0} className="px-3 py-2 border rounded bg-white hover:bg-gray-50 disabled:opacity-60 text-red-700">Delete from school</button>
+                )}
+                {roleLower === 'superadmin' && (
+                  <button onClick={bulkDeleteGlobally} disabled={selectedEnrollments.size===0} className="px-3 py-2 border rounded bg-white hover:bg-gray-50 disabled:opacity-60 text-red-800">Delete globally</button>
+                )}
+              </div>
+            </div>
+            {/* Purge School Data button removed */}
               {/* Danger zone note removed */}
           </div>
 
@@ -647,6 +798,42 @@ export default function ManageStudents({ user }) {
                             ) : (
                               <button onClick={()=>toggleActive(r, true)} className="px-2 py-1 text-sm border rounded hover:bg-gray-50">Reactivate</button>
                             )}
+                            {otherSchoolMap.get(r?.students?.id) && (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] rounded-full bg-amber-50 text-amber-800 border border-amber-200" title="Has enrollment in other school(s)">Other school</span>
+                            )}
+                            {/* Kebab (vertical triple-dot) opens a small popover menu */}
+                            <div className="relative" data-actions-rowid={r.id}>
+                              <button
+                                onClick={() => toggleActionsFor(r.id)}
+                                className="px-2 py-1 border rounded hover:bg-gray-50"
+                                aria-expanded={openActions.has(r.id)}
+                                title={openActions.has(r.id) ? 'Hide actions' : 'More actions'}
+                              >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                                  <circle cx="12" cy="5" r="2"></circle>
+                                  <circle cx="12" cy="12" r="2"></circle>
+                                  <circle cx="12" cy="19" r="2"></circle>
+                                </svg>
+                              </button>
+                              {openActions.has(r.id) && (
+                                <div className="absolute right-0 top-full mt-1 w-56 bg-white border rounded shadow-lg z-20">
+                                  <button
+                                    onClick={() => { toggleActionsFor(r.id); removeFromSchool(r) }}
+                                    className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 text-red-700"
+                                  >
+                                    Remove from school
+                                  </button>
+                                  {String(membership?.role).toLowerCase() === 'superadmin' && (
+                                    <button
+                                      onClick={() => { toggleActionsFor(r.id); deleteGlobally(r) }}
+                                      className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 text-red-800"
+                                    >
+                                      Delete globally
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                            </div>
                           </div>
                         )}
                       </td>

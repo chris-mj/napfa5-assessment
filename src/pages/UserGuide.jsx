@@ -59,6 +59,7 @@ export default function UserGuide({ user }) {
 
   const roleSet = useMemo(() => new Set(roles), [roles]);
   const canManage = owner || roleSet.has('superadmin') || roleSet.has('admin');
+  const canManageStrict = roleSet.has('superadmin') || roleSet.has('admin');
   const canRecord = canManage || roleSet.has('score_taker');
   const canView = canRecord || roleSet.has('viewer') || !!user;
   const canAudit = owner || roleSet.has('superadmin');
@@ -276,6 +277,28 @@ export default function UserGuide({ user }) {
                   "Open Sessions and select a session.",
                   "Click Cards to generate profile PDFs.",
                   "Download/print as needed for distribution.",
+                ]}
+              />
+            )}
+            {canManageStrict && (
+              <Card
+                title="Remove or Delete a Student"
+                desc="Understand when to remove from school vs delete globally, with safeguards."
+                to="/students"
+                cta="Open Manage Students"
+                tips={[
+                  "Remove from school deletes this school's enrollments, roster, and scores only.",
+                  "Delete globally requires superadmin and deletes ALL data for the student across schools.",
+                  "A small 'Other school' pill indicates the student has enrollments in other schools.",
+                ]}
+                onHowTo={(t, s) => { setHowToTitle(t); setHowToSteps(s); setHowToOpen(true); }}
+                howToSteps={[
+                  "Open Manage Students.",
+                  "Use the vertical triple-dot to reveal actions.",
+                  "Choose 'Remove from school' to remove ONLY this school's enrollments, roster rows, and scores. The student record remains if enrolled elsewhere.",
+                  "As a superadmin, choose 'Delete globally' to delete all scores, all roster rows, all enrollments, and the student identity across all schools.",
+                  "Both actions prompt for confirmation and are logged in the audit log (if enabled).",
+                  "Tip: Use 'Other school' pill as a visual cue that the student also exists in another school.",
                 ]}
               />
             )}

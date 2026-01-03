@@ -359,7 +359,7 @@ export default function Dashboard({ user }) {
                 {(upcoming || []).slice(0,5).map(s => (
                   <li key={s.id} className="py-2 flex items-center justify-between">
                     <span className="text-slate-800">{s.title || 'Untitled'}</span>
-                    <span className="text-xs text-gray-500">{new Date(s.session_date).toLocaleDateString()}</span>
+                    <span className="text-xs text-gray-500">{(() => { try { const d=new Date(s.session_date); const dd=String(d.getDate()).padStart(2,'0'); const mm=String(d.getMonth()+1).padStart(2,'0'); const yyyy=d.getFullYear(); return `${dd}/${mm}/${yyyy}` } catch { return '' } })()}</span>
                   </li>
                 ))}
                 {upcoming.length === 0 && <li className="py-2 text-sm text-gray-500">No upcoming sessions</li>}

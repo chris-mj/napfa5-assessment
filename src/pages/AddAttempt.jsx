@@ -15,6 +15,16 @@ import { useToast } from '../components/ToastProvider'
 import { SitupsIcon, BroadJumpIcon, ReachIcon, PullupsIcon, ShuttleIcon } from '../components/icons/StationIcons'
 
 export default function AddAttempt({ user }) {
+  const fmtDdMmYyyy = (iso) => {
+    if (!iso) return ''
+    try {
+      const d = new Date(iso)
+      const dd = String(d.getDate()).padStart(2,'0')
+      const mm = String(d.getMonth()+1).padStart(2,'0')
+      const yyyy = d.getFullYear()
+      return `${dd}/${mm}/${yyyy}`
+    } catch { return '' }
+  }
   const [sessionId, setSessionId] = useState('')
   const [sessions, setSessions] = useState([])
   const [schoolType, setSchoolType] = useState(null)
@@ -426,7 +436,7 @@ export default function AddAttempt({ user }) {
                     if (!sessionId) return 'Select session';
                     const se = sessions?.find(s => s.id === sessionId);
                     if (!se) return sessionId;
-                    try { return `${se.title} | ${new Date(se.session_date).toLocaleDateString()}` } catch { return se.title }
+                    try { return `${se.title} | ${fmtDdMmYyyy(se.session_date)}` } catch { return se.title }
                   })()}
                 </span>
               </SelectTrigger>
@@ -434,7 +444,7 @@ export default function AddAttempt({ user }) {
                 {sessions?.length ? (
                   sessions.map((se) => (
                     <SelectItem key={se.id} value={se.id}>
-                      {se.title} | {new Date(se.session_date).toLocaleDateString()}
+                      {se.title} | {fmtDdMmYyyy(se.session_date)}
                     </SelectItem>
                   ))
                 ) : (

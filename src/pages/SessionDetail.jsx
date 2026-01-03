@@ -81,12 +81,11 @@ export default function SessionDetail({ user }) {
         const yyyy = d.getFullYear();
         return `${dd}/${mm}/${yyyy}`;
     };
-    const parseDDMMYYYY = (val) => {
-        if (!val) return "";
-        const m = /^([0-3]\d)\/([0-1]\d)\/(\d{4})$/.exec(val.trim());
-        if (!m) return "";
-        const dd = m[1], mm = m[2], yyyy = m[3];
-        return `${yyyy}-${mm}-${dd}`;
+    // For input[type=date], value should be YYYY-MM-DD. Avoid timezone shifts by string slicing.
+    const toInputDate = (iso) => {
+        if (!iso) return "";
+        const s = String(iso);
+        return s.length >= 10 ? s.slice(0, 10) : "";
     };
 
     useEffect(() => {
@@ -138,7 +137,7 @@ export default function SessionDetail({ user }) {
                     setSession(null);
                 } else {
                     setSession(data);
-                    setFormState({ title: data.title, session_date: formatDDMMYYYY(data.session_date) });
+                    setFormState({ title: data.title, session_date: toInputDate(data.session_date) });
                     setError("");
                 }
             })
@@ -307,7 +306,7 @@ export default function SessionDetail({ user }) {
 
     const handleEditToggle = () => {
         if (!session) return;
-        setFormState({ title: session.title, session_date: formatDDMMYYYY(session.session_date) });
+        setFormState({ title: session.title, session_date: toInputDate(session.session_date) });
         setEditMode((prev) => !prev);
         setFlash("");
     };
@@ -317,8 +316,8 @@ export default function SessionDetail({ user }) {
         if (!session) return;
         setFormSubmitting(true);
         try {
-            const isoDate = parseDDMMYYYY(formState.session_date);
-            if (!isoDate) throw new Error('Please enter date as DD/MM/YYYY');
+            const isoDate = formState.session_date;
+            if (!isoDate) throw new Error('Please select a date');
             const { data, error: err } = await supabase
                 .from("sessions")
                 .update({ title: formState.title, session_date: isoDate })
@@ -896,8 +895,7 @@ export default function SessionDetail({ user }) {
                             <div>
                                 <label className="block text-sm mb-1">Session Date</label>
                                 <input
-                                    type="text"
-                                    placeholder="DD/MM/YYYY"
+                                    type="date"
                                     value={formState.session_date}
                                     onChange={(e) => setFormState((prev) => ({ ...prev, session_date: e.target.value }))}
                                     className="border rounded p-2 w-full"

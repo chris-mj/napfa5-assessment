@@ -190,10 +190,8 @@ export default function RosterDualList({ user, session, membership, canManage, o
       {/* Top controls */}
       <div className="flex items-center justify-center flex-wrap gap-2">
         <div className="flex items-center gap-2">
-          <button onClick={moveRight} disabled={!canManage || leftSelected.size === 0 || loading} className="px-3 py-1.5 rounded border bg-white hover:bg-gray-50 disabled:opacity-50">Move Right &gt;&gt;</button>
-          <button onClick={moveLeft} disabled={!canManage || rightSelected.size === 0 || loading} className="px-3 py-1.5 rounded border bg-white hover:bg-gray-50 disabled:opacity-50">
-          &lt;&lt; Move Left
-        </button>
+          <button onClick={moveRight} disabled={!canManage || leftSelected.size === 0 || loading} className="px-3 py-1.5 rounded border bg-white hover:bg-gray-50 disabled:opacity-50">Add to Roster &gt;&gt;</button>
+          <button onClick={moveLeft} disabled={!canManage || rightSelected.size === 0 || loading} className="px-3 py-1.5 rounded border bg-white hover:bg-gray-50 disabled:opacity-50">&lt;&lt; Remove from Roster</button>
         </div>
       </div>
 
@@ -327,11 +325,8 @@ export default function RosterDualList({ user, session, membership, canManage, o
 
       {/* Move buttons */}
       <div className="flex items-center justify-center gap-3">
-        <button onClick={moveRight} disabled={!canManage || leftSelected.size === 0 || loading} className="px-3 py-1.5 rounded border bg-white hover:bg-gray-50 disabled:opacity-50">
-          Move Right &gt;&gt;</button>
-        <button onClick={moveLeft} disabled={!canManage || rightSelected.size === 0 || loading} className="px-3 py-1.5 rounded border bg-white hover:bg-gray-50 disabled:opacity-50">
-          &lt;&lt; Move Left
-        </button>
+        <button onClick={moveRight} disabled={!canManage || leftSelected.size === 0 || loading} className="px-3 py-1.5 rounded border bg-white hover:bg-gray-50 disabled:opacity-50">Add to Roster &gt;&gt;</button>
+        <button onClick={moveLeft} disabled={!canManage || rightSelected.size === 0 || loading} className="px-3 py-1.5 rounded border bg-white hover:bg-gray-50 disabled:opacity-50">Remove from Roster &lt;&lt;</button>
       </div>
 
       {message && <div className="text-sm text-gray-700">{message}</div>}

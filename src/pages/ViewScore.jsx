@@ -523,7 +523,15 @@ function computeNextTargets(ctx, res) {
 
 function formatDate(d) {
   if (!d) return '-'
-  try { const dt = new Date(d); return `${dt.getDate()}/${dt.getMonth()+1}/${dt.getFullYear()}` } catch { return String(d) }
+  try {
+    const dt = new Date(d)
+    const dd = String(dt.getDate()).padStart(2, '0')
+    const mm = String(dt.getMonth() + 1).padStart(2, '0')
+    const yyyy = dt.getFullYear()
+    return `${dd}/${mm}/${yyyy}`
+  } catch {
+    return String(d)
+  }
 }
 
 // Visual helpers
