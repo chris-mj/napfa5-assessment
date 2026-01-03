@@ -108,6 +108,9 @@ export default function ManageStudents({ user }) {
     return Array.from(set).sort((a,b)=>b-a)
   }, [rows])
 
+  // Convenience lower-cased role for gating actions
+  const roleLower = String(membership?.role || '').toLowerCase()
+
   const [selectedEnrollments, setSelectedEnrollments] = useState(new Set())
   const headerSelectRef = useRef(null)
   // Per-row actions expander (kebab menu)
@@ -260,6 +263,49 @@ export default function ManageStudents({ user }) {
       await reloadEnrollments()
     } catch (e) {
       try { showToast('error', e?.message || 'Global delete failed.') } catch {}
+    }
+  }
+
+  // Bulk actions
+  const bulkRemoveFromSchool = async () => {
+    try {
+      const ids = Array.from(selectedEnrollments)
+      if (!ids.length || !membership?.school_id) return
+      const selected = rows.filter(r => ids.includes(r.id))
+      const studentIds = Array.from(new Set(selected.map(r => r?.students?.id).filter(Boolean)))
+      if (!studentIds.length) return
+      const ok = window.confirm(`Remove ${studentIds.length} student(s) from this school? This deletes this school's enrollments, roster, and scores for these students.`)
+      if (!ok) return
+      for (const sid of studentIds) {
+        const { error } = await supabase.rpc('delete_student_in_school', { p_student: sid, p_school: membership.school_id })
+        if (error) throw error
+      }
+      try { showToast('success', `Removed ${studentIds.length} student(s) from school.`) } catch {}
+      await reloadEnrollments()
+      setSelectedEnrollments(new Set())
+    } catch (e) {
+      try { showToast('error', e?.message || 'Bulk remove failed.') } catch {}
+    }
+  }
+
+  const bulkDeleteGlobally = async () => {
+    try {
+      const ids = Array.from(selectedEnrollments)
+      if (!ids.length) return
+      const selected = rows.filter(r => ids.includes(r.id))
+      const studentIds = Array.from(new Set(selected.map(r => r?.students?.id).filter(Boolean)))
+      if (!studentIds.length) return
+      const ok = window.confirm(`DELETE ${studentIds.length} student(s) globally? This deletes all enrollments, roster, scores and the student identity. This cannot be undone.`)
+      if (!ok) return
+      for (const sid of studentIds) {
+        const { error } = await supabase.rpc('delete_student_global', { p_student: sid })
+        if (error) throw error
+      }
+      try { showToast('success', `Deleted ${studentIds.length} student(s) globally.`) } catch {}
+      await reloadEnrollments()
+      setSelectedEnrollments(new Set())
+    } catch (e) {
+      try { showToast('error', e?.message || 'Bulk delete failed.') } catch {}
     }
   }
 
@@ -671,13 +717,25 @@ export default function ManageStudents({ user }) {
     Inactive
   </button>
 </div>
-            <div className="ml-auto flex items-center gap-2">
-                <button onClick={bulkActivate} disabled={selectedEnrollments.size===0} className="px-3 py-2 border rounded bg-white hover:bg-gray-50 disabled:opacity-60">Activate Selected</button>
-                <button onClick={bulkDeactivate} disabled={selectedEnrollments.size===0} className="px-3 py-2 border rounded bg-white hover:bg-gray-50 disabled:opacity-60">Deactivate Selected</button>
-                <a href="/pft_template.csv" download className="px-3 py-2 border rounded hover:bg-gray-50">Download PFT template</a>
+            <div className="w-full flex items-center gap-2">
+              {/* Left group: Import + Template */}
+              <div className="flex items-center gap-2">
                 <button onClick={()=> setImportOpen(true)} className="px-3 py-2 border rounded hover:bg-gray-50">Import PFT</button>
-                {/* Purge School Data button removed */}
+                <a href="/pft_template.csv" download className="px-3 py-2 border rounded hover:bg-gray-50">Download PFT template</a>
               </div>
+              {/* Right group: Bulk actions */}
+              <div className="ml-auto flex items-center gap-2">
+                <button onClick={bulkActivate} disabled={selectedEnrollments.size===0} className="px-3 py-2 border rounded bg-white hover:bg-gray-50 disabled:opacity-60">Activate</button>
+                <button onClick={bulkDeactivate} disabled={selectedEnrollments.size===0} className="px-3 py-2 border rounded bg-white hover:bg-gray-50 disabled:opacity-60">Deactivate</button>
+                {(roleLower === 'admin' || roleLower === 'superadmin') && (
+                  <button onClick={bulkRemoveFromSchool} disabled={selectedEnrollments.size===0} className="px-3 py-2 border rounded bg-white hover:bg-gray-50 disabled:opacity-60 text-red-700">Delete from school</button>
+                )}
+                {roleLower === 'superadmin' && (
+                  <button onClick={bulkDeleteGlobally} disabled={selectedEnrollments.size===0} className="px-3 py-2 border rounded bg-white hover:bg-gray-50 disabled:opacity-60 text-red-800">Delete globally</button>
+                )}
+              </div>
+            </div>
+            {/* Purge School Data button removed */}
               {/* Danger zone note removed */}
           </div>
 

@@ -11,6 +11,7 @@ export default function Navbar({ user, onLogout }) {
   const [canManageUsers, setCanManageUsers] = useState(false);
   const [roleLabel, setRoleLabel] = useState("");
   const [contactOpen, setContactOpen] = useState(false);
+  const [schoolOpen, setSchoolOpen] = useState(false);
 
   useEffect(() => {
     let ignore = false;
@@ -63,40 +64,97 @@ export default function Navbar({ user, onLogout }) {
               )}
               {user && (
                 <>
+                  {/* Dashboard */}
                   <NavLink to="/dashboard" className={({ isActive }) => `${link} ${isActive ? active : ""}`}>
                     Dashboard
                   </NavLink>
+                  {/* NAPFA Sessions */}
                   {canManageUsers && (
                     <NavLink to="/sessions" className={({ isActive }) => `${link} ${isActive ? active : ""}`}>
-                      Sessions
+                      NAPFA Sessions
                     </NavLink>
                   )}
+                  {/* School Admin dropdown (mirrors Contact Us behavior) */}
+                  {(canManageUsers || isOwner) && (
+                    <div
+                      className="relative"
+                      onMouseEnter={() => setSchoolOpen(true)}
+                      onMouseLeave={() => setSchoolOpen(false)}
+                    >
+                      <button
+                        type="button"
+                        aria-haspopup="menu"
+                        aria-expanded={schoolOpen}
+                        className={`${link} flex items-center gap-1`}
+                      >
+                        <span>School Admin</span>
+                        <svg
+                          className={`w-4 h-4 text-gray-700 transition-transform ${schoolOpen ? 'rotate-180' : ''}`}
+                          viewBox="0 0 20 20"
+                          fill="currentColor"
+                          aria-hidden="true"
+                        >
+                          <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.065l3.71-3.835a.75.75 0 111.08 1.04l-4.24 4.385a.75.75 0 01-1.08 0L5.25 8.27a.75.75 0 01-.02-1.06z" clipRule="evenodd" />
+                        </svg>
+                      </button>
+                      {schoolOpen && (
+                        <div
+                          className="absolute right-0 top-full mt-0 w-48 bg-white border rounded shadow z-20"
+                          role="menu"
+                          aria-label="School Admin menu"
+                        >
+                          {canManageUsers && (
+                            <NavLink
+                              to="/manage-students"
+                              onClick={() => setSchoolOpen(false)}
+                              className={({ isActive }) => `block px-3 py-2 hover:bg-gray-100 ${isActive ? 'bg-gray-100' : ''}`}
+                              role="menuitem"
+                            >
+                              Student Enrollment
+                            </NavLink>
+                          )}
+                          {canManageUsers && (
+                            <NavLink
+                              to="/modify-user"
+                              onClick={() => setSchoolOpen(false)}
+                              className={({ isActive }) => `block px-3 py-2 hover:bg-gray-100 ${isActive ? 'bg-gray-100' : ''}`}
+                              role="menuitem"
+                            >
+                              Manage Users
+                            </NavLink>
+                          )}
+                          {isOwner && (
+                            <NavLink
+                              to="/create-school"
+                              onClick={() => setSchoolOpen(false)}
+                              className={({ isActive }) => `block px-3 py-2 hover:bg-gray-100 ${isActive ? 'bg-gray-100' : ''}`}
+                              role="menuitem"
+                            >
+                              Manage Schools
+                            </NavLink>
+                          )}
+                          {isOwner && (
+                            <NavLink
+                              to="/admin-global"
+                              onClick={() => setSchoolOpen(false)}
+                              className={({ isActive }) => `block px-3 py-2 hover:bg-gray-100 ${isActive ? 'bg-gray-100' : ''}`}
+                              role="menuitem"
+                            >
+                              Global Admin
+                            </NavLink>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {/* Score Entry and View Score */}
                   <NavLink to="/add-attempt" className={({ isActive }) => `${link} ${isActive ? active : ""}`}>
                     Score Entry
                   </NavLink>
                   <NavLink to="/view-score" className={({ isActive }) => `${link} ${isActive ? active : ""}`}>
                     View Score
                   </NavLink>
-                  {canManageUsers && (
-                    <NavLink to="/manage-students" className={({ isActive }) => `${link} ${isActive ? active : ""}`}>
-                      Manage Students
-                    </NavLink>
-                  )}
-                  {canManageUsers && (
-                    <NavLink to="/modify-user" className={({ isActive }) => `${link} ${isActive ? active : ""}`}>
-                      Manage Users
-                    </NavLink>
-                  )}
-                  {isOwner && (
-                    <>
-                      <NavLink to="/create-school" className={({ isActive }) => `${link} ${isActive ? active : ""}`}>
-                        Manage Schools
-                      </NavLink>
-                      <NavLink to="/admin-global" className={({ isActive }) => `${link} ${isActive ? active : ""}`}>
-                        Global Admin
-                      </NavLink>
-                    </>
-                  )}
+                  {/* Award Calculator */}
                   {(canManageUsers || isOwner) && (
                     <NavLink to="/pft-calculator" className={({ isActive }) => `${link} ${isActive ? active : ""}`}>
                       Award Calculator
@@ -164,22 +222,34 @@ export default function Navbar({ user, onLogout }) {
                   )}
                   {user && (
                     <>
+                      {/* Dashboard */}
                       <NavLink to="/dashboard" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Dashboard</NavLink>
-                      {canManageUsers && (<NavLink to="/sessions" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Sessions</NavLink>)}
-                      {canManageUsers && (<NavLink to="/manage-students" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Manage Students</NavLink>)}
+                      {/* NAPFA Sessions */}
+                      {canManageUsers && (<NavLink to="/sessions" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>NAPFA Sessions</NavLink>)}
+                      {/* School Admin group */}
+                      {(canManageUsers || isOwner) && (
+                        <div className="pt-1">
+                          <div className="text-xs uppercase tracking-wide text-gray-400 px-1">School Admin</div>
+                          {canManageUsers && (
+                            <NavLink to="/manage-students" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Student Enrollment</NavLink>
+                          )}
+                          {canManageUsers && (
+                            <NavLink to="/modify-user" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Manage Users</NavLink>
+                          )}
+                          {isOwner && (
+                            <NavLink to="/create-school" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Manage Schools</NavLink>
+                          )}
+                          {isOwner && (
+                            <NavLink to="/admin-global" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Global Admin</NavLink>
+                          )}
+                        </div>
+                      )}
+                      {/* Score Entry and View Score */}
                       <NavLink to="/add-attempt" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Score Entry</NavLink>
                       <NavLink to="/view-score" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>View Score</NavLink>
-                      {canManageUsers && (
-                        <NavLink to="/modify-user" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Manage Users</NavLink>
-                      )}
-                      {isOwner && (
-                        <>
-                      <NavLink to="/create-school" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Manage Schools</NavLink>
-                          <NavLink to="/admin-global" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Global Admin</NavLink>
-                        </>
-                      )}
+                      {/* Award Calculator */}
                       {(canManageUsers || isOwner) && (
-                        <NavLink to="/pft-calculator" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>PFT Calculator</NavLink>
+                        <NavLink to="/pft-calculator" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Award Calculator</NavLink>
                       )}
                     </>
                   )}
