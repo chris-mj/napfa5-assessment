@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+﻿import { useMemo, useState } from 'react'
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/card'
 import { Input } from '../components/ui/input'
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from '../components/ui/select'
@@ -82,7 +82,7 @@ function StationStandards({ rows, stationKey, lowerBetter }) {
       </thead>
       <tbody>
         {list.map((r,i)=>(
-          <tr key={i}>
+          <tr key={i} className={i % 2 === 1 ? 'bg-gray-50' : ''}>
             <td className="px-2 py-1 border">{r.grade}</td>
             <td className="px-2 py-1 border">{r.points}</td>
             <td className="px-2 py-1 border">{display(r)}</td>
@@ -165,13 +165,21 @@ export default function TargetScore() {
     return findRows(level, normSex, getAgeGroup(age))
   }, [normSex, level, age])
 
+  const awardBadgeClasses = (label) => {
+    const l = String(label||'').toLowerCase()
+    if (l.includes('gold')) return 'bg-yellow-100 text-yellow-800 border-yellow-200'
+    if (l.includes('silver')) return 'bg-slate-100 text-slate-800 border-slate-200'
+    if (l.includes('bronze')) return 'bg-amber-100 text-amber-800 border-amber-200'
+    return 'bg-gray-100 text-gray-700 border-gray-200'
+  }
+
   return (
     <main className="w-full">
       <div className="max-w-5xl mx-auto p-4 space-y-4">
         <h1 className="text-2xl font-semibold">Target Score</h1>
         <p className="text-sm text-gray-600">Estimate your NAPFA points by entering your details and station results. Test date is assumed to be today.</p>
 
-        <Card>
+        <Card className="shadow-sm">
           <CardHeader><CardTitle>Your Details</CardTitle></CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -199,7 +207,7 @@ export default function TargetScore() {
                     </SelectTrigger>
                     <SelectContent className="w-[180px] max-h-56 overflow-auto">
                       <SelectItem value="Primary">Primary</SelectItem>
-                      <SelectItem value="Secondary">Secondary</SelectItem>
+                      <SelectItem value="Secondary">Secondary/JC</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -238,11 +246,14 @@ export default function TargetScore() {
                 )}
               </div>
             </div>
-            <div className="mt-2 text-xs text-gray-700">Run distance: <b>{runKm ? `${runKm} km` : '-'}</b> (auto based on age/level)</div>
+            <div className="mt-2 text-xs">
+              <span className="inline-block px-2 py-0.5 rounded border bg-blue-50 text-blue-700 border-blue-100">Run distance: <b>{runKm ? `${runKm} km` : '-'}</b></span>
+              <span className="ml-2 text-gray-600">(auto based on age/level)</span>
+            </div>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="shadow-sm">
           <CardHeader><CardTitle>Your Standards</CardTitle></CardHeader>
           <CardContent>
             {rowsForCohort.length === 0 ? (
@@ -275,6 +286,39 @@ export default function TargetScore() {
                 </div>
               </div>
             )}
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-sm">
+          <CardHeader><CardTitle>Award Requirements</CardTitle></CardHeader>
+          <CardContent>
+            <div className="overflow-auto">
+              <table className="w-full text-sm border rounded">
+                <thead>
+                  <tr className="bg-gray-100 text-left">
+                    <th className="px-2 py-1 border">Award</th>
+                    <th className="px-2 py-1 border">Full (with run)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr className="bg-yellow-50">
+                    <td className="px-2 py-1 border font-medium text-yellow-800">Gold</td>
+                    <td className="px-2 py-1 border">Total >= 21 points and at least grade C in all stations.</td>
+                  </tr>
+                  <tr className="bg-slate-50">
+                    <td className="px-2 py-1 border font-medium text-slate-800">Silver</td>
+                    <td className="px-2 py-1 border">Total >= 15 points and at least grade D in all stations.</td>
+                  </tr>
+                  <tr className="bg-amber-100">
+                    <td className="px-2 py-1 border font-medium text-amber-900">Bronze</td>
+                    <td className="px-2 py-1 border">Total >= 6 points and at least grade E in all stations.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div className="mt-2 text-xs text-gray-600">
+              Note: If no run time is entered, the page shows a provisional award based on the five stations. Enter a run to see the full award.
+            </div>
           </CardContent>
         </Card>
 
@@ -316,9 +360,16 @@ export default function TargetScore() {
             <div className="mt-3 p-3 rounded border bg-slate-50 text-slate-800">
               <div className="font-medium">Total Points: {Number(result?.totalPoints||0)}</div>
               {award && (
-                <div className="mt-1 text-sm">
-                  <div className="font-semibold">{award.label}{award.provisional ? ' (Provisional)' : ''}</div>
-                  <div>{award.reason}</div>
+                <div className="mt-2 text-sm">
+                  <div className="flex items-center gap-2">
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded border text-xs font-medium ${awardBadgeClasses(award.label)}`}>
+                      {award.label}
+                    </span>
+                    {award.provisional && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded border text-xs font-medium bg-white text-gray-700 border-gray-300">Provisional</span>
+                    )}
+                  </div>
+                  <div className="mt-1 text-gray-700">{award.reason}</div>
                 </div>
               )}
             </div>
@@ -335,6 +386,7 @@ function ResultLine({ r }) {
   const pts = Number(r.points || 0)
   const grade = r.grade || '-'
   return (
-    <div className="text-xs text-gray-700 mt-1">Grade: <b>{grade}</b> · Points: <b>{pts}</b></div>
+    <div className="text-xs text-gray-700 mt-1">Grade: <b>{grade}</b> • Points: <b>{pts}</b></div>
   )
 }
+
