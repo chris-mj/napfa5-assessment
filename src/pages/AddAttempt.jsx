@@ -270,7 +270,7 @@ export default function AddAttempt({ user }) {
   }, [student?.id, sessionId])
 
   // Save score to scores table (one row per session+student)
-  async function saveScore() {
+async function saveScore() {
     if (!student || !sessionId) return
     const colMap = {
       situps: 'situps',
@@ -372,12 +372,8 @@ export default function AddAttempt({ user }) {
           if (activeStation === 'run') return fmtRun(num) || `${Math.round(num*60)}s`
           return String(num)
         })()
-        const base = `${active.name}: ${valueLabel}`
-        if (Number.isFinite(pts)) {
-          showToast('success', `${base} — ${pts} pts saved`)
-        } else {
-          showToast('success', `${base} - saved`)
-        }
+        const stationLine = `${active.name}: ${valueLabel} - ${Number.isFinite(pts) ? pts : 0} pts`
+        showToast('success', `Saved\n${stationLine}`)
       } catch {
         // If standards don't match or any error occurs, just state the saved value
         const valueLabel = (() => {
@@ -385,7 +381,7 @@ export default function AddAttempt({ user }) {
           if (activeStation === 'run') return fmtRun(num) || `${Math.round(num*60)}s`
           return String(num)
         })()
-        showToast('success', `${active.name}: ${valueLabel} - saved`)
+        showToast('success', `Saved\n${active.name}: ${valueLabel} - 0 pts`)
       }
       setAttempt1('')
       setAttempt2('')
@@ -409,6 +405,17 @@ export default function AddAttempt({ user }) {
       .maybeSingle()
     if (error || !data?.id) throw new Error('Student record missing')
     return data.id
+  }
+
+  // Allow pressing Enter in attempt inputs to save
+  const onAttemptKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      e.stopPropagation()
+      if (validation?.valid) {
+        saveScore()
+      }
+    }
   }
 
   return (
@@ -663,7 +670,7 @@ export default function AddAttempt({ user }) {
                       <>
                         <label htmlFor="attempt1" className="text-gray-700 text-sm">Repetitions</label>
                         <div className="text-xs text-gray-600">Unit: reps | Example: 25</div>
-                        <Input ref={firstAttemptRef} id="attempt1" inputMode="numeric" value={attempt1} onChange={(e)=> setAttempt1(onlyInt(e.target.value))} placeholder="e.g., 25" className="w-full" />
+                          <Input ref={firstAttemptRef} id="attempt1" inputMode="numeric" value={attempt1} onChange={(e)=> setAttempt1(onlyInt(e.target.value))} onKeyDown={onAttemptKeyDown} placeholder="e.g., 25" className="w-full" />
                         <div role="status" aria-live="polite" className={(validation.valid ? "text-gray-500" : "text-red-600") + " text-xs mt-1"}>{validation.message}</div>
                       </>
                     )}
@@ -672,8 +679,8 @@ export default function AddAttempt({ user }) {
                         <label className="text-gray-700 text-sm">Scores (2 attempts, best kept)</label>
                         <div className="text-xs text-gray-600">Unit: cm | Example: {activeStation === 'sit_and_reach' ? '34' : '190'}</div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                          <Input ref={firstAttemptRef} inputMode="numeric" value={attempt1} onChange={(e)=> setAttempt1(onlyInt(e.target.value))} placeholder="Attempt 1" />
-                          <Input inputMode="numeric" value={attempt2} onChange={(e)=> setAttempt2(onlyInt(e.target.value))} placeholder="Attempt 2" />
+                          <Input ref={firstAttemptRef} inputMode="numeric" value={attempt1} onChange={(e)=> setAttempt1(onlyInt(e.target.value))} onKeyDown={onAttemptKeyDown} placeholder="Attempt 1" />
+                          <Input inputMode="numeric" value={attempt2} onChange={(e)=> setAttempt2(onlyInt(e.target.value))} onKeyDown={onAttemptKeyDown} placeholder="Attempt 2" />
                         </div>
                         <div role="status" aria-live="polite" className={(validation.valid ? "text-gray-500" : "text-red-600") + " text-xs mt-1"}>{validation.message}</div>
                       </>
@@ -683,8 +690,8 @@ export default function AddAttempt({ user }) {
                         <label className="text-gray-700 text-sm">Times (2 attempts, lower kept)</label>
                         <div className="text-xs text-gray-600">Unit: seconds (1 d.p.) | Example: 10.3</div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                          <Input ref={firstAttemptRef} inputMode="decimal" value={attempt1} onChange={(e)=> setAttempt1(oneDecimal(e.target.value))} placeholder="Attempt 1 (e.g., 10.3)" />
-                          <Input inputMode="decimal" value={attempt2} onChange={(e)=> setAttempt2(oneDecimal(e.target.value))} placeholder="Attempt 2 (e.g., 10.2)" />
+                          <Input ref={firstAttemptRef} inputMode="decimal" value={attempt1} onChange={(e)=> setAttempt1(oneDecimal(e.target.value))} onKeyDown={onAttemptKeyDown} placeholder="Attempt 1 (e.g., 10.3)" />
+                          <Input inputMode="decimal" value={attempt2} onChange={(e)=> setAttempt2(oneDecimal(e.target.value))} onKeyDown={onAttemptKeyDown} placeholder="Attempt 2 (e.g., 10.2)" />
                         </div>
                         <div role="status" aria-live="polite" className={(validation.valid ? "text-gray-500" : "text-red-600") + " text-xs mt-1"}>{validation.message}</div>
                       </>
@@ -694,7 +701,7 @@ export default function AddAttempt({ user }) {
                         <label className="text-gray-700 text-sm">Time</label>
                         <div className="text-xs text-gray-600">Format: MSS/MMSS (digits only) | Example: 930 or 1330</div>
                         <div className="grid grid-cols-1 gap-2">
-                          <Input ref={firstAttemptRef} inputMode="numeric" value={attempt1} onChange={(e)=> setAttempt1(onlyInt(e.target.value))} placeholder="e.g., 1330 for 13:30" />
+                          <Input ref={firstAttemptRef} inputMode="numeric" value={attempt1} onChange={(e)=> setAttempt1(onlyInt(e.target.value))} onKeyDown={onAttemptKeyDown} placeholder="e.g., 1330 for 13:30" />
                         </div>
                         <div role="status" aria-live="polite" className={(validation.valid ? "text-gray-500" : "text-red-600") + " text-xs mt-1"}>{validation.message}</div>
                       </>

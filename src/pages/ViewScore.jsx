@@ -391,9 +391,9 @@ function worstGradeRank(keys, res) {
 function computeProvisionalAward(res) {
   const total = sumFivePoints(res)
   const minRank = worstGradeRank(['situps','broad_jump_cm','sit_and_reach_cm','pullups','shuttle_s'], res)
-  if (total >= 21 && minRank >= gradeToRank('C')) return { label: 'Gold', reason: `Five-station subtotal ${total} points and all â‰¥ C.` }
-  if (total >= 15 && minRank >= gradeToRank('D')) return { label: 'Silver', reason: `Five-station subtotal ${total} points and all â‰¥ D.` }
-  if (total >= 6 && minRank >= gradeToRank('E')) return { label: 'Bronze', reason: `Five-station subtotal ${total} points and all â‰¥ E.` }
+  if (total >= 21 && minRank >= gradeToRank('C')) return { label: 'Gold', reason: `Five-station subtotal ${total} points and all >= C.` }
+  if (total >= 15 && minRank >= gradeToRank('D')) return { label: 'Silver', reason: `Five-station subtotal ${total} points and all >= D.` }
+  if (total >= 6 && minRank >= gradeToRank('E')) return { label: 'Bronze', reason: `Five-station subtotal ${total} points and all >= E.` }
   return { label: 'No Award', reason: `Five-station subtotal ${total} points or minimum grade conditions not met.` }
 }
 
@@ -703,14 +703,14 @@ function AwardBanner({ info }) {
             items.push(
               <li key="pts" className="flex items-start gap-2">
                 {tick(ptsOk)}
-                <span>Points â‰¥ {Number.isFinite(base.threshold) ? base.threshold : '-'}</span>
+                <span>Points >= {Number.isFinite(base.threshold) ? base.threshold : '-'}</span>
               </li>
             )
             if (base.requiredMinGrade) {
               items.push(
                 <li key="floor" className="flex items-start gap-2">
                   {tick(floorOk)}
-                  <span>All stations â‰¥ grade {base.requiredMinGrade}</span>
+                  <span>All stations >= grade {base.requiredMinGrade}</span>
                 </li>
               )
             }
@@ -743,11 +743,11 @@ function AwardBanner({ info }) {
                 <li key="run" className="flex items-start gap-2">{tick(!!info.hasSix)}<span>Run completed</span></li>
               )
               items.push(
-                <li key="pts" className="flex items-start gap-2">{tick(pointsOk)}<span>Points â‰¥ {Number.isFinite(info.next.threshold) ? info.next.threshold : '-'}</span></li>
+                <li key="pts" className="flex items-start gap-2">{tick(pointsOk)}<span>Points >= {Number.isFinite(info.next.threshold) ? info.next.threshold : '-'}</span></li>
               )
               if (info.next.requiredMinGrade) {
                 items.push(
-                  <li key="floor" className="flex items-start gap-2">{tick(floorOk)}<span>All stations â‰¥ grade {info.next.requiredMinGrade}</span></li>
+                  <li key="floor" className="flex items-start gap-2">{tick(floorOk)}<span>All stations >= grade {info.next.requiredMinGrade}</span></li>
                 )
               }
               return items
@@ -765,15 +765,15 @@ function AwardBanner({ info }) {
             <div className="text-slate-600">Already meets points threshold.</div>
           ) : info?.hasSix ? (
             g.runOnlyReachable ? (
-              <div className="text-slate-700">Need â‰¥ {g.pointsShortfall} points. Simplest: improve run to â‰¥ {g.requiredRunPoints} points (grade â‰¥ {g.runGrade}){g.runMmss ? `, â‰¤ ${g.runMmss}` : ''}.</div>
+              <div className="text-slate-700">Need >= {g.pointsShortfall} points. Simplest: improve run to >= {g.requiredRunPoints} points (grade >= {g.runGrade}){g.runMmss ? `, <= ${g.runMmss}` : ''}.</div>
             ) : (
-              <div className="text-slate-700">Need â‰¥ {g.pointsShortfall} points (from any station). Run alone can add up to 5.</div>
+              <div className="text-slate-700">Need >= {g.pointsShortfall} points (from any station). Run alone can add up to 5.</div>
             )
           ) : (
             g.runOnlyReachable ? (
-              <div className="text-slate-700">Run: â‰¥ {g.requiredRunPoints} points (grade â‰¥ {g.runGrade}){g.runMmss ? `, roughly â‰¤ ${g.runMmss}` : ''}.</div>
+              <div className="text-slate-700">Run: >= {g.requiredRunPoints} points (grade >= {g.runGrade}){g.runMmss ? `, roughly <= ${g.runMmss}` : ''}.</div>
             ) : (
-              <div className="text-slate-700">Improve other stations and run; need â‰¥ {g.pointsShortfall} total points; run alone provides up to 5.</div>
+              <div className="text-slate-700">Improve other stations and run; need >= {g.pointsShortfall} total points; run alone provides up to 5.</div>
             )
           )}
           {/* Non-run single-station options removed to restore original */}
