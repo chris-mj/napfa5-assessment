@@ -12,6 +12,7 @@ export default function Navbar({ user, onLogout }) {
   const [roleLabel, setRoleLabel] = useState("");
   const [contactOpen, setContactOpen] = useState(false);
   const [schoolOpen, setSchoolOpen] = useState(false);
+  const [scoringOpen, setScoringOpen] = useState(false);
 
   useEffect(() => {
     let ignore = false;
@@ -147,21 +148,42 @@ export default function Navbar({ user, onLogout }) {
                       )}
                     </div>
                   )}
-                  {/* Score Entry and View Score */}
-                  <NavLink to="/add-attempt" className={({ isActive }) => `${link} ${isActive ? active : ""}`}>
-                    Score Entry
-                  </NavLink>
-                  <NavLink to="/view-score" className={({ isActive }) => `${link} ${isActive ? active : ""}`}>
-                    View Score
-                  </NavLink>
-                  {/* Award Calculator */}
-                  {(canManageUsers || isOwner) && (
-                    <NavLink to="/pft-calculator" className={({ isActive }) => `${link} ${isActive ? active : ""}`}>
-                      Award Calculator
-                    </NavLink>
-                  )}
+                  {/* Scoring Admin dropdown */}
+                  <div
+                    className="relative"
+                    onMouseEnter={() => setScoringOpen(true)}
+                    onMouseLeave={() => setScoringOpen(false)}
+                  >
+                    <button
+                      type="button"
+                      aria-haspopup="menu"
+                      aria-expanded={scoringOpen}
+                      className={`${link} flex items-center gap-1`}
+                    >
+                      <span>Scoring Admin</span>
+                      <svg
+                        className={`w-4 h-4 text-gray-700 transition-transform ${scoringOpen ? 'rotate-180' : ''}`}
+                        viewBox="0 0 20 20"
+                        fill="currentColor"
+                        aria-hidden="true"
+                      >
+                        <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.065l3.71-3.835a.75.75 0 111.08 1.04l-4.24 4.385a.75.75 0 01-1.08 0L5.25 8.27a.75.75 0 01-.02-1.06z" clipRule="evenodd" />
+                      </svg>
+                    </button>
+                    {scoringOpen && (
+                      <div className="absolute right-0 top-full mt-0 w-56 bg-white border rounded shadow z-20" role="menu" aria-label="Scoring Admin menu">
+                        <NavLink to="/add-attempt" onClick={() => setScoringOpen(false)} className={({ isActive }) => `block px-3 py-2 hover:bg-gray-100 ${isActive ? 'bg-gray-100' : ''}`} role="menuitem">Score Entry</NavLink>
+                        <NavLink to="/view-score" onClick={() => setScoringOpen(false)} className={({ isActive }) => `block px-3 py-2 hover:bg-gray-100 ${isActive ? 'bg-gray-100' : ''}`} role="menuitem">View Score</NavLink>
+                        <NavLink to="/pft-calculator" onClick={() => setScoringOpen(false)} className={({ isActive }) => `block px-3 py-2 hover:bg-gray-100 ${isActive ? 'bg-gray-100' : ''}`} role="menuitem">Award Calculator</NavLink>
+                      </div>
+                    )}
+                  </div>
                 </>
               )}
+            {/* Public quick link: Target Score */}
+            <NavLink to="/target-score" className={({ isActive }) => `${link} ${isActive ? active : ""}`}>
+              Target Score
+            </NavLink>
             <div
               className="relative"
               onMouseEnter={() => setContactOpen(true)}
@@ -188,9 +210,11 @@ export default function Navbar({ user, onLogout }) {
                   <NavLink to="/contact" onClick={() => setContactOpen(false)} className={({ isActive }) => `block px-3 py-2 hover:bg-gray-100 ${isActive ? 'bg-gray-100' : ''}`} role="menuitem">
                     Contact Us
                   </NavLink>
-                  <NavLink to="/user-guide" onClick={() => setContactOpen(false)} className={({ isActive }) => `block px-3 py-2 hover:bg-gray-100 ${isActive ? 'bg-gray-100' : ''}`} role="menuitem">
-                    User Guide & FAQ
-                  </NavLink>
+                  {user && (
+                    <NavLink to="/user-guide" onClick={() => setContactOpen(false)} className={({ isActive }) => `block px-3 py-2 hover:bg-gray-100 ${isActive ? 'bg-gray-100' : ''}`} role="menuitem">
+                      User Guide & FAQ
+                    </NavLink>
+                  )}
                 </div>
               )}
             </div>
@@ -253,8 +277,11 @@ export default function Navbar({ user, onLogout }) {
                       )}
                     </>
                   )}
+                  <NavLink to="/target-score" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Target Score</NavLink>
                   <NavLink to="/contact" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Contact Us</NavLink>
-                  <NavLink to="/user-guide" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>User Guide & FAQ</NavLink>
+                  {user && (
+                    <NavLink to="/user-guide" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>User Guide & FAQ</NavLink>
+                  )}
                   <div className="pt-2 flex items-center justify-between gap-2">
                     {user ? (
                       <>
