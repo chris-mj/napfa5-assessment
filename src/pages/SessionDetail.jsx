@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import AttemptEditor from "../components/AttemptEditor";
 import { jsPDF } from "jspdf";
 import { drawBarcode } from "../utils/barcode";
@@ -68,6 +68,10 @@ export default function SessionDetail({ user }) {
     const [statusUpdating, setStatusUpdating] = useState(false);
     const [summaryOpen, setSummaryOpen] = useState(false);
     const [activeTab, setActiveTab] = useState(() => (location.hash === '#scores' ? 'scores' : 'roster'));
+
+    // default scroll behavior; removed inline scroll memory per request
+
+    // scroll-memory removed per request
 
     const platformOwner = isPlatformOwner(user);
     const canManage = useMemo(() => platformOwner || ROLE_CAN_MANAGE.includes(membership?.role), [platformOwner, membership]);
@@ -764,7 +768,7 @@ export default function SessionDetail({ user }) {
                         <span className={"text-xs px-2 py-1 rounded border " + (session.status === "completed" ? "bg-gray-200 text-gray-700" : (session.status === "active" ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-800"))}>
                             {session.status}
                         </span>
-                        <div className="ml-auto flex items-center gap-2">
+                        <div className="ml-auto flex items-center gap-3 flex-wrap">
                             <div className="text-xs text-gray-600 flex items-center gap-1">
                                 <span>Change status</span>
                                 <select
@@ -778,7 +782,46 @@ export default function SessionDetail({ user }) {
                                     <option value="completed">completed</option>
                                 </select>
                             </div>
-            
+
+                            <div className="text-xs text-gray-600 flex items-center gap-1">
+                                <span>Type</span>
+                                {canManage ? (
+                                  <select
+                                    className="text-xs border rounded px-2 py-1 bg-white w-auto"
+                                    disabled={!canManage || statusUpdating}
+                                    value={session.assessment_type || 'NAPFA5'}
+                                    onChange={async (e) => {
+                                      const next = e.target.value;
+                                      try {
+                                        const [s1, s2] = await Promise.all([
+                                          supabase.from('scores').select('id', { count: 'exact', head: true }).eq('session_id', id),
+                                          supabase.from('ippt3_scores').select('id', { count: 'exact', head: true }).eq('session_id', id),
+                                        ]);
+                                        const total = (s1?.count || 0) + (s2?.count || 0);
+                                        if (total > 0) { setFlash('Cannot change assessment type after scores are recorded.'); return; }
+                                        const { data, error } = await supabase
+                                          .from('sessions')
+                                          .update({ assessment_type: next })
+                                          .eq('id', id)
+                                          .select()
+                                          .single();
+                                        if (error) throw error;
+                                        setSession(data);
+                                        setFlash('Assessment type updated.');
+                                      } catch (err) {
+                                        setFlash(err.message || 'Failed to update type.');
+                                      }
+                                    }}
+                                  >
+                                    <option value="NAPFA5">NAPFA-5</option>
+                                    <option value="IPPT3">IPPT-3</option>
+                                  </select>
+                                ) : (
+                                  <span className={`inline-flex items-center px-2 py-0.5 rounded border ${ (session.assessment_type||'NAPFA5') === 'IPPT3' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-teal-50 text-teal-700 border-teal-200' }`}>
+                                    {(session.assessment_type||'NAPFA5') === 'IPPT3' ? 'IPPT-3' : 'NAPFA-5'}
+                                  </span>
+                                )}
+                            </div>
 
                             {/* header actions intentionally minimal; profile cards moved to roster tab */}
                         </div>
@@ -1011,7 +1054,7 @@ export default function SessionDetail({ user }) {
                                         <span>Show incomplete</span>
                                     </label>
                                 </div>
-                                <div className="text-xs text-gray-500">Sorting: Class ▲, Name ▲</div>
+                                <div className="text-xs text-gray-500">Sorting: Class â–², Name â–²</div>
                             </div>
                             {canManage && (
                                 <div className="flex gap-2">
@@ -1128,8 +1171,8 @@ function ScoreRowActions({ student, sessionId, canRecord, onSaved }) {
                     <div className="absolute inset-0 flex items-center justify-center p-4">
                         <div role="dialog" aria-modal="true" className="w-full max-w-2xl bg-white rounded-xl shadow-lg">
                             <div className="px-4 py-3 border-b flex items-center justify-between">
-                                <div className="font-medium">Edit Scores — {student.name}</div>
-                                <button className="text-gray-500 hover:text-gray-800" aria-label="Close" onClick={() => setOpen(false)}>×</button>
+                                <div className="font-medium">Edit Scores â€” {student.name}</div>
+                                <button className="text-gray-500 hover:text-gray-800" aria-label="Close" onClick={() => setOpen(false)}>Ã—</button>
                             </div>
                             <div className="p-4">
                                 <AttemptEditor sessionId={sessionId} studentId={student.id} onSaved={() => { setOpen(false); onSaved && onSaved(); }} />
@@ -1143,6 +1186,7 @@ function ScoreRowActions({ student, sessionId, canRecord, onSaved }) {
 }
 
  
+
 
 
 
