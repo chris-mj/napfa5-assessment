@@ -2,6 +2,7 @@ import sitUpUrl from './sit-up.svg';
 import broadJumpUrl from './broad-jump.svg';
 import sitReachUrl from './sit-reach.svg';
 import pullUpUrl from './pull-up.svg';
+import pushUpUrl from './pushup.svg';
 
 export function IconBase({ children, className = 'w-4 h-4', ...rest }) {
   return (
@@ -32,6 +33,9 @@ export function ReachIcon({ className = 'w-4 h-4', alt = 'Sit & Reach', ...rest 
 }
 export function PullupsIcon({ className = 'w-4 h-4', alt = 'Pull-ups', ...rest }) {
   return <img src={pullUpUrl} alt={alt} className={className} {...rest} />
+}
+export function PushupsIcon({ className = 'w-4 h-4', alt = 'Push-ups', ...rest }) {
+  return <img src={pushUpUrl} alt={alt} className={className} {...rest} />
 }
 export function ShuttleIcon(props) {
   return (

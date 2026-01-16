@@ -96,9 +96,6 @@ function StationStandards({ rows, stationKey, lowerBetter }) {
 
 export default function TargetScore() {
   const [scheme, setScheme] = useState('NAPFA5')
-  // IPPT-3 derived state
-  const [rows3, setRows3] = useState(null)
-  const [result3, setResult3] = useState(null)
   const [gender, setGender] = useState('')
   const [level, setLevel] = useState('')
   // DOB split inputs
@@ -136,32 +133,6 @@ export default function TargetScore() {
     if (age != null && age >= 14) return 2.4
     return level === 'Primary' ? 1.6 : (level === 'Secondary' ? 2.4 : null)
   }, [age, level])
-
-  // Load IPPT-3 cohort rows when needed
-  useEffect(() => {
-    if (scheme === 'IPPT3' && normSex && age != null) {
-      setRows3(cohortRowsIppt3({ sex: normSex, age }))
-    } else {
-      setRows3(null)
-    }
-  }, [scheme, normSex, age])
-
-  // Evaluate IPPT-3 result when inputs change
-  useEffect(() => {
-    if (scheme !== 'IPPT3' || !normSex || age == null) { setResult3(null); return }
-    const measures = {}
-    if (situps !== '') measures.situps = Number(onlyInt(situps))
-    if (run !== '') {
-      const raw = onlyInt(run)
-      if (/^\d{3,4}$/.test(raw)) {
-        const mm = raw.length === 3 ? parseInt(raw.slice(0,1), 10) : parseInt(raw.slice(0,2), 10)
-        const ss = parseInt(raw.slice(-2), 10)
-        if (Number.isFinite(mm) && Number.isFinite(ss) && ss < 60) measures.run_seconds = mm*60 + ss
-      }
-    }
-    if (typeof pushups === 'string' && pushups !== '') measures.pushups = Number(onlyInt(pushups))
-    try { setResult3(evaluateIppt3({ sex: normSex, age }, measures)) } catch { setResult3(null) }
-  }, [scheme, normSex, age, situps, pushups, run])
 
   const measures = useMemo(() => {
     const m = {}
@@ -210,25 +181,14 @@ export default function TargetScore() {
       <div className="max-w-5xl mx-auto p-4 space-y-4">
         <h1 className="text-2xl font-semibold">Target Score</h1>
         <div className="flex items-center gap-3 text-sm">
-          <div className="text-gray-600">Assessment Type</div>
-          <div className="inline-flex rounded border overflow-hidden">
-            <button
-              type="button"
-              onClick={()=>setScheme('NAPFA5')}
-              className={`px-3 py-1.5 text-sm ${scheme==='NAPFA5' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
-              aria-pressed={scheme==='NAPFA5'}
-            >
-              NAPFA-5
-            </button>
-            <button
-              type="button"
-              onClick={()=>setScheme('IPPT3')}
-              className={`px-3 py-1.5 text-sm border-l ${scheme==='IPPT3' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
-              aria-pressed={scheme==='IPPT3'}
-            >
-              IPPT-3
-            </button>
-          </div>
+          <div className="text-gray-600">Scheme</div>
+          <Select value={scheme} onValueChange={setScheme}>
+            <SelectTrigger aria-label="Scheme" className="min-w-[160px]"><SelectValue placeholder="Select" /></SelectTrigger>
+            <SelectContent className="w-[180px]">
+              <SelectItem value="NAPFA5">NAPFA-5</SelectItem>
+              <SelectItem value="IPPT3">IPPT-3</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
         <p className="text-sm text-gray-600">Estimate your NAPFA points by entering your details and station results. Test date is assumed to be today.</p>
 
@@ -251,8 +211,6 @@ export default function TargetScore() {
                 </div>
                 {!gender && (<div className="text-xs text-red-600 mt-1">Please select gender.</div>)}
               </div>
-
-              {scheme === 'NAPFA5' && (
               <div>
                 <label className="block text-sm">School Level</label>
                 <div className="mt-1 relative inline-block">
@@ -268,8 +226,6 @@ export default function TargetScore() {
                 </div>
                 {!level && (<div className="text-xs text-red-600 mt-1">Please select school level.</div>)}
               </div>
-              )}
-
               <div>
                 <label className="block text-sm">Date of Birth</label>
                 <div className="mt-1 flex items-center gap-2">
@@ -301,104 +257,45 @@ export default function TargetScore() {
                 {((dobDD||dobMM||dobYYYY) && (!dobIso)) && (
                   <div className="text-xs text-red-600 mt-1">Please select a valid date.</div>
                 )}
-                {dobIso && (
-                  <div className="text-xs text-gray-700 mt-1">Age: <b>{age}</b></div>
-                )}
               </div>
             </div>
-
-            {scheme === 'NAPFA5' && (
-              <div className="mt-2 text-xs">
-                <span className="inline-block px-2 py-0.5 rounded border bg-blue-50 text-blue-700 border-blue-100">Run distance: <b>{runKm ? `${runKm} km` : '-'}</b></span>
-                <span className="ml-2 text-gray-600">(auto based on age/level)</span>
-              </div>
-            )}
+            {scheme === "NAPFA5" && (\n            <div className="mt-2 text-xs">
+              <span className="inline-block px-2 py-0.5 rounded border bg-blue-50 text-blue-700 border-blue-100">Run distance: <b>{runKm ? `${runKm} km` : '-'}</b></span>
+              <span className="ml-2 text-gray-600">(auto based on age/level)</span>
+            </div>
           </CardContent>
         </Card>
 
         <Card className="shadow-sm">
           <CardHeader><CardTitle>Your Standards</CardTitle></CardHeader>
           <CardContent>
-            {scheme === 'NAPFA5' ? (
-              rowsForCohort.length === 0 ? (
-                <div className="text-sm text-gray-600">No standards available for the current selection. Please check Gender, School Level, and Date of Birth.</div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <div className="font-medium mb-1">Sit-ups</div>
-                    <StationStandards rows={rowsForCohort} stationKey="situps" lowerBetter={false} />
-                  </div>
-                  <div>
-                    <div className="font-medium mb-1">Pull-ups</div>
-                    <StationStandards rows={rowsForCohort} stationKey="pullups" lowerBetter={false} />
-                  </div>
-                  <div>
-                    <div className="font-medium mb-1">Standing Broad Jump</div>
-                    <StationStandards rows={rowsForCohort} stationKey="broad_jump_cm" lowerBetter={false} />
-                  </div>
-                  <div>
-                    <div className="font-medium mb-1">Sit & Reach</div>
-                    <StationStandards rows={rowsForCohort} stationKey="sit_and_reach_cm" lowerBetter={false} />
-                  </div>
-                  <div>
-                    <div className="font-medium mb-1">Shuttle Run 4x10m</div>
-                    <StationStandards rows={rowsForCohort} stationKey="shuttle_s" lowerBetter={true} />
-                  </div>
-                  <div>
-                    <div className="font-medium mb-1">Run ({runKm || '-'} km)</div>
-                    <StationStandards rows={rowsForCohort} stationKey="run" lowerBetter={true} />
-                  </div>
-                </div>
-              )
+            {rowsForCohort.length === 0 ? (
+              <div className="text-sm text-gray-600">No standards available for the current selection. Please check Gender, School Level, and Date of Birth.</div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <div className="font-medium mb-1">Sit-ups</div>
-                  <table className="text-xs border rounded w-full">
-                    <thead>
-                      <tr className="bg-gray-100 text-left"><th className="px-2 py-1 border">Target Reps</th><th className="px-2 py-1 border">Points</th></tr>
-                    </thead>
-                    <tbody>
-                      {(rows3?.situps||[]).slice().sort((a,b)=> (b.score||0)-(a.score||0)).map((r,i)=> (
-                        <tr key={i} className={i % 2 === 1 ? 'bg-gray-50' : ''}>
-                          <td className="px-2 py-1 border">≥ {r.performance_reps}</td>
-                          <td className="px-2 py-1 border">{r.score}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  <StationStandards rows={rowsForCohort} stationKey="situps" lowerBetter={false} />
                 </div>
                 <div>
-                  <div className="font-medium mb-1">Push-ups</div>
-                  <table className="text-xs border rounded w-full">
-                    <thead>
-                      <tr className="bg-gray-100 text-left"><th className="px-2 py-1 border">Target Reps</th><th className="px-2 py-1 border">Points</th></tr>
-                    </thead>
-                    <tbody>
-                      {(rows3?.pushups||[]).slice().sort((a,b)=> (b.score||0)-(a.score||0)).map((r,i)=> (
-                        <tr key={i} className={i % 2 === 1 ? 'bg-gray-50' : ''}>
-                          <td className="px-2 py-1 border">≥ {r.performance_reps}</td>
-                          <td className="px-2 py-1 border">{r.score}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  <div className="font-medium mb-1">Pull-ups</div>
+                  <StationStandards rows={rowsForCohort} stationKey="pullups" lowerBetter={false} />
                 </div>
                 <div>
-                  <div className="font-medium mb-1">2.4km Run</div>
-                  <table className="text-xs border rounded w-full">
-                    <thead>
-                      <tr className="bg-gray-100 text-left"><th className="px-2 py-1 border">Target Time</th><th className="px-2 py-1 border">Points</th></tr>
-                    </thead>
-                    <tbody>
-                      {(rows3?.run||[]).slice().sort((a,b)=> (b.score||0)-(a.score||0)).map((r,i)=> (
-                        <tr key={i} className={i % 2 === 1 ? 'bg-gray-50' : ''}>
-                          <td className="px-2 py-1 border">{(() => { const s = Number.isFinite(r?.max_s) ? r.max_s : (Number.isFinite(r?.min_s) ? r.min_s : null); return s != null ? `≤ ${secondsToMmss(s)}` : '-' })()}</td>
-                          <td className="px-2 py-1 border">{r.score}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  <div className="font-medium mb-1">Standing Broad Jump</div>
+                  <StationStandards rows={rowsForCohort} stationKey="broad_jump_cm" lowerBetter={false} />
+                </div>
+                <div>
+                  <div className="font-medium mb-1">Sit & Reach</div>
+                  <StationStandards rows={rowsForCohort} stationKey="sit_and_reach_cm" lowerBetter={false} />
+                </div>
+                <div>
+                  <div className="font-medium mb-1">Shuttle Run 4x10m</div>
+                  <StationStandards rows={rowsForCohort} stationKey="shuttle_s" lowerBetter={true} />
+                </div>
+                <div>
+                  <div className="font-medium mb-1">Run ({runKm || '-'} km)</div>
+                  <StationStandards rows={rowsForCohort} stationKey="run" lowerBetter={true} />
                 </div>
               </div>
             )}
@@ -438,97 +335,59 @@ export default function TargetScore() {
           </CardContent>
         </Card>
 
-        {scheme === 'NAPFA5' ? (
-          <Card>
-            <CardHeader><CardTitle>Enter Your Results</CardTitle></CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-sm">Sit-ups (reps)</label>
-                  <Input inputMode="numeric" value={situps} onChange={(e)=>setSitups(onlyInt(e.target.value))} placeholder="e.g., 30" />
-                  <ResultLine r={result?.stations?.situps} />
-                </div>
-                <div>
-                  <label className="text-sm">Pull-ups (reps)</label>
-                  <Input inputMode="numeric" value={pullups} onChange={(e)=>setPullups(onlyInt(e.target.value))} placeholder="e.g., 8" />
-                  <ResultLine r={result?.stations?.pullups} />
-                </div>
-                <div>
-                  <label className="text-sm">Standing Broad Jump (cm)</label>
-                  <Input inputMode="numeric" value={broad} onChange={(e)=>setBroad(onlyInt(e.target.value))} placeholder="e.g., 200" />
-                  <ResultLine r={result?.stations?.broad_jump_cm} />
-                </div>
-                <div>
-                  <label className="text-sm">Sit & Reach (cm)</label>
-                  <Input inputMode="numeric" value={reach} onChange={(e)=>setReach(onlyInt(e.target.value))} placeholder="e.g., 40" />
-                  <ResultLine r={result?.stations?.sit_and_reach_cm} />
-                </div>
-                <div>
-                  <label className="text-sm">Shuttle Run 4x10m (s, 1 d.p.)</label>
-                  <Input inputMode="decimal" value={shuttle} onChange={(e)=>setShuttle(oneDecimal(e.target.value))} placeholder="e.g., 10.3" />
-                  <ResultLine r={result?.stations?.shuttle_s} />
-                </div>
-                <div>
-                  <label className="text-sm">Run (MSS/MMSS digits)</label>
-                  <Input inputMode="numeric" value={run} onChange={(e)=>setRun(onlyInt(e.target.value))} placeholder="e.g., 1330 for 13:30" />
-                  <ResultLine r={result?.stations?.run} formatter={(v)=> (Number.isFinite(v)? secondsToMmss(v):'-')} />
-                </div>
+        <Card>
+          <CardHeader><CardTitle>Enter Your Results</CardTitle></CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="text-sm">Sit-ups (reps)</label>
+                <Input inputMode="numeric" value={situps} onChange={(e)=>setSitups(onlyInt(e.target.value))} placeholder="e.g., 30" />
+                <ResultLine r={result?.stations?.situps} />
               </div>
-              <div className="mt-3 p-3 rounded border bg-slate-50 text-slate-800">
-                <div className="font-medium">Total Points: {Number(result?.totalPoints||0)}</div>
-                {award && (
-                  <div className="mt-2 text-sm">
-                    <div className="flex items-center gap-2">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded border text-xs font-medium ${awardBadgeClasses(award.label)}`}>
-                        {award.label}
-                      </span>
-                      {award.provisional && (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded border text-xs font-medium bg-white text-gray-700 border-gray-300">Provisional</span>
-                      )}
-                    </div>
-                    <div className="mt-1 text-gray-700">{award.reason}</div>
+              <div>
+                <label className="text-sm">Pull-ups (reps)</label>
+                <Input inputMode="numeric" value={pullups} onChange={(e)=>setPullups(onlyInt(e.target.value))} placeholder="e.g., 8" />
+                <ResultLine r={result?.stations?.pullups} />
+              </div>
+              <div>
+                <label className="text-sm">Standing Broad Jump (cm)</label>
+                <Input inputMode="numeric" value={broad} onChange={(e)=>setBroad(onlyInt(e.target.value))} placeholder="e.g., 200" />
+                <ResultLine r={result?.stations?.broad_jump_cm} />
+              </div>
+              <div>
+                <label className="text-sm">Sit & Reach (cm)</label>
+                <Input inputMode="numeric" value={reach} onChange={(e)=>setReach(onlyInt(e.target.value))} placeholder="e.g., 40" />
+                <ResultLine r={result?.stations?.sit_and_reach_cm} />
+              </div>
+              <div>
+                <label className="text-sm">Shuttle Run 4x10m (s, 1 d.p.)</label>
+                <Input inputMode="decimal" value={shuttle} onChange={(e)=>setShuttle(oneDecimal(e.target.value))} placeholder="e.g., 10.3" />
+                <ResultLine r={result?.stations?.shuttle_s} />
+              </div>
+              <div>
+                <label className="text-sm">Run (MSS/MMSS digits)</label>
+                <Input inputMode="numeric" value={run} onChange={(e)=>setRun(onlyInt(e.target.value))} placeholder="e.g., 1330 for 13:30" />
+                <ResultLine r={result?.stations?.run} formatter={(v)=> (Number.isFinite(v)? secondsToMmss(v):'-')} />
+              </div>
+            </div>
+            <div className="mt-3 p-3 rounded border bg-slate-50 text-slate-800">
+              <div className="font-medium">Total Points: {Number(result?.totalPoints||0)}</div>
+              {award && (
+                <div className="mt-2 text-sm">
+                  <div className="flex items-center gap-2">
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded border text-xs font-medium ${awardBadgeClasses(award.label)}`}>
+                      {award.label}
+                    </span>
+                    {award.provisional && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded border text-xs font-medium bg-white text-gray-700 border-gray-300">Provisional</span>
+                    )}
                   </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        ) : (
-          <Card>
-            <CardHeader><CardTitle>Enter Your Results (IPPT-3)</CardTitle></CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-sm">Sit-ups (reps)</label>
-                  <Input inputMode="numeric" value={situps} onChange={(e)=>setSitups(onlyInt(e.target.value))} placeholder="e.g., 35" />
-                  <div className="text-xs text-gray-700 mt-1">Points: <b>{Number(result3?.stations?.situps?.points||0)}</b></div>
+                  <div className="mt-1 text-gray-700">{award.reason}</div>
                 </div>
-                <div>
-                  <label className="text-sm">Push-ups (reps)</label>
-                  <Input inputMode="numeric" value={pushups} onChange={(e)=>setPushups(onlyInt(e.target.value))} placeholder="e.g., 25" />
-                  <div className="text-xs text-gray-700 mt-1">Points: <b>{Number(result3?.stations?.pushups?.points||0)}</b></div>
-                </div>
-                <div>
-                  <label className="text-sm">2.4km Run (MSS/MMSS digits)</label>
-                  <Input inputMode="numeric" value={run} onChange={(e)=>setRun(onlyInt(e.target.value))} placeholder="e.g., 1330 for 13:30" />
-                  <div className="text-xs text-gray-700 mt-1">Points: <b>{Number(result3?.stations?.run?.points||0)}</b></div>
-                </div>
-              </div>
-              <div className="mt-3 p-3 rounded border bg-slate-50 text-slate-800">
-                <div className="font-medium">Total Points: {Number(result3?.totalPoints||0)}</div>
-                {result3?.award && (
-                  <div className="mt-2 text-sm">
-                    <div className="flex items-center gap-2">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded border text-xs font-medium ${awardBadgeClasses(result3.award)}`}>
-                        {result3.award}
-                      </span>
-                    </div>
-                    <div className="mt-1 text-gray-700">IPPT-3 award based on cumulative points.</div>
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        )}
+              )}
+            </div>
+          </CardContent>
+        </Card>
 
       </div>
     </main>
@@ -543,8 +402,6 @@ function ResultLine({ r }) {
     <div className="text-xs text-gray-700 mt-1">Grade: <b>{grade}</b> • Points: <b>{pts}</b></div>
   )
 }
-
-
 
 
 

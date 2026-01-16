@@ -1,12 +1,25 @@
 // Shared helpers for score fields and formatting
 
 export const SCORE_SELECT_FIELDS = 'situps, pullups, broad_jump, sit_and_reach, shuttle_run, run_2400';
+export const IPPT3_SELECT_FIELDS = 'situps, pushups, run_2400';
 
 // Fetch a single score row for a session + student
 export async function fetchScoreRow(supabase, sessionId, studentId) {
   const { data, error } = await supabase
     .from('scores')
     .select(SCORE_SELECT_FIELDS)
+    .eq('session_id', sessionId)
+    .eq('student_id', studentId)
+    .maybeSingle();
+  if (error) throw error;
+  return data || null;
+}
+
+// Fetch a single IPPT-3 score row for a session + student
+export async function fetchIppt3Row(supabase, sessionId, studentId) {
+  const { data, error } = await supabase
+    .from('ippt3_scores')
+    .select(IPPT3_SELECT_FIELDS)
     .eq('session_id', sessionId)
     .eq('student_id', studentId)
     .maybeSingle();

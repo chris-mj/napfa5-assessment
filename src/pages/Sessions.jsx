@@ -15,6 +15,8 @@ export default function Sessions({ user }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [creating, setCreating] = useState(false);
+  const [typeUpdating, setTypeUpdating] = useState(null);
+  // scroll behavior: default
 
   const formatDDMMYYYY = (isoDate) => {
     if (!isoDate) return '';
@@ -70,7 +72,7 @@ export default function Sessions({ user }) {
       const dateDisplay = `${dd}/${mm}/${yyyy}`;
       const title = `NAPFA Session ${dateDisplay}`;
       // Avoid created_by to prevent PostgREST schema cache errors
-      const payload = { school_id: membership.school_id, title, session_date: dateISO, status: 'draft' };
+      const payload = { school_id: membership.school_id, title, session_date: dateISO, status: 'draft', assessment_type: 'NAPFA5' };
       const { data, error: err } = await supabase
         .from('sessions')
         .insert(payload)
@@ -105,6 +107,38 @@ export default function Sessions({ user }) {
       showToast?.('success', `Session set to ${status}.`);
     } catch (err) {
       showToast?.('error', err.message || 'Failed to update status.');
+    }
+  };
+
+  const countScoresForSession = async (sessionId) => {
+    const [s1, s2] = await Promise.all([
+      supabase.from('scores').select('id', { count: 'exact', head: true }).eq('session_id', sessionId),
+      supabase.from('ippt3_scores').select('id', { count: 'exact', head: true }).eq('session_id', sessionId),
+    ]);
+    const c1 = typeof s1?.count === 'number' ? s1.count : 0;
+    const c2 = typeof s2?.count === 'number' ? s2.count : 0;
+    return c1 + c2;
+  };
+
+  const setAssessmentType = async (session, nextType) => {
+    if (!session || !nextType || nextType === (session.assessment_type || 'NAPFA5')) return;
+    try {
+      setTypeUpdating(session.id);
+      const total = await countScoresForSession(session.id);
+      if (total > 0) { showToast?.('error', 'Cannot change assessment type after scores are recorded.'); return; }
+      const { data, error } = await supabase
+        .from('sessions')
+        .update({ assessment_type: nextType })
+        .eq('id', session.id)
+        .select()
+        .single();
+      if (error) throw error;
+      setSessions(prev => prev.map(s => (s.id === session.id ? data : s)));
+      showToast?.('success', `Assessment type set to ${nextType === 'IPPT3' ? 'IPPT-3' : 'NAPFA-5'}.`);
+    } catch (e) {
+      showToast?.('error', e.message || 'Failed to update assessment type.');
+    } finally {
+      setTypeUpdating(null);
     }
   };
 
@@ -153,9 +187,27 @@ export default function Sessions({ user }) {
             {sessions.map((session) => (
               <article key={session.id} className="border rounded p-4 space-y-3 shadow-sm transition-all duration-200 hover:shadow">
                 <div className="flex items-center gap-2">
-                  <span className="text-lg" title={session.status || "draft"} aria-label={session.status || "draft"}>
-                    {session.status === 'active' ? '🟢' : session.status === 'completed' ? '✅' : '⏳'}
-                  </span>
+                  {(() => {
+                    const st = session.status || 'draft';
+                    if (st === 'active') {
+                      return (
+                        <svg viewBox="0 0 20 20" className="w-5 h-5 text-green-600" aria-hidden="true">
+                          <polygon points="6,4 16,10 6,16" fill="currentColor" />
+                        </svg>
+                      );
+                    } else if (st === 'completed') {
+                      return (
+                        <svg viewBox="0 0 24 24" className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <path d="M5 13l4 4L19 7" />
+                        </svg>
+                      );
+                    }
+                    return (
+                      <svg viewBox="0 0 24 24" className="w-5 h-5 text-amber-500" aria-hidden="true">
+                        <path fill="currentColor" d="M6 2h12v2l-5 5 5 5v2H6v-2l5-5-5-5V2z" />
+                      </svg>
+                    );
+                  })()}
                   <h2 className="text-xl font-semibold text-gray-800 flex-1">{session.title}</h2>
                   <span className={`text-xs px-2 py-0.5 rounded border ${session.status === 'completed' ? 'bg-gray-200 text-gray-700' : session.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-800'}`}>
                     {session.status || "draft"}
@@ -173,6 +225,24 @@ export default function Sessions({ user }) {
                         <option value="completed">completed</option>
                       </select>
                     </label>
+                  )}
+                </div>
+                <div className="text-xs text-gray-700">
+                  <span className="text-gray-500 mr-2">Assessment Type:</span>
+                  {canManage ? (
+                    <select
+                      className="text-xs border rounded px-2 py-1 bg-white"
+                      value={session.assessment_type || 'NAPFA5'}
+                      disabled={typeUpdating === session.id}
+                      onChange={(e)=> setAssessmentType(session, e.target.value)}
+                    >
+                      <option value="NAPFA5">NAPFA-5</option>
+                      <option value="IPPT3">IPPT-3</option>
+                    </select>
+                  ) : (
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded border ${ (session.assessment_type||'NAPFA5') === 'IPPT3' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-teal-50 text-teal-700 border-teal-200' }`}>
+                      {(session.assessment_type||'NAPFA5') === 'IPPT3' ? 'IPPT-3' : 'NAPFA-5'}
+                    </span>
                   )}
                 </div>
                 <p className="text-sm text-gray-500">
@@ -197,3 +267,4 @@ export default function Sessions({ user }) {
     </div>
   );
 }
+

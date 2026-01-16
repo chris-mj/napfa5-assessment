@@ -100,7 +100,7 @@ export default function Navbar({ user, onLogout }) {
                       </button>
                       {schoolOpen && (
                         <div
-                          className="absolute right-0 top-full mt-0 w-48 bg-white border rounded shadow z-20"
+                          className="absolute right-0 top-full mt-0 w-48 bg-white border rounded shadow z-50"
                           role="menu"
                           aria-label="School Admin menu"
                         >
@@ -171,7 +171,7 @@ export default function Navbar({ user, onLogout }) {
                       </svg>
                     </button>
                     {scoringOpen && (
-                      <div className="absolute right-0 top-full mt-0 w-56 bg-white border rounded shadow z-20" role="menu" aria-label="Scoring Admin menu">
+                      <div className="absolute right-0 top-full mt-0 w-56 bg-white border rounded shadow z-50" role="menu" aria-label="Scoring Admin menu">
                         <NavLink to="/add-attempt" onClick={() => setScoringOpen(false)} className={({ isActive }) => `block px-3 py-2 hover:bg-gray-100 ${isActive ? 'bg-gray-100' : ''}`} role="menuitem">Score Entry</NavLink>
                         <NavLink to="/view-score" onClick={() => setScoringOpen(false)} className={({ isActive }) => `block px-3 py-2 hover:bg-gray-100 ${isActive ? 'bg-gray-100' : ''}`} role="menuitem">View Score</NavLink>
                         <NavLink to="/pft-calculator" onClick={() => setScoringOpen(false)} className={({ isActive }) => `block px-3 py-2 hover:bg-gray-100 ${isActive ? 'bg-gray-100' : ''}`} role="menuitem">Award Calculator</NavLink>
@@ -206,7 +206,7 @@ export default function Navbar({ user, onLogout }) {
                 </svg>
               </NavLink>
               {contactOpen && (
-                <div className="absolute right-0 top-full mt-0 w-48 bg-white border rounded shadow z-20" role="menu" aria-label="Contact menu">
+                <div className="absolute right-0 top-full mt-0 w-48 bg-white border rounded shadow z-50" role="menu" aria-label="Contact menu">
                   <NavLink to="/contact" onClick={() => setContactOpen(false)} className={({ isActive }) => `block px-3 py-2 hover:bg-gray-100 ${isActive ? 'bg-gray-100' : ''}`} role="menuitem">
                     Contact Us
                   </NavLink>

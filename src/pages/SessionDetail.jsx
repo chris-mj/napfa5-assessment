@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import AttemptEditor from "../components/AttemptEditor";
 import { jsPDF } from "jspdf";
 import { drawBarcode } from "../utils/barcode";
@@ -8,6 +8,7 @@ import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { isPlatformOwner } from "../lib/roles";
 import { supabase } from "../lib/supabaseClient";
 import { fmtRun } from "../lib/scores";
+import { evaluateIppt3, awardForTotal } from "../utils/ippt3Standards";
 import RosterDualList from "../components/RosterDualList";
 
 const ROLE_CAN_MANAGE = ["superadmin", "admin"];
@@ -59,6 +60,7 @@ export default function SessionDetail({ user }) {
     const [inProgressSet, setInProgressSet] = useState(new Set());
     const [completedSet, setCompletedSet] = useState(new Set());
     const [scoresByStudent, setScoresByStudent] = useState(new Map());
+    const isIppt3 = (session?.assessment_type || 'NAPFA5') === 'IPPT3';
     const [scoresPage, setScoresPage] = useState(1);
     const [scoresPageSize, setScoresPageSize] = useState(100);
     const [filterClass, setFilterClass] = useState("");
@@ -68,6 +70,10 @@ export default function SessionDetail({ user }) {
     const [statusUpdating, setStatusUpdating] = useState(false);
     const [summaryOpen, setSummaryOpen] = useState(false);
     const [activeTab, setActiveTab] = useState(() => (location.hash === '#scores' ? 'scores' : 'roster'));
+
+    // default scroll behavior; removed inline scroll memory per request
+
+    // scroll-memory removed per request
 
     const platformOwner = isPlatformOwner(user);
     const canManage = useMemo(() => platformOwner || ROLE_CAN_MANAGE.includes(membership?.role), [platformOwner, membership]);
@@ -81,6 +87,17 @@ export default function SessionDetail({ user }) {
         const yyyy = d.getFullYear();
         return `${dd}/${mm}/${yyyy}`;
     };
+    const calcAgeAt = (dobISO, when) => {
+        if (!dobISO) return null;
+        try {
+            const birth = new Date(dobISO);
+            const d = when instanceof Date ? when : new Date(when);
+            let age = d.getFullYear() - birth.getFullYear();
+            const m = d.getMonth() - birth.getMonth();
+            if (m < 0 || (m === 0 && d.getDate() < birth.getDate())) age--;
+            return age;
+        } catch { return null; }
+    };
     // For input[type=date], value should be YYYY-MM-DD. Avoid timezone shifts by string slicing.
     const toInputDate = (iso) => {
         if (!iso) return "";
@@ -89,7 +106,7 @@ export default function SessionDetail({ user }) {
     };
 
     useEffect(() => {
-        if (!user) return;
+        if (!user?.id) return;
         setMembershipLoading(true);
         supabase
             .from("memberships")
@@ -104,7 +121,7 @@ export default function SessionDetail({ user }) {
                 }
             })
             .finally(() => setMembershipLoading(false));
-    }, [user]);
+    }, [user?.id]);
 
     // Load school name for context (PDF/profile cards)
     useEffect(() => {
@@ -150,7 +167,7 @@ export default function SessionDetail({ user }) {
         loadScoresCount();
         loadScoresMap();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [id]);
+    }, [id, session?.assessment_type]);
 
     // Recompute counts whenever roster changes to keep progress in sync
     useEffect(() => {
@@ -249,7 +266,33 @@ export default function SessionDetail({ user }) {
     }, [sortedRoster, filterClass, filterQuery, showCompleted, showIncomplete, completedSet]);
 
     const loadScoresCount = async () => {
-        // Pull all score rows for this session and derive status counts from non-null metrics
+        if ((session?.assessment_type || 'NAPFA5') === 'IPPT3') {
+            const { data: rows, error: err } = await supabase
+                .from('ippt3_scores')
+                .select('student_id, situps, pushups, run_2400')
+                .eq('session_id', id);
+            if (err) return;
+            const byStudent = new Map((rows || []).map(r => [r.student_id, r]));
+            const scored = new Set();
+            const inprog = new Set();
+            const completed = new Set();
+            (roster || []).forEach(s => {
+                const row = byStudent.get(s.id);
+                if (!row) return;
+                const required = ['situps','pushups','run_2400'];
+                const nonNull = required.reduce((acc,k)=> acc + (row[k] == null ? 0 : 1), 0);
+                const hasAny = nonNull > 0;
+                if (hasAny) scored.add(s.id);
+                if (nonNull === required.length) completed.add(s.id);
+                else inprog.add(s.id);
+            });
+            setScoredSet(scored);
+            setInProgressSet(inprog);
+            setCompletedSet(completed);
+            setScoresCount(completed.size);
+            return;
+        }
+        // NAPFA-5
         const { data: rows, error: err } = await supabase
             .from('scores')
             .select('student_id, situps, shuttle_run, sit_and_reach, pullups, run_2400, broad_jump')
@@ -280,6 +323,17 @@ export default function SessionDetail({ user }) {
     };
 
     const loadScoresMap = async () => {
+        if ((session?.assessment_type || 'NAPFA5') === 'IPPT3') {
+            const { data: rows, error: err } = await supabase
+                .from('ippt3_scores')
+                .select('student_id, situps, pushups, run_2400')
+                .eq('session_id', id);
+            if (err) return;
+            const map = new Map();
+            (rows || []).forEach(r => { map.set(r.student_id, r); });
+            setScoresByStudent(map);
+            return;
+        }
         const { data: rows, error: err } = await supabase
             .from('scores')
             .select('student_id, situps, shuttle_run, sit_and_reach, pullups, broad_jump, run_2400')
@@ -366,6 +420,63 @@ export default function SessionDetail({ user }) {
     // Build PFT-shaped rows with attendance/date logic
     const buildPftRows = async () => {
         try {
+            if ((session?.assessment_type || 'NAPFA5') === 'IPPT3') {
+                const headers = ['S/N','Name','ID','Class','Gender','DOB','Attendance Status','Sit Up reps','Push-ups reps','2.4 Km Run MMSS','PFT Test Date','Sit Up score','Push-ups score','2.4 Km Run score','Total Points','Award'];
+                const prefix = headers.join(',') + '\n';
+                const { data: rosterRows, error: rErr } = await supabase
+                    .from('session_roster')
+                    .select('students:student_id(id, student_identifier, name, gender, dob, enrollments!left(class, is_active))')
+                    .eq('session_id', id);
+                if (rErr) throw rErr;
+                const list = (rosterRows || []).map(rr => {
+                    const st = rr.students || {};
+                    const enr = st.enrollments;
+                    const activeClass = Array.isArray(enr) ? (enr.find(e=>e?.is_active)?.class) : (enr?.class);
+                    return { id: st.id, name: st.name || '', sid: st.student_identifier || '', gender: st.gender || '', dob: st.dob || '', class: activeClass || '' };
+                });
+                const { data: sRows } = await supabase
+                    .from('ippt3_scores')
+                    .select('student_id, situps, pushups, run_2400')
+                    .eq('session_id', id);
+                const byStu = new Map((sRows || []).map(r => [r.student_id, r]));
+                const testDate = session?.session_date ? new Date(session.session_date) : new Date();
+                const shaped = list.map((st, i) => {
+                    const row = byStu.get(st.id) || {};
+                    const hasAny = row.situps != null || row.pushups != null || row.run_2400 != null;
+                    const age = calcAgeAt(st.dob, testDate);
+                    const measures = {};
+                    if (row.situps != null) measures.situps = Number(row.situps);
+                    if (row.pushups != null) measures.pushups = Number(row.pushups);
+                    if (row.run_2400 != null) measures.run_seconds = Math.round(Number(row.run_2400) * 60);
+                    const hasRun = row.run_2400 != null;
+                    const res = (st.gender && age != null) ? evaluateIppt3({ sex: st.gender, age }, measures) : null;
+                    const sitPts = res?.stations?.situps?.points ?? 0;
+                    const pushPts = res?.stations?.pushups?.points ?? 0;
+                    const runPts = hasRun ? (res?.stations?.run?.points ?? 0) : 0;
+                    const totalPts = hasRun ? (res?.totalPoints ?? (sitPts + pushPts + runPts)) : (sitPts + pushPts + runPts);
+                    const awardRaw = st.gender ? awardForTotal(totalPts, st.gender) : '';
+                    const awardLabel = awardRaw === 'Pass' ? 'Bronze' : (awardRaw || '');
+                    return {
+                        'S/N': i + 1,
+                        'Name': st.name,
+                        'ID': normalizeStudentId(st.sid),
+                        'Class': st.class,
+                        'Gender': st.gender,
+                        'DOB': st.dob,
+                        'Attendance Status': hasAny ? 'P' : '',
+                        'Sit Up reps': row.situps ?? '',
+                        'Push-ups reps': row.pushups ?? '',
+                        '2.4 Km Run MMSS': (row.run_2400 != null ? (fmtRun(row.run_2400) || '') : ''),
+                        'PFT Test Date': hasAny ? (function(){ try { return formatDDMMYYYY(session?.session_date); } catch { return ''; } })() : '',
+                        'Sit Up score': sitPts || '',
+                        'Push-ups score': pushPts || '',
+                        '2.4 Km Run score': runPts || '',
+                        'Total Points': Number.isFinite(totalPts) ? totalPts : '',
+                        'Award': awardLabel
+                    };
+                });
+                return { headers, prefix, shaped };
+            }
             const templateRes = await fetch('/pft_template.csv', { cache: 'no-store' });
             if (!templateRes.ok) throw new Error('Failed to load PFT template.');
             let templateText = await templateRes.text();
@@ -764,7 +875,7 @@ export default function SessionDetail({ user }) {
                         <span className={"text-xs px-2 py-1 rounded border " + (session.status === "completed" ? "bg-gray-200 text-gray-700" : (session.status === "active" ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-800"))}>
                             {session.status}
                         </span>
-                        <div className="ml-auto flex items-center gap-2">
+                        <div className="ml-auto flex items-center gap-3 flex-wrap">
                             <div className="text-xs text-gray-600 flex items-center gap-1">
                                 <span>Change status</span>
                                 <select
@@ -778,7 +889,46 @@ export default function SessionDetail({ user }) {
                                     <option value="completed">completed</option>
                                 </select>
                             </div>
-            
+
+                            <div className="text-xs text-gray-600 flex items-center gap-1">
+                                <span>Type</span>
+                                {canManage ? (
+                                  <select
+                                    className="text-xs border rounded px-2 py-1 bg-white w-auto"
+                                    disabled={!canManage || statusUpdating}
+                                    value={session.assessment_type || 'NAPFA5'}
+                                    onChange={async (e) => {
+                                      const next = e.target.value;
+                                      try {
+                                        const [s1, s2] = await Promise.all([
+                                          supabase.from('scores').select('id', { count: 'exact', head: true }).eq('session_id', id),
+                                          supabase.from('ippt3_scores').select('id', { count: 'exact', head: true }).eq('session_id', id),
+                                        ]);
+                                        const total = (s1?.count || 0) + (s2?.count || 0);
+                                        if (total > 0) { setFlash('Cannot change assessment type after scores are recorded.'); return; }
+                                        const { data, error } = await supabase
+                                          .from('sessions')
+                                          .update({ assessment_type: next })
+                                          .eq('id', id)
+                                          .select()
+                                          .single();
+                                        if (error) throw error;
+                                        setSession(data);
+                                        setFlash('Assessment type updated.');
+                                      } catch (err) {
+                                        setFlash(err.message || 'Failed to update type.');
+                                      }
+                                    }}
+                                  >
+                                    <option value="NAPFA5">NAPFA-5</option>
+                                    <option value="IPPT3">IPPT-3</option>
+                                  </select>
+                                ) : (
+                                  <span className={`inline-flex items-center px-2 py-0.5 rounded border ${ (session.assessment_type||'NAPFA5') === 'IPPT3' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-teal-50 text-teal-700 border-teal-200' }`}>
+                                    {(session.assessment_type||'NAPFA5') === 'IPPT3' ? 'IPPT-3' : 'NAPFA-5'}
+                                  </span>
+                                )}
+                            </div>
 
                             {/* header actions intentionally minimal; profile cards moved to roster tab */}
                         </div>
@@ -1011,7 +1161,7 @@ export default function SessionDetail({ user }) {
                                         <span>Show incomplete</span>
                                     </label>
                                 </div>
-                                <div className="text-xs text-gray-500">Sorting: Class ▲, Name ▲</div>
+                                <div className="text-xs text-gray-500">Sorting: Class (A-Z), Name (A-Z)</div>
                             </div>
                             {canManage && (
                                 <div className="flex gap-2">
@@ -1032,7 +1182,18 @@ export default function SessionDetail({ user }) {
                         </div>
                         <table className="w-full">
                             <thead>
-                                <tr className="bg-gray-100 text-left">
+                                {((session?.assessment_type || 'NAPFA5') === 'IPPT3') ? (
+                                  <tr className="bg-gray-100 text-left">
+                                    <th className="px-3 py-2 border">Student ID</th>
+                                    <th className="px-3 py-2 border">Name</th>
+                                    <th className="px-3 py-2 border">Class</th>
+                                    <th className="px-3 py-2 border">Sit-ups</th>
+                                    <th className="px-3 py-2 border">Push-ups</th>
+                                    <th className="px-3 py-2 border">2.4km Run (mm:ss)</th>
+                                    <th className="px-3 py-2 border w-40">Actions</th>
+                                  </tr>
+                                ) : (
+                                  <tr className="bg-gray-100 text-left">
                                     <th className="px-3 py-2 border">Student ID</th>
                                     <th className="px-3 py-2 border">Name</th>
                                     <th className="px-3 py-2 border">Class</th>
@@ -1043,7 +1204,8 @@ export default function SessionDetail({ user }) {
                                     <th className="px-3 py-2 border">Broad Jump</th>
                                     <th className="px-3 py-2 border">Run (mm:ss)</th>
                                     <th className="px-3 py-2 border w-40">Actions</th>
-                                </tr>
+                                  </tr>
+                                )}
                             </thead>
                             <tbody>
                             {(() => {
@@ -1055,32 +1217,47 @@ export default function SessionDetail({ user }) {
                                 const cur = Math.min(scoresPage, totalPages);
                                 const start = (cur - 1) * scoresPageSize;
                                 const pageItems = filteredSortedRoster.slice(start, start + scoresPageSize);
-                                return pageItems.flatMap((s) => {
-                                    const row = scoresByStudent.get(s.id) || {};
-                                    const canRecord = session.status === 'active' && ['admin','superadmin','score_taker'].includes(membership?.role);
-                                    const isCompleted = completedSet.has(s.id);
-                                    const isInProgress = inProgressSet.has(s.id);
-                                    const statusLeft = isCompleted
-                                        ? 'border-l-4 border-l-green-500'
-                                        : (isInProgress ? 'border-l-4 border-l-amber-500' : 'border-l-4 border-l-gray-300');
-                                    return [
-                                        <tr key={s.id}>
-                                            <td className={`px-3 py-2 border align-top ${statusLeft}`}>{normalizeStudentId(s.student_identifier)}</td>
-                                            <td className="px-3 py-2 border align-top">{s.name}</td>
-                                            <td className="px-3 py-2 border align-top">{s.class || '-'}</td>
-                                            <td className="px-3 py-2 border align-top">{row.situps ?? '-'}</td>
-                                            <td className="px-3 py-2 border align-top">{row.shuttle_run ?? '-'}</td>
-                                            <td className="px-3 py-2 border align-top">{row.sit_and_reach ?? '-'}</td>
-                                            <td className="px-3 py-2 border align-top">{row.pullups ?? '-'}</td>
-                                            <td className="px-3 py-2 border align-top">{row.broad_jump ?? '-'}</td>
-                                            <td className="px-3 py-2 border align-top">{fmtRun(row.run_2400) || '-'}</td>
-                                            <td className="px-3 py-2 border align-top">
-                                                <ScoreRowActions student={s} canRecord={canRecord} onSaved={async () => { await loadScoresMap(); await loadScoresCount(); }} sessionId={id} />
-                                            </td>
-                                        </tr>
-                                    ];
-                                });
-                            })()}
+                                    return pageItems.flatMap((s) => {
+                                        const row = scoresByStudent.get(s.id) || {};
+                                    const canRecord = true;
+                                        const isCompleted = completedSet.has(s.id);
+                                        const isInProgress = inProgressSet.has(s.id);
+                                        const statusLeft = isCompleted
+                                            ? 'border-l-4 border-l-green-500'
+                                            : (isInProgress ? 'border-l-4 border-l-amber-500' : 'border-l-4 border-l-gray-300');
+                                        if ((session?.assessment_type || 'NAPFA5') === 'IPPT3') {
+                                          return [
+                                            <tr key={s.id}>
+                                              <td className={`px-3 py-2 border align-top ${statusLeft}`}>{normalizeStudentId(s.student_identifier)}</td>
+                                              <td className="px-3 py-2 border align-top">{s.name}</td>
+                                              <td className="px-3 py-2 border align-top">{s.class || '-'}</td>
+                                              <td className="px-3 py-2 border align-top">{row.situps ?? '-'}</td>
+                                              <td className="px-3 py-2 border align-top">{row.pushups ?? '-'}</td>
+                                              <td className="px-3 py-2 border align-top">{fmtRun(row.run_2400) || '-'}</td>
+                                              <td className="px-3 py-2 border align-top">
+                                                <ScoreRowActions student={s} canRecord={canRecord} onSaved={async () => { await loadScoresMap(); await loadScoresCount(); }} sessionId={id} isIppt3={isIppt3} />
+                                              </td>
+                                            </tr>
+                                          ];
+                                        }
+                                        return [
+                                            <tr key={s.id}>
+                                                <td className={`px-3 py-2 border align-top ${statusLeft}`}>{normalizeStudentId(s.student_identifier)}</td>
+                                                <td className="px-3 py-2 border align-top">{s.name}</td>
+                                                <td className="px-3 py-2 border align-top">{s.class || '-'}</td>
+                                                <td className="px-3 py-2 border align-top">{row.situps ?? '-'}</td>
+                                                <td className="px-3 py-2 border align-top">{row.shuttle_run ?? '-'}</td>
+                                                <td className="px-3 py-2 border align-top">{row.sit_and_reach ?? '-'}</td>
+                                                <td className="px-3 py-2 border align-top">{row.pullups ?? '-'}</td>
+                                                <td className="px-3 py-2 border align-top">{row.broad_jump ?? '-'}</td>
+                                                <td className="px-3 py-2 border align-top">{fmtRun(row.run_2400) || '-'}</td>
+                                                <td className="px-3 py-2 border align-top">
+                                                    <ScoreRowActions student={s} canRecord={canRecord} onSaved={async () => { await loadScoresMap(); await loadScoresCount(); }} sessionId={id} isIppt3={isIppt3} />
+                                                </td>
+                                            </tr>
+                                        ];
+                                    });
+                                })()}
                             </tbody>
                         </table>
                         {/* Pagination footer */}
@@ -1115,12 +1292,12 @@ function ScoresPager({ total, page, pageSize, onPageChange }) {
     );
 }
 
-function ScoreRowActions({ student, sessionId, canRecord, onSaved }) {
+function ScoreRowActions({ student, sessionId, canRecord, onSaved, isIppt3 }) {
     const [open, setOpen] = useState(false);
     return (
         <>
-            <button onClick={() => canRecord && setOpen(true)} disabled={!canRecord} className="px-3 py-1.5 border rounded hover:bg-gray-100 text-sm">
-                {canRecord ? 'Edit' : 'View'}
+            <button onClick={() => setOpen(true)} disabled={!canRecord} className="px-3 py-1.5 border rounded hover:bg-gray-100 text-sm">
+                Edit
             </button>
             {open && (
                 <div className="fixed inset-0 z-40">
@@ -1128,11 +1305,11 @@ function ScoreRowActions({ student, sessionId, canRecord, onSaved }) {
                     <div className="absolute inset-0 flex items-center justify-center p-4">
                         <div role="dialog" aria-modal="true" className="w-full max-w-2xl bg-white rounded-xl shadow-lg">
                             <div className="px-4 py-3 border-b flex items-center justify-between">
-                                <div className="font-medium">Edit Scores — {student.name}</div>
-                                <button className="text-gray-500 hover:text-gray-800" aria-label="Close" onClick={() => setOpen(false)}>×</button>
+                                <div className="font-medium">Edit Scores - {student.name}</div>
+                                <button className="text-gray-500 hover:text-gray-800" aria-label="Close" onClick={() => setOpen(false)}>Close</button>
                             </div>
                             <div className="p-4">
-                                <AttemptEditor sessionId={sessionId} studentId={student.id} onSaved={() => { setOpen(false); onSaved && onSaved(); }} />
+                                <AttemptEditor sessionId={sessionId} studentId={student.id} isIppt3={isIppt3} onSaved={() => { setOpen(false); onSaved && onSaved(); }} />
                             </div>
                         </div>
                     </div>
@@ -1143,6 +1320,10 @@ function ScoreRowActions({ student, sessionId, canRecord, onSaved }) {
 }
 
  
+
+
+
+
 
 
 

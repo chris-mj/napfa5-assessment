@@ -2,7 +2,8 @@
 import { useMemo, useRef, useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
-import { SCORE_SELECT_FIELDS, fetchScoreRow, fmtRun } from '../lib/scores'
+import { SCORE_SELECT_FIELDS, fetchScoreRow, fetchIppt3Row, fmtRun } from '../lib/scores'
+import { evaluateIppt3 } from '../utils/ippt3Standards'
 import { evaluateNapfa } from '../utils/napfaStandards'
 import { normalizeStudentId } from '../utils/ids'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '../components/ui/select'
@@ -12,7 +13,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { Input } from '../components/ui/input'
 import { Button } from '../components/ui/button'
 import { useToast } from '../components/ToastProvider'
-import { SitupsIcon, BroadJumpIcon, ReachIcon, PullupsIcon, ShuttleIcon } from '../components/icons/StationIcons'
+import { SitupsIcon, BroadJumpIcon, ReachIcon, PullupsIcon, ShuttleIcon, PushupsIcon } from '../components/icons/StationIcons'
 
 export default function AddAttempt({ user }) {
   const fmtDdMmYyyy = (iso) => {
@@ -28,14 +29,20 @@ export default function AddAttempt({ user }) {
   const [sessionId, setSessionId] = useState('')
   const [sessions, setSessions] = useState([])
   const [schoolType, setSchoolType] = useState(null)
-  const stations = useMemo(() => ([
+  const currentSession = useMemo(() => (Array.isArray(sessions) ? sessions.find(s => s.id === sessionId) : null), [sessions, sessionId])
+  const isIppt3 = String(currentSession?.assessment_type || 'NAPFA5').toUpperCase() === 'IPPT3'
+  const stations = useMemo(() => (isIppt3 ? [
+    { key: 'situps', name: 'Sit-ups', Icon: SitupsIcon, description: 'Count repetitions | 1 attempt' },
+    { key: 'pushups', name: 'Push-ups', Icon: PushupsIcon, description: 'Count repetitions | 1 attempt' },
+    { key: 'run', name: '2.4km Run', Icon: Timer, description: 'Record time (MSS/MMSS digits) | 1 attempt' },
+  ] : [
     { key: 'situps', name: 'Sit-ups', Icon: SitupsIcon, description: 'Count repetitions | 1 attempt' },
     { key: 'broad_jump', name: 'Broad Jump', Icon: BroadJumpIcon, description: 'Measure distance (cm) | 2 attempts, record best' },
     { key: 'sit_and_reach', name: 'Sit & Reach', Icon: ReachIcon, description: 'Measure distance (cm) | 2 attempts, record best' },
     { key: 'pullups', name: 'Pull-ups', Icon: PullupsIcon, description: 'Count repetitions | 1 attempt' },
     { key: 'shuttle_run', name: 'Shuttle Run', Icon: ShuttleIcon, description: 'Record time (sec, 1dp) | 1 attempt' },
     { key: 'run', name: '1.6/2.4km Run', Icon: Timer, description: 'Record time (MSS/MMSS digits) | 1 attempt' },
-  ]), [])
+  ]), [isIppt3])
   const [activeStation, setActiveStation] = useState('situps')
   const [studentId, setStudentId] = useState('')
   const [student, setStudent] = useState(null)
@@ -82,7 +89,7 @@ export default function AddAttempt({ user }) {
     const inRange = (v, min, max) => v >= min && v <= max
     const make = (valid, message) => ({ valid, message })
     if (!student || !sessionId) return make(false, 'Select a session and student.')
-    if (activeStation === 'situps' || activeStation === 'pullups') {
+    if (activeStation === 'situps' || activeStation === 'pullups' || activeStation === 'pushups') {
       if (attempt1 === '') return make(false, 'Enter a value 0–60.')
       const n = parseInt((attempt1 || '').toString(), 10)
       if (!Number.isFinite(n)) return make(false, 'Invalid number.')
@@ -139,7 +146,7 @@ export default function AddAttempt({ user }) {
         } catch {}
         const { data: sess } = await supabase
           .from('sessions')
-          .select('id, title, session_date, status')
+          .select('id, title, session_date, status, assessment_type')
           .eq('school_id', mem.school_id)
           .eq('status', 'active')
           .order('session_date', { ascending: true })
@@ -155,6 +162,14 @@ export default function AddAttempt({ user }) {
       setSessionId(sessions[0].id)
     }
   }, [sessions, sessionId])
+
+  // Ensure active station is valid for the current assessment type
+  useEffect(() => {
+    const allowed = isIppt3 ? ['situps','pushups','run'] : ['situps','broad_jump','sit_and_reach','pullups','shuttle_run','run']
+    if (!allowed.includes(activeStation)) {
+      setActiveStation('situps')
+    }
+  }, [isIppt3])
 
   const doSearch = async (idValue) => {
     setError('')
@@ -257,17 +272,22 @@ export default function AddAttempt({ user }) {
         setExisting(null)
         if (!student || !sessionId) return
         const sid = await getStudentRowId()
-        const { data } = await supabase
-          .from('scores')
-          .select(SCORE_SELECT_FIELDS)
-          .eq('session_id', sessionId)
-          .eq('student_id', sid)
-          .maybeSingle()
-        setExisting(data || null)
+        if (isIppt3) {
+          const data3 = await fetchIppt3Row(supabase, sessionId, sid)
+          setExisting(data3 ? { situps: data3.situps, pullups: undefined, broad_jump: undefined, sit_and_reach: undefined, shuttle_run: undefined, run_2400: data3.run_2400, pushups: data3.pushups } : null)
+        } else {
+          const { data } = await supabase
+            .from('scores')
+            .select(SCORE_SELECT_FIELDS)
+            .eq('session_id', sessionId)
+            .eq('student_id', sid)
+            .maybeSingle()
+          setExisting(data || null)
+        }
       } catch {}
     }
     loadExisting()
-  }, [student?.id, sessionId])
+  }, [student?.id, sessionId, isIppt3])
 
   // Save score to scores table (one row per session+student)
 async function saveScore() {
@@ -286,13 +306,13 @@ async function saveScore() {
     const inRange = (v, min, max) => v >= min && v <= max
     const err = (msg) => { showToast('error', msg); throw new Error(msg) }
 
-    if (activeStation === 'situps' || activeStation === 'pullups') {
+    if (activeStation === 'situps' || activeStation === 'pullups' || activeStation === 'pushups') {
       const n = parseInt(onlyInt(attempt1 || ''))
       if (!Number.isFinite(n)) return
       const max = 60
       if (!inRange(n, 0, max)) err(`${active.name} must be between 0 and ${max}.`)
       num = n
-    } else if (activeStation === 'broad_jump' || activeStation === 'sit_and_reach') {
+    } else if (!isIppt3 && (activeStation === 'broad_jump' || activeStation === 'sit_and_reach')) {
       const a = attempt1 ? parseInt(onlyInt(attempt1 || '')) : null
       const b = attempt2 ? parseInt(onlyInt(attempt2 || '')) : null
       if (a == null && b == null) return
@@ -300,7 +320,7 @@ async function saveScore() {
       if (a != null && !inRange(a, 0, max)) err(`${active.name} attempts must be between 0 and ${max} cm.`)
       if (b != null && !inRange(b, 0, max)) err(`${active.name} attempts must be between 0 and ${max} cm.`)
       num = a == null ? b : (b == null ? a : Math.max(a, b))
-    } else if (activeStation === 'shuttle_run') {
+    } else if (!isIppt3 && activeStation === 'shuttle_run') {
       const a = attempt1 ? Number(oneDecimal(attempt1)) : null
       const b = attempt2 ? Number(oneDecimal(attempt2)) : null
       if (a == null && b == null) return
@@ -322,21 +342,43 @@ async function saveScore() {
     if (num == null || !Number.isFinite(num)) return
     try {
       // Check if a score row exists
-      const { data: existing } = await supabase
-        .from('scores')
-        .select('id')
-        .eq('session_id', sessionId)
-        .eq('student_id', (await getStudentRowId()) )
-        .maybeSingle()
-      if (existing?.id) {
-        await supabase
-          .from('scores')
-          .update({ [col]: num })
-          .eq('id', existing.id)
+      const studentUuid = await getStudentRowId()
+      if (isIppt3) {
+        const ipptColMap = { situps: 'situps', pushups: 'pushups', run: 'run_2400' }
+        const ipptCol = ipptColMap[activeStation]
+        const { data: existing3 } = await supabase
+          .from('ippt3_scores')
+          .select('id')
+          .eq('session_id', sessionId)
+          .eq('student_id', studentUuid)
+          .maybeSingle()
+        if (existing3?.id) {
+          await supabase
+            .from('ippt3_scores')
+            .update({ [ipptCol]: num })
+            .eq('id', existing3.id)
+        } else {
+          await supabase
+            .from('ippt3_scores')
+            .insert({ session_id: sessionId, student_id: studentUuid, [ipptCol]: num })
+        }
       } else {
-        await supabase
+        const { data: existing } = await supabase
           .from('scores')
-          .insert({ session_id: sessionId, student_id: await getStudentRowId(), [col]: num })
+          .select('id')
+          .eq('session_id', sessionId)
+          .eq('student_id', studentUuid)
+          .maybeSingle()
+        if (existing?.id) {
+          await supabase
+            .from('scores')
+            .update({ [col]: num })
+            .eq('id', existing.id)
+        } else {
+          await supabase
+            .from('scores')
+            .insert({ session_id: sessionId, student_id: studentUuid, [col]: num })
+        }
       }
       // Compute points attained for the saved station
       try {
@@ -357,23 +399,35 @@ async function saveScore() {
         else if (activeStation === 'sit_and_reach') measures.sit_and_reach_cm = num
         else if (activeStation === 'shuttle_run') measures.shuttle_s = num
         else if (activeStation === 'run') measures.run_seconds = Math.round(num * 60)
-        const res = evaluateNapfa({ level: levelLabel, sex, age, run_km: runKm }, measures)
-        const stationKey = (
-          activeStation === 'broad_jump' ? 'broad_jump_cm'
-          : activeStation === 'sit_and_reach' ? 'sit_and_reach_cm'
-          : activeStation === 'shuttle_run' ? 'shuttle_s'
-          : activeStation === 'run' ? 'run'
-          : activeStation // situps / pullups
-        )
-        const pts = res?.stations?.[stationKey]?.points
+        let pts = 0
+        if (isIppt3) {
+          const runKm = 2.4
+          const measures3 = {}
+          if (activeStation === 'situps') measures3.situps = num
+          else if (activeStation === 'pushups') measures3.pushups = num
+          else if (activeStation === 'run') measures3.run_seconds = Math.round(num * 60)
+          const res3 = evaluateIppt3({ sex, age }, measures3)
+          const stationKey3 = (activeStation === 'run' ? 'run' : activeStation)
+          pts = res3?.stations?.[stationKey3]?.points ?? 0
+        } else {
+          const res = evaluateNapfa({ level: levelLabel, sex, age, run_km: runKm }, measures)
+          const stationKey = (
+            activeStation === 'broad_jump' ? 'broad_jump_cm'
+            : activeStation === 'sit_and_reach' ? 'sit_and_reach_cm'
+            : activeStation === 'shuttle_run' ? 'shuttle_s'
+            : activeStation === 'run' ? 'run'
+            : activeStation // situps / pullups
+          )
+          pts = res?.stations?.[stationKey]?.points ?? 0
+        }
         // Display value formatting per station
         const valueLabel = (() => {
           if (activeStation === 'shuttle_run') return `${num.toFixed(1)}s`
           if (activeStation === 'run') return fmtRun(num) || `${Math.round(num*60)}s`
           return String(num)
         })()
-        const stationLine = `${active.name}: ${valueLabel} - ${Number.isFinite(pts) ? pts : 0} pts`
-        showToast('success', `Saved\n${stationLine}`)
+         const stationLine = `${active.name}: ${valueLabel} - ${Number.isFinite(pts) ? pts : 0} pts`
+         showToast('success', `Saved\n${stationLine}`)
       } catch {
         // If standards don't match or any error occurs, just state the saved value
         const valueLabel = (() => {
@@ -381,14 +435,20 @@ async function saveScore() {
           if (activeStation === 'run') return fmtRun(num) || `${Math.round(num*60)}s`
           return String(num)
         })()
-        showToast('success', `Saved\n${active.name}: ${valueLabel} - 0 pts`)
+         showToast('success', `Saved\n${active.name}: ${valueLabel} - 0 pts`)
       }
       setAttempt1('')
       setAttempt2('')
       try {
         const sid = await getStudentRowId()
-        const data = await fetchScoreRow(supabase, sessionId, sid)
-        setExisting(data || null)
+        if (isIppt3) {
+          const row3 = await fetchIppt3Row(supabase, sessionId, sid)
+          // Normalize to existing-like shape for display convenience
+          setExisting(row3 ? { situps: row3.situps, pullups: undefined, broad_jump: undefined, sit_and_reach: undefined, shuttle_run: undefined, run_2400: row3.run_2400, pushups: row3.pushups } : null)
+        } else {
+          const data = await fetchScoreRow(supabase, sessionId, sid)
+          setExisting(data || null)
+        }
       } catch {}
     } catch (e) {
       showToast('error', e.message || 'Failed to save score')
@@ -435,32 +495,39 @@ async function saveScore() {
       <section className="px-4 sm:px-6">
         {/* Session selector above tabs (overlay dropdown to avoid layout shift) */}
         <div className="px-1 pb-2">
-          <div className="relative inline-block min-w-[260px]">
-            <Select value={sessionId} onValueChange={setSessionId}>
-              <SelectTrigger aria-label="Select assessment session">
-                <span className="truncate text-left">
-                  {(() => {
-                    if (!sessionId) return 'Select session';
-                    const se = sessions?.find(s => s.id === sessionId);
-                    if (!se) return sessionId;
-                    try { return `${se.title} | ${fmtDdMmYyyy(se.session_date)}` } catch { return se.title }
-                  })()}
-                </span>
-              </SelectTrigger>
-              <SelectContent>
-                {sessions?.length ? (
-                  sessions.map((se) => (
-                    <SelectItem key={se.id} value={se.id}>
-                      {se.title} | {fmtDdMmYyyy(se.session_date)}
+          <div className="flex items-center gap-2">
+            <div className="relative inline-block min-w-[260px]">
+              <Select value={sessionId} onValueChange={setSessionId}>
+                <SelectTrigger aria-label="Select assessment session">
+                  <span className="truncate text-left">
+                    {(() => {
+                      if (!sessionId) return 'Select session';
+                      const se = sessions?.find(s => s.id === sessionId);
+                      if (!se) return sessionId;
+                      try { return `${se.title} | ${fmtDdMmYyyy(se.session_date)}` } catch { return se.title }
+                    })()}
+                  </span>
+                </SelectTrigger>
+                <SelectContent>
+                  {sessions?.length ? (
+                    sessions.map((se) => (
+                      <SelectItem key={se.id} value={se.id}>
+                        {se.title} | {fmtDdMmYyyy(se.session_date)}
+                      </SelectItem>
+                    ))
+                  ) : (
+                    <SelectItem value="" disabled>
+                      No sessions available
                     </SelectItem>
-                  ))
-                ) : (
-                  <SelectItem value="" disabled>
-                    No sessions available
-                  </SelectItem>
-                )}
-              </SelectContent>
-            </Select>
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+            {sessionId && (
+              <span className={`inline-flex items-center px-2 py-0.5 rounded border text-xs font-medium ${isIppt3 ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-teal-50 text-teal-700 border-teal-200'}`}>
+                {isIppt3 ? 'Assessment: IPPT-3' : 'Assessment: NAPFA-5'}
+              </span>
+            )}
           </div>
         </div>
 
@@ -483,6 +550,24 @@ async function saveScore() {
                   <span className="font-medium whitespace-nowrap">Sit-ups</span>
                 </TabsTrigger>
 
+                {isIppt3 && (
+                  <TabsTrigger
+                    value="pushups"
+                    className="relative rounded-full px-3 py-1.5 text-sm flex items-center gap-2
+                               bg-white text-slate-700 hover:bg-slate-50 ring-1 ring-slate-200
+                               border-b-4 border-transparent transition-colors
+                               data-[state=active]:bg-blue-600 data-[state=active]:text-white
+                               data-[state=active]:border-blue-600 data-[state=active]:ring-blue-600/20 data-[state=active]:shadow-sm"
+                    aria-label="Push-ups"
+                    data-snap
+                    style={{ scrollSnapAlign: 'start' }}
+                  >
+                    <PushupsIcon className="h-4 w-4" aria-hidden="true" />
+                    <span className="font-medium whitespace-nowrap">Push-ups</span>
+                  </TabsTrigger>
+                )}
+
+                {!isIppt3 && (
                 <TabsTrigger
                   value="broad_jump"
                   className="relative rounded-full px-3 py-1.5 text-sm flex items-center gap-2
@@ -496,7 +581,9 @@ async function saveScore() {
                   <BroadJumpIcon className="h-4 w-4" aria-hidden="true" />
                   <span className="font-medium whitespace-nowrap">Broad Jump</span>
                 </TabsTrigger>
+                )}
 
+                {!isIppt3 && (
                 <TabsTrigger
                   value="sit_and_reach"
                   className="relative rounded-full px-3 py-1.5 text-sm flex items-center gap-2
@@ -510,7 +597,9 @@ async function saveScore() {
                   <ReachIcon className="h-4 w-4" aria-hidden="true" />
                   <span className="font-medium whitespace-nowrap">Sit & Reach</span>
                 </TabsTrigger>
+                )}
 
+                {!isIppt3 && (
                 <TabsTrigger
                   value="pullups"
                   className="relative rounded-full px-3 py-1.5 text-sm flex items-center gap-2
@@ -524,7 +613,9 @@ async function saveScore() {
                   <PullupsIcon className="h-4 w-4" aria-hidden="true" />
                   <span className="font-medium whitespace-nowrap">Pull-ups</span>
                 </TabsTrigger>
+                )}
 
+                {!isIppt3 && (
                 <TabsTrigger
                   value="shuttle_run"
                   className="relative rounded-full px-3 py-1.5 text-sm flex items-center gap-2
@@ -538,6 +629,7 @@ async function saveScore() {
                   <ShuttleIcon className="h-4 w-4" aria-hidden="true" />
                   <span className="font-medium whitespace-nowrap">Shuttle Run</span>
                 </TabsTrigger>
+                )}
                 <TabsTrigger
                   value="run"
                   className="relative rounded-full px-3 py-1.5 text-sm flex items-center gap-2
@@ -655,10 +747,14 @@ async function saveScore() {
                       <div className="font-medium">Previous saved scores</div>
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-1 text-xs">
                         <div>Sit-ups: <span className="font-semibold">{existing.situps ?? '-'}</span></div>
-                        <div>Pull-ups: <span className="font-semibold">{existing.pullups ?? '-'}</span></div>
-                        <div>Broad Jump (cm): <span className="font-semibold">{existing.broad_jump ?? '-'}</span></div>
-                        <div>Sit & Reach (cm): <span className="font-semibold">{existing.sit_and_reach ?? '-'}</span></div>
-                        <div>Shuttle Run (s): <span className="font-semibold">{existing.shuttle_run ?? '-'}</span></div>
+                        <div>Pull-ups: <span className="font-semibold">{existing.pullups ?? (existing.pushups ?? '-')}</span></div>
+                        {!isIppt3 && (
+                          <>
+                            <div>Broad Jump (cm): <span className="font-semibold">{existing.broad_jump ?? '-'}</span></div>
+                            <div>Sit & Reach (cm): <span className="font-semibold">{existing.sit_and_reach ?? '-'}</span></div>
+                            <div>Shuttle Run (s): <span className="font-semibold">{existing.shuttle_run ?? '-'}</span></div>
+                          </>
+                        )}
                         <div>Run (mm:ss): <span className="font-semibold">{fmtRun(existing.run_2400) ?? '-'}</span></div>
                       </div>
                     </div>
@@ -666,11 +762,20 @@ async function saveScore() {
 
                   {/* Record Attempt */}
                   <div className="space-y-2">
-                    {['situps','pullups'].includes(activeStation) && (
+                    {['situps','pullups','pushups'].includes(activeStation) && (
                       <>
                         <label htmlFor="attempt1" className="text-gray-700 text-sm">Repetitions</label>
                         <div className="text-xs text-gray-600">Unit: reps | Example: 25</div>
-                          <Input ref={firstAttemptRef} id="attempt1" inputMode="numeric" value={attempt1} onChange={(e)=> setAttempt1(onlyInt(e.target.value))} onKeyDown={onAttemptKeyDown} placeholder="e.g., 25" className="w-full" />
+                          <Input
+                            ref={firstAttemptRef}
+                            id="attempt1"
+                            inputMode="numeric"
+                            value={attempt1}
+                            onChange={(e)=> setAttempt1(onlyInt(e.target.value))}
+                            onKeyDown={onAttemptKeyDown}
+                            placeholder="e.g., 25"
+                            className="w-full"
+                          />
                         <div role="status" aria-live="polite" className={(validation.valid ? "text-gray-500" : "text-red-600") + " text-xs mt-1"}>{validation.message}</div>
                       </>
                     )}
@@ -1019,5 +1124,8 @@ function UserCircle(props) {
     </IconBase>
   )
 }
+
+
+
 
 
