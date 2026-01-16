@@ -406,7 +406,7 @@ async function saveScore() {
           if (activeStation === 'situps') measures3.situps = num
           else if (activeStation === 'pushups') measures3.pushups = num
           else if (activeStation === 'run') measures3.run_seconds = Math.round(num * 60)
-          const res3 = await evaluateIppt3({ sex, age }, measures3)
+          const res3 = evaluateIppt3({ sex, age }, measures3)
           const stationKey3 = (activeStation === 'run' ? 'run' : activeStation)
           pts = res3?.stations?.[stationKey3]?.points ?? 0
         } else {

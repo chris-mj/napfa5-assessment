@@ -45,18 +45,19 @@ export default function ViewScore() {
 
       const { data: rows, error: e2 } = await supabase
         .from('scores')
-        .select('id, test_date, created_at, situps, shuttle_run, sit_and_reach, pullups, run_2400, broad_jump, sessions!fk_scores_session(id, session_date, schools:school_id(type))')
+        .select('id, test_date, created_at, situps, shuttle_run, sit_and_reach, pullups, run_2400, broad_jump, sessions!fk_scores_session(id, session_date, status, schools:school_id(type))')
         .eq('student_id', stu.id)
         .order('test_date', { ascending: false })
       if (e2) throw e2
 
       const { data: rows3, error: e3 } = await supabase
         .from('ippt3_scores')
-        .select('id, situps, pushups, run_2400, inserted_at, updated_at, session_id, sessions:session_id(id, session_date, schools:school_id(type))')
+        .select('id, situps, pushups, run_2400, inserted_at, updated_at, session_id, sessions:session_id(id, session_date, status, schools:school_id(type))')
         .eq('student_id', stu.id)
       if (e3) throw e3
 
-      const listNapfa = (rows || []).map(r => ({
+      // Only keep attempts linked to active sessions
+      const listNapfa = (rows || []).filter(r => (r.sessions?.status === 'active')).map(r => ({
         id: r.id,
         kind: 'NAPFA5',
         test_date: r.sessions?.session_date || r.test_date || r.created_at || null,
@@ -70,7 +71,7 @@ export default function ViewScore() {
         assessment_type: 'NAPFA5',
       }))
 
-      const listIppt3 = (rows3 || []).map(r => ({
+      const listIppt3 = (rows3 || []).filter(r => (r.sessions?.status === 'active')).map(r => ({
         id: `ip3-${r.id}`,
         kind: 'IPPT3',
         test_date: r.sessions?.session_date || r.inserted_at || r.updated_at || null,
@@ -133,7 +134,7 @@ export default function ViewScore() {
     return { level, sex, age, runKm, res, award, nextTargets, awardInfo }
   }, [profile, selected])
 
-  // When selected attempt is IPPT-3, compute its summary
+  // When selected attempt is IPPT-3, compute its summary (sync, same as NAPFA flow)
   const resIppt3 = useMemo(() => {
     try {
       if (!profile || !selected || !(selected.kind === 'IPPT3' || selected.assessment_type === 'IPPT3')) return null
@@ -141,9 +142,13 @@ export default function ViewScore() {
       const testDate = selected.test_date ? new Date(selected.test_date) : new Date()
       const age = calcAgeAt(profile.dob, testDate)
       const measures = {}
-      if (typeof selected.situps === 'number' && Number.isFinite(selected.situps)) measures.situps = selected.situps
-      if (typeof selected.pushups === 'number' && Number.isFinite(selected.pushups)) measures.pushups = selected.pushups
-      if (typeof selected.run_2400_min === 'number' && Number.isFinite(selected.run_2400_min)) measures.run_seconds = Math.round(selected.run_2400_min * 60)
+      // Coerce to numbers; Supabase may return numeric columns as strings
+      const su = toIntOrNull(selected.situps)
+      if (su != null) measures.situps = su
+      const pu = toIntOrNull(selected.pushups)
+      if (pu != null) measures.pushups = pu
+      const rm = toFloatOrNull(selected.run_2400_min)
+      if (rm != null) measures.run_seconds = Math.round(rm * 60)
       return evaluateIppt3({ sex, age }, measures)
     } catch { return null }
   }, [profile, selected])
@@ -238,9 +243,21 @@ export default function ViewScore() {
                   <div className="bg-white rounded shadow p-3">
                     <div className="text-sm font-medium mb-2">IPPT-3 Summary</div>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
-                      <div><div className="text-gray-600">Sit-ups</div><div className="font-mono">{Number.isFinite(selected.situps) ? selected.situps : '-'}</div></div>
-                      <div><div className="text-gray-600">Push-ups</div><div className="font-mono">{Number.isFinite(selected.pushups) ? selected.pushups : '-'}</div></div>
-                      <div><div className="text-gray-600">2.4km Run</div><div className="font-mono">{(typeof selected.run_2400_min === 'number' && Number.isFinite(selected.run_2400_min)) ? fmtRun(selected.run_2400_min) : '-'}</div></div>
+                      <div>
+                        <div className="text-gray-600">Sit-ups</div>
+                        <div className="font-mono">{Number.isFinite(selected.situps) ? selected.situps : '-'}</div>
+                        <div className="text-xs text-gray-500">Points: {Number(resIppt3?.stations?.situps?.points ?? 0)}</div>
+                      </div>
+                      <div>
+                        <div className="text-gray-600">Push-ups</div>
+                        <div className="font-mono">{Number.isFinite(selected.pushups) ? selected.pushups : '-'}</div>
+                        <div className="text-xs text-gray-500">Points: {Number(resIppt3?.stations?.pushups?.points ?? 0)}</div>
+                      </div>
+                      <div>
+                        <div className="text-gray-600">2.4km Run</div>
+                        <div className="font-mono">{(typeof selected.run_2400_min === 'number' && Number.isFinite(selected.run_2400_min)) ? fmtRun(selected.run_2400_min) : '-'}</div>
+                        <div className="text-xs text-gray-500">Points: {Number(resIppt3?.stations?.run?.points ?? 0)}</div>
+                      </div>
                     </div>
                     <div className="mt-3 p-2 rounded border bg-slate-50 text-slate-800">
                       <div className="font-medium">Total Points: {Number(resIppt3?.totalPoints || 0)}</div>

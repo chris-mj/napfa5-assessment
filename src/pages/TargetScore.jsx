@@ -139,13 +139,11 @@ export default function TargetScore() {
 
   // Load IPPT-3 cohort rows when needed
   useEffect(() => {
-    let cancelled = false
     if (scheme === 'IPPT3' && normSex && age != null) {
-      cohortRowsIppt3({ sex: normSex, age }).then((r) => { if (!cancelled) setRows3(r) })
+      setRows3(cohortRowsIppt3({ sex: normSex, age }))
     } else {
       setRows3(null)
     }
-    return () => { cancelled = true }
   }, [scheme, normSex, age])
 
   // Evaluate IPPT-3 result when inputs change
@@ -161,9 +159,8 @@ export default function TargetScore() {
         if (Number.isFinite(mm) && Number.isFinite(ss) && ss < 60) measures.run_seconds = mm*60 + ss
       }
     }
-    // pushups for IPPT-3 uses its own input
     if (typeof pushups === 'string' && pushups !== '') measures.pushups = Number(onlyInt(pushups))
-    evaluateIppt3({ sex: normSex, age }, measures).then(setResult3).catch(() => setResult3(null))
+    try { setResult3(evaluateIppt3({ sex: normSex, age }, measures)) } catch { setResult3(null) }
   }, [scheme, normSex, age, situps, pushups, run])
 
   const measures = useMemo(() => {
