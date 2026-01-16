@@ -694,8 +694,8 @@ function AwardBanner2({ info }) {
       <ul className="mt-2 text-sm space-y-1">
         <li className="flex items-start gap-2"><CheckIcon ok={!!info.hasFive} /><span>Five non-run stations completed</span></li>
         <li className="flex items-start gap-2"><CheckIcon ok={!!info.hasSix} /><span>Run completed</span></li>
-        <li className="flex items-start gap-2"><CheckIcon ok={ptsOk} /><span>Points >= {Number.isFinite(base.threshold) ? base.threshold : '-'}</span></li>
-        {base.requiredMinGrade ? (<li className="flex items-start gap-2"><CheckIcon ok={floorOk} /><span>All stations >= grade {base.requiredMinGrade}</span></li>) : null}
+        <li className="flex items-start gap-2"><CheckIcon ok={ptsOk} /><span>Points &gt;= {Number.isFinite(base.threshold) ? base.threshold : '-'}</span></li>
+        {base.requiredMinGrade ? (<li className="flex items-start gap-2"><CheckIcon ok={floorOk} /><span>All stations &gt;= grade {base.requiredMinGrade}</span></li>) : null}
       </ul>
     )
   }
@@ -710,8 +710,8 @@ function AwardBanner2({ info }) {
       <ul className="mt-1 space-y-1 text-sm">
         <li className="flex items-start gap-2"><CheckIcon ok={!!info.hasFive} /><span>Five non-run stations completed</span></li>
         <li className="flex items-start gap-2"><CheckIcon ok={!!info.hasSix} /><span>Run completed</span></li>
-        <li className="flex items-start gap-2"><CheckIcon ok={pointsOk} /><span>Points >= {Number.isFinite(next.threshold) ? next.threshold : '-'}</span></li>
-        {next.requiredMinGrade ? (<li className="flex items-start gap-2"><CheckIcon ok={floorOk} /><span>All stations >= grade {next.requiredMinGrade}</span></li>) : null}
+        <li className="flex items-start gap-2"><CheckIcon ok={pointsOk} /><span>Points &gt;= {Number.isFinite(next.threshold) ? next.threshold : '-'}</span></li>
+        {next.requiredMinGrade ? (<li className="flex items-start gap-2"><CheckIcon ok={floorOk} /><span>All stations &gt;= grade {next.requiredMinGrade}</span></li>) : null}
       </ul>
     )
   }
@@ -803,14 +803,14 @@ function AwardBanner({ info }) {
             items.push(
               <li key="pts" className="flex items-start gap-2">
                 {tick(ptsOk)}
-                <span>Points >= {Number.isFinite(base.threshold) ? base.threshold : '-'}</span>
+                <span>Points &gt;= {Number.isFinite(base.threshold) ? base.threshold : '-'}</span>
               </li>
             )
             if (base.requiredMinGrade) {
               items.push(
                 <li key="floor" className="flex items-start gap-2">
                   {tick(floorOk)}
-                  <span>All stations >= grade {base.requiredMinGrade}</span>
+                  <span>All stations &gt;= grade {base.requiredMinGrade}</span>
                 </li>
               )
             }
@@ -843,11 +843,11 @@ function AwardBanner({ info }) {
                 <li key="run" className="flex items-start gap-2">{tick(!!info.hasSix)}<span>Run completed</span></li>
               )
               items.push(
-                <li key="pts" className="flex items-start gap-2">{tick(pointsOk)}<span>Points >= {Number.isFinite(info.next.threshold) ? info.next.threshold : '-'}</span></li>
+                <li key="pts" className="flex items-start gap-2">{tick(pointsOk)}<span>Points &gt;= {Number.isFinite(info.next.threshold) ? info.next.threshold : '-'}</span></li>
               )
               if (info.next.requiredMinGrade) {
                 items.push(
-                  <li key="floor" className="flex items-start gap-2">{tick(floorOk)}<span>All stations >= grade {info.next.requiredMinGrade}</span></li>
+                  <li key="floor" className="flex items-start gap-2">{tick(floorOk)}<span>All stations &gt;= grade {info.next.requiredMinGrade}</span></li>
                 )
               }
               return items
@@ -865,15 +865,15 @@ function AwardBanner({ info }) {
             <div className="text-slate-600">Already meets points threshold.</div>
           ) : info?.hasSix ? (
             g.runOnlyReachable ? (
-              <div className="text-slate-700">Need >= {g.pointsShortfall} points. Simplest: improve run to >= {g.requiredRunPoints} points (grade >= {g.runGrade}){g.runMmss ? `, <= ${g.runMmss}` : ''}.</div>
+              <div className="text-slate-700">Need &gt;= {g.pointsShortfall} points. Simplest: improve run to &gt;= {g.requiredRunPoints} points (grade &gt;= {g.runGrade}){g.runMmss ? `, <= ${g.runMmss}` : ''}.</div>
             ) : (
-              <div className="text-slate-700">Need >= {g.pointsShortfall} points (from any station). Run alone can add up to 5.</div>
+              <div className="text-slate-700">Need &gt;= {g.pointsShortfall} points (from any station). Run alone can add up to 5.</div>
             )
           ) : (
             g.runOnlyReachable ? (
-              <div className="text-slate-700">Run: >= {g.requiredRunPoints} points (grade >= {g.runGrade}){g.runMmss ? `, roughly <= ${g.runMmss}` : ''}.</div>
+              <div className="text-slate-700">Run: &gt;= {g.requiredRunPoints} points (grade &gt;= {g.runGrade}){g.runMmss ? `, roughly <= ${g.runMmss}` : ''}.</div>
             ) : (
-              <div className="text-slate-700">Improve other stations and run; need >= {g.pointsShortfall} total points; run alone provides up to 5.</div>
+              <div className="text-slate-700">Improve other stations and run; need &gt;= {g.pointsShortfall} total points; run alone provides up to 5.</div>
             )
           )}
           {/* Non-run single-station options removed to restore original */}
