@@ -16,7 +16,7 @@ const INITIAL_FORM = {
     role: "admin",
 };
 
-export default function ModifyUser({ user }) {
+export default function difyUser({ user }) {
     const [schools, setSchools] = useState([]);
     const [schoolId, setSchoolId] = useState("");
     const [members, setMembers] = useState([]);

@@ -175,6 +175,7 @@ export default function RosterDualList({ user, session, membership, canManage, o
     }
   };
 
+
   return (
     <section className="space-y-3">
       {tipOpen && (

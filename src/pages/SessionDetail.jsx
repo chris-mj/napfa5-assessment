@@ -10,6 +10,7 @@ import { supabase } from "../lib/supabaseClient";
 import { fmtRun } from "../lib/scores";
 import { evaluateIppt3, awardForTotal } from "../utils/ippt3Standards";
 import RosterDualList from "../components/RosterDualList";
+import SessionHouses from "../components/SessionHouses";
 
 const ROLE_CAN_MANAGE = ["superadmin", "admin"];
 
@@ -69,7 +70,11 @@ export default function SessionDetail({ user }) {
     const [showIncomplete, setShowIncomplete] = useState(true);
     const [statusUpdating, setStatusUpdating] = useState(false);
     const [summaryOpen, setSummaryOpen] = useState(false);
-    const [activeTab, setActiveTab] = useState(() => (location.hash === '#scores' ? 'scores' : 'roster'));
+    const [activeTab, setActiveTab] = useState(() => {
+        if (location.hash === '#scores') return 'scores';
+        if (location.hash === '#houses') return 'houses';
+        return 'roster';
+    });
 
     // default scroll behavior; removed inline scroll memory per request
 
@@ -179,13 +184,13 @@ export default function SessionDetail({ user }) {
 
     // Keep tab state in sync with URL hash
     useEffect(() => {
-        const fromHash = location.hash === '#scores' ? 'scores' : 'roster';
+        const fromHash = location.hash === '#scores' ? 'scores' : (location.hash === '#houses' ? 'houses' : 'roster');
         if (fromHash !== activeTab) setActiveTab(fromHash);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [location.hash]);
 
     useEffect(() => {
-        const desiredHash = activeTab === 'scores' ? '#scores' : '#roster';
+        const desiredHash = activeTab === 'scores' ? '#scores' : (activeTab === 'houses' ? '#houses' : '#roster');
         if (location.hash !== desiredHash) {
             navigate({ hash: desiredHash }, { replace: true });
         }
@@ -1113,6 +1118,16 @@ export default function SessionDetail({ user }) {
                     >
                         Scores
                     </button>
+                    <button
+                        role="tab"
+                        aria-selected={activeTab === 'houses'}
+                        className={(activeTab === 'houses'
+                            ? 'bg-white text-blue-700 shadow border border-gray-200'
+                            : 'text-gray-600 hover:text-gray-800') + ' px-3 py-1.5 rounded-md transition-colors'}
+                        onClick={() => setActiveTab('houses')}
+                    >
+                        Houses
+                    </button>
                 </div>
             </nav>
 
@@ -1125,6 +1140,12 @@ export default function SessionDetail({ user }) {
                   canManage={rosterEditable}
                   membership={membership}
                   onProfileCards={downloadProfileCardsPdf}
+                />
+            ) : activeTab === 'houses' ? (
+                <SessionHouses
+                  session={session}
+                  membership={membership}
+                  canManage={rosterEditable}
                 />
             ) : (
                 <section className="space-y-4">

@@ -26,6 +26,9 @@ const Audit = lazy(() => import("./pages/Audit"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const Profile = lazy(() => import("./pages/Profile"));
 const ManageStudents = lazy(() => import("./pages/ManageStudents"));
+const LearningHub = lazy(() => import("./pages/LearningHub"));
+const ChartsPage = lazy(() => import("./pages/Charts"));
+const Gamification = lazy(() => import("./pages/Gamification"));
 
 export default function App() {
     const [user, setUser] = useState(null);
@@ -118,6 +121,7 @@ function AnimatedRoutes({ user, setUser }) {
                     />
                     <Route path="/contact" element={<PageFade><Contact /></PageFade>} />
                     <Route path="/target-score" element={<PageFade><TargetScore /></PageFade>} />
+                    <Route path="/learning-hub" element={<PageFade><LearningHub /></PageFade>} />
                     <Route
                         path="/view-score"
                         element={
@@ -198,6 +202,30 @@ function AnimatedRoutes({ user, setUser }) {
                             user ? (
                                 <PageFade>
                                   <AdminGuard user={user}><Audit user={user} /></AdminGuard>
+                                </PageFade>
+                            ) : (
+                                <Navigate to="/login" replace />
+                            )
+                        }
+                    />
+                    <Route
+                        path="/charts"
+                        element={
+                            user ? (
+                                <PageFade>
+                                  <AdminGuard user={user}><ChartsPage user={user} /></AdminGuard>
+                                </PageFade>
+                            ) : (
+                                <Navigate to="/login" replace />
+                            )
+                        }
+                    />
+                    <Route
+                        path="/gamification"
+                        element={
+                            user ? (
+                                <PageFade>
+                                  <AdminGuard user={user}><Gamification user={user} /></AdminGuard>
                                 </PageFade>
                             ) : (
                                 <Navigate to="/login" replace />

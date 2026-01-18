@@ -167,6 +167,7 @@ create table if not exists session_roster (
   id uuid primary key default gen_random_uuid(),
   session_id uuid not null references sessions(id) on delete cascade,
   student_id uuid not null references students(id) on delete cascade,
+  house text,
   source text,
   added_at timestamptz default now(),
   unique (session_id, student_id)
@@ -267,6 +268,9 @@ do $$ begin
   alter table if exists scores
     add constraint scores_session_id_fkey foreign key (session_id) references sessions(id) on delete cascade;
 exception when others then null; end $$;
+
+-- Session roster: optional house assignment per session
+alter table if exists session_roster add column if not exists house text;
 
 -- =========================
 -- Row Level Security (RLS)
