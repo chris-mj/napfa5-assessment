@@ -15,6 +15,7 @@
     "dependencies": {
         "@supabase/functions-js": "^2.76.1",
         "@supabase/supabase-js": "^2.75.1",
+        "@vercel/analytics": "^1.4.0",
         "@vitejs/plugin-react": "^4.0.0",
         "@zxing/browser": "^0.1.5",
         "chart.js": "^4.3.0",
