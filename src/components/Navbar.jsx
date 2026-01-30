@@ -5,8 +5,8 @@ import { supabase } from "../lib/supabaseClient";
 
 export default function Navbar({ user, onLogout }) {
   const [open, setOpen] = useState(false);
-  const link = "px-3 py-2 rounded border-2 border-gray-200 hover:bg-gray-50 hover:border-gray-300 transition";
-  const active = "bg-gray-200 border-gray-300 shadow-sm";
+  const link = "px-3 py-2 rounded-md border border-slate-200 bg-white/80 text-slate-700 hover:text-blue-900 hover:bg-blue-50/70 hover:border-blue-200 transition";
+  const active = "bg-blue-100/70 text-blue-900 border-blue-300 shadow-sm";
   const isOwner = isPlatformOwner(user);
   const location = useLocation();
   const [canManageUsers, setCanManageUsers] = useState(false);
@@ -66,8 +66,8 @@ export default function Navbar({ user, onLogout }) {
   }, [user?.id]);
 
   return (
-    <header className="bg-white shadow">
-      <nav className="p-3 flex items-center justify-between">
+    <header className="bg-white/85 backdrop-blur border-b border-slate-200 shadow-sm">
+      <nav className="px-4 py-3 flex items-center justify-between">
         <NavLink to="/" className="flex items-center gap-2">
           <img src="/icon.png" alt="NAPFA5" className="w-6 h-6" />
           <span className="font-bold">NAPFA5</span>
@@ -119,15 +119,15 @@ export default function Navbar({ user, onLogout }) {
                         </svg>
                       </button>
                       {assessOpen && (
-                        <div className="absolute left-0 top-full mt-0 w-56 bg-white border rounded shadow z-50" role="menu" aria-label="Assess menu">
+                        <div className="absolute left-0 top-full mt-1 w-56 bg-white border border-slate-200 rounded-md shadow-lg ring-1 ring-black/5 z-50" role="menu" aria-label="Assess menu">
                           {(canManageUsers || isOwner) && (
-                            <NavLink to="/sessions" onClick={() => setAssessOpen(false)} className={({ isActive }) => `block px-3 py-2 hover:bg-gray-100 ${isActive ? 'bg-gray-100' : ''}`} role="menuitem">NAPFA Sessions</NavLink>
+                            <NavLink to="/sessions" onClick={() => setAssessOpen(false)} className={({ isActive }) => `block px-3 py-2 text-slate-700 hover:bg-blue-50 ${isActive ? 'bg-blue-100/70 text-blue-900' : ''}`} role="menuitem">NAPFA Sessions</NavLink>
                           )}
                           {canScoreEntry && (
-                            <NavLink to="/add-attempt" onClick={() => setAssessOpen(false)} className={({ isActive }) => `block px-3 py-2 hover:bg-gray-100 ${isActive ? 'bg-gray-100' : ''}`} role="menuitem">Score Entry</NavLink>
+                            <NavLink to="/add-attempt" onClick={() => setAssessOpen(false)} className={({ isActive }) => `block px-3 py-2 text-slate-700 hover:bg-blue-50 ${isActive ? 'bg-blue-100/70 text-blue-900' : ''}`} role="menuitem">Score Entry</NavLink>
                           )}
                           {(canManageUsers || isOwner) && (
-                            <NavLink to="/pft-calculator" onClick={() => setAssessOpen(false)} className={({ isActive }) => `block px-3 py-2 hover:bg-gray-100 ${isActive ? 'bg-gray-100' : ''}`} role="menuitem">Award Calculator</NavLink>
+                            <NavLink to="/pft-calculator" onClick={() => setAssessOpen(false)} className={({ isActive }) => `block px-3 py-2 text-slate-700 hover:bg-blue-50 ${isActive ? 'bg-blue-100/70 text-blue-900' : ''}`} role="menuitem">Award Calculator</NavLink>
                           )}
                         </div>
                       )}
@@ -158,12 +158,12 @@ export default function Navbar({ user, onLogout }) {
                         </svg>
                       </button>
                       {manageOpen && (
-                        <div className="absolute left-0 top-full mt-0 w-56 bg-white border rounded shadow z-50" role="menu" aria-label="Manage menu">
+                        <div className="absolute left-0 top-full mt-1 w-56 bg-white border border-slate-200 rounded-md shadow-lg ring-1 ring-black/5 z-50" role="menu" aria-label="Manage menu">
                           {(canManageUsers || isOwner) && (
-                            <NavLink to="/manage-students" onClick={() => setManageOpen(false)} className={({ isActive }) => `block px-3 py-2 hover:bg-gray-100 ${isActive ? 'bg-gray-100' : ''}`} role="menuitem">Student Enrollment</NavLink>
+                            <NavLink to="/manage-students" onClick={() => setManageOpen(false)} className={({ isActive }) => `block px-3 py-2 text-slate-700 hover:bg-blue-50 ${isActive ? 'bg-blue-100/70 text-blue-900' : ''}`} role="menuitem">Student Enrollment</NavLink>
                           )}
                           {(canManageUsers || isOwner) && (
-                            <NavLink to="/modify-user" onClick={() => setManageOpen(false)} className={({ isActive }) => `block px-3 py-2 hover:bg-gray-100 ${isActive ? 'bg-gray-100' : ''}`} role="menuitem">Manage Users</NavLink>
+                            <NavLink to="/modify-user" onClick={() => setManageOpen(false)} className={({ isActive }) => `block px-3 py-2 text-slate-700 hover:bg-blue-50 ${isActive ? 'bg-blue-100/70 text-blue-900' : ''}`} role="menuitem">Manage Users</NavLink>
                           )}
                         </div>
                       )}
@@ -194,10 +194,10 @@ export default function Navbar({ user, onLogout }) {
                         </svg>
                       </button>
                       {insightsOpen && (
-                        <div className="absolute left-0 top-full mt-0 w-44 bg-white border rounded shadow z-50" role="menu" aria-label="Insights menu">
-                          <NavLink to="/gamification" onClick={() => setInsightsOpen(false)} className={({ isActive }) => `block px-3 py-2 hover:bg-gray-100 ${isActive ? 'bg-gray-100' : ''}`} role="menuitem">Challenge Hub</NavLink>
-                          <NavLink to="/charts" onClick={() => setInsightsOpen(false)} className={({ isActive }) => `block px-3 py-2 hover:bg-gray-100 ${isActive ? 'bg-gray-100' : ''}`} role="menuitem">Charts</NavLink>
-                          <NavLink to="/audit" onClick={() => setInsightsOpen(false)} className={({ isActive }) => `block px-3 py-2 hover:bg-gray-100 ${isActive ? 'bg-gray-100' : ''}`} role="menuitem">Audit</NavLink>
+                        <div className="absolute left-0 top-full mt-1 w-44 bg-white border border-slate-200 rounded-md shadow-lg ring-1 ring-black/5 z-50" role="menu" aria-label="Insights menu">
+                          <NavLink to="/gamification" onClick={() => setInsightsOpen(false)} className={({ isActive }) => `block px-3 py-2 text-slate-700 hover:bg-blue-50 ${isActive ? 'bg-blue-100/70 text-blue-900' : ''}`} role="menuitem">Challenge Hub</NavLink>
+                          <NavLink to="/charts" onClick={() => setInsightsOpen(false)} className={({ isActive }) => `block px-3 py-2 text-slate-700 hover:bg-blue-50 ${isActive ? 'bg-blue-100/70 text-blue-900' : ''}`} role="menuitem">Charts</NavLink>
+                          <NavLink to="/audit" onClick={() => setInsightsOpen(false)} className={({ isActive }) => `block px-3 py-2 text-slate-700 hover:bg-blue-50 ${isActive ? 'bg-blue-100/70 text-blue-900' : ''}`} role="menuitem">Audit</NavLink>
                         </div>
                       )}
                     </div>
@@ -227,12 +227,12 @@ export default function Navbar({ user, onLogout }) {
                   </svg>
                 </button>
                 {learnOpen && (
-                  <div className="absolute left-0 top-full mt-0 w-52 bg-white border rounded shadow z-50" role="menu" aria-label="Learn menu">
+                  <div className="absolute left-0 top-full mt-1 w-52 bg-white border border-slate-200 rounded-md shadow-lg ring-1 ring-black/5 z-50" role="menu" aria-label="Learn menu">
                     {canViewScore && (
-                      <NavLink to="/view-score" onClick={() => setLearnOpen(false)} className={({ isActive }) => `block px-3 py-2 hover:bg-gray-100 ${isActive ? 'bg-gray-100' : ''}`} role="menuitem">View Score</NavLink>
+                      <NavLink to="/view-score" onClick={() => setLearnOpen(false)} className={({ isActive }) => `block px-3 py-2 text-slate-700 hover:bg-blue-50 ${isActive ? 'bg-blue-100/70 text-blue-900' : ''}`} role="menuitem">View Score</NavLink>
                     )}
-                    <NavLink to="/target-score" onClick={() => setLearnOpen(false)} className={({ isActive }) => `block px-3 py-2 hover:bg-gray-100 ${isActive ? 'bg-gray-100' : ''}`} role="menuitem">Target Score</NavLink>
-                    <NavLink to="/learning-hub" onClick={() => setLearnOpen(false)} className={({ isActive }) => `block px-3 py-2 hover:bg-gray-100 ${isActive ? 'bg-gray-100' : ''}`} role="menuitem">Learning Hub</NavLink>
+                    <NavLink to="/target-score" onClick={() => setLearnOpen(false)} className={({ isActive }) => `block px-3 py-2 text-slate-700 hover:bg-blue-50 ${isActive ? 'bg-blue-100/70 text-blue-900' : ''}`} role="menuitem">Target Score</NavLink>
+                    <NavLink to="/learning-hub" onClick={() => setLearnOpen(false)} className={({ isActive }) => `block px-3 py-2 text-slate-700 hover:bg-blue-50 ${isActive ? 'bg-blue-100/70 text-blue-900' : ''}`} role="menuitem">Learning Hub</NavLink>
                   </div>
                 )}
               </div>
@@ -258,11 +258,11 @@ export default function Navbar({ user, onLogout }) {
                 </svg>
               </NavLink>
               {contactOpen && (
-                <div className="absolute left-0 top-full mt-0 w-48 bg-white border rounded shadow z-50" role="menu" aria-label="Contact menu">
-                  <NavLink to="/contact" onClick={() => setContactOpen(false)} className={({ isActive }) => `block px-3 py-2 hover:bg-gray-100 ${isActive ? 'bg-gray-100' : ''}`} role="menuitem">
+                <div className="absolute left-0 top-full mt-1 w-48 bg-white border border-slate-200 rounded-md shadow-lg ring-1 ring-black/5 z-50" role="menu" aria-label="Contact menu">
+                  <NavLink to="/contact" onClick={() => setContactOpen(false)} className={({ isActive }) => `block px-3 py-2 text-slate-700 hover:bg-blue-50 ${isActive ? 'bg-blue-100/70 text-blue-900' : ''}`} role="menuitem">
                     Contact Us
                   </NavLink>
-                  <NavLink to="/user-guide" onClick={() => setContactOpen(false)} className={({ isActive }) => `block px-3 py-2 hover:bg-gray-100 ${isActive ? 'bg-gray-100' : ''}`} role="menuitem">
+                  <NavLink to="/user-guide" onClick={() => setContactOpen(false)} className={({ isActive }) => `block px-3 py-2 text-slate-700 hover:bg-blue-50 ${isActive ? 'bg-blue-100/70 text-blue-900' : ''}`} role="menuitem">
                     User Guide & FAQ
                   </NavLink>
                 </div>

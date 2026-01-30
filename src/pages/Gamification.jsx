@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { fmtRun } from "../lib/scores";
+import { SitupsIcon, BroadJumpIcon, ReachIcon, PullupsIcon, PushupsIcon, ShuttleIcon } from "../components/icons/StationIcons";
 import { evaluateNapfa, normalizeSex } from "../utils/napfaStandards";
 import { evaluateIppt3 } from "../utils/ippt3Standards";
 
@@ -23,20 +24,13 @@ function formatValue(key, val) {
   return String(val);
 }
 
-function formatDelta(key, delta) {
-  if (delta == null || !Number.isFinite(delta)) return "-";
-  if (key === "run_2400" || key === "shuttle_run") return `${delta.toFixed(1)}s`;
-  return `${delta}`;
-}
-
-function bestWithDelta(items, lowerBetter) {
+function bestWithNext(items, lowerBetter) {
   const clean = items.filter(i => i.value != null && Number.isFinite(i.value));
   if (clean.length === 0) return null;
   const sorted = clean.sort((a,b) => lowerBetter ? a.value - b.value : b.value - a.value);
   const best = sorted[0];
   const next = sorted[1];
-  const delta = next ? (lowerBetter ? (next.value - best.value) : (best.value - next.value)) : null;
-  return { best, delta };
+  return { best, next };
 }
 
 export default function Gamification({ user }) {
@@ -174,18 +168,18 @@ export default function Gamification({ user }) {
   const stations = useMemo(() => {
     if ((session?.assessment_type || "NAPFA5") === "IPPT3") {
       return [
-        { key: "situps", label: "Sit-ups", lowerBetter: false },
-        { key: "pushups", label: "Push-ups", lowerBetter: false },
-        { key: "run_2400", label: "2.4km Run", lowerBetter: true },
+        { key: "situps", label: "Sit-ups", lowerBetter: false, Icon: SitupsIcon },
+        { key: "pushups", label: "Push-ups", lowerBetter: false, Icon: PushupsIcon },
+        { key: "run_2400", label: "2.4km Run", lowerBetter: true, Icon: ShuttleIcon },
       ];
     }
     return [
-      { key: "situps", label: "Sit-ups", lowerBetter: false },
-      { key: "broad_jump", label: "Broad Jump", lowerBetter: false },
-      { key: "sit_and_reach", label: "Sit & Reach", lowerBetter: false },
-      { key: "pullups", label: "Pull-ups", lowerBetter: false },
-      { key: "shuttle_run", label: "Shuttle Run", lowerBetter: true },
-      { key: "run_2400", label: "Run", lowerBetter: true },
+      { key: "situps", label: "Sit-ups", lowerBetter: false, Icon: SitupsIcon },
+      { key: "broad_jump", label: "Broad Jump", lowerBetter: false, Icon: BroadJumpIcon },
+      { key: "sit_and_reach", label: "Sit & Reach", lowerBetter: false, Icon: ReachIcon },
+      { key: "pullups", label: "Pull-ups", lowerBetter: false, Icon: PullupsIcon },
+      { key: "shuttle_run", label: "Shuttle Run", lowerBetter: true, Icon: ShuttleIcon },
+      { key: "run_2400", label: "Run", lowerBetter: true, Icon: ShuttleIcon },
     ];
   }, [session?.assessment_type]);
 
@@ -194,10 +188,20 @@ export default function Gamification({ user }) {
       const items = roster.map(r => {
         const row = scoresMap.get(r.id) || {};
         const value = row[st.key];
-        return { student: r, value };
+        const sex = normalizeSex(r.gender);
+        const gender = sex === "Male" ? "M" : sex === "Female" ? "F" : "U";
+        return { student: r, value, gender };
       });
-      const res = bestWithDelta(items, st.lowerBetter);
-      return { station: st, res };
+      const byGender = { M: [], F: [], U: [] };
+      items.forEach(i => { byGender[i.gender]?.push(i); });
+      return {
+        station: st,
+        resByGender: {
+          M: bestWithNext(byGender.M, st.lowerBetter),
+          F: bestWithNext(byGender.F, st.lowerBetter),
+          U: bestWithNext(byGender.U, st.lowerBetter),
+        },
+      };
     });
   }, [stations, roster, scoresMap]);
 
@@ -234,12 +238,13 @@ export default function Gamification({ user }) {
         }
       }
       const key = groupBy === "house" ? (r.house || "Unassigned") : (r.class || "Unassigned");
-      if (!byClass.has(key)) byClass.set(key, []);
-      byClass.get(key).push({ student: r, total });
+      if (!byClass.has(key)) byClass.set(key, { M: [], F: [], U: [] });
+      const genderKey = sex === "Male" ? "M" : sex === "Female" ? "F" : "U";
+      byClass.get(key)[genderKey].push({ student: r, total });
     });
-    const out = Array.from(byClass.entries()).map(([cls, items]) => {
-      const sorted = [...items].sort((a,b) => (b.total||0) - (a.total||0));
-      return { cls, items: sorted.slice(0, 5) };
+    const out = Array.from(byClass.entries()).map(([cls, buckets]) => {
+      const sortTop = (list) => [...list].sort((a,b) => (b.total||0) - (a.total||0)).slice(0, 5);
+      return { cls, buckets: { M: sortTop(buckets.M), F: sortTop(buckets.F), U: sortTop(buckets.U) } };
     });
     return out;
   }, [roster, scoresMap, session?.assessment_type, session?.session_date, schoolType, groupBy]);
@@ -288,18 +293,45 @@ export default function Gamification({ user }) {
             <section className="space-y-3">
               <h2 className="text-lg font-semibold">Top Scorers</h2>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {pbCards.map(({ station, res }) => (
+                {pbCards.map(({ station, resByGender }) => (
                   <div key={station.key} className="border rounded p-4 bg-white shadow-sm">
-                    <div className="text-xs text-gray-500">{station.label}</div>
-                    {res ? (
-                      <>
-                        <div className="text-lg font-semibold mt-1">{formatValue(station.key, res.best.value)}</div>
-                        <div className="text-xs text-gray-600 mt-1">
-                          PB: {res.best.student?.name || "-"} | Delta to next: {formatDelta(station.key, res.delta)}
+                    <div className="text-xs text-gray-500 flex items-center gap-2">
+                      {station.Icon ? <station.Icon className="w-4 h-4" aria-hidden="true" /> : null}
+                      <span>{station.label}</span>
+                    </div>
+                    {["M","F"].map((g) => {
+                      const label = g === "M" ? "Boys" : "Girls";
+                      const res = resByGender[g];
+                      const labelKey = groupBy === "house" ? "House" : "Class";
+                      return (
+                        <div key={g} className="mt-2">
+                          <div className="text-xs uppercase tracking-wide text-gray-500">{label}</div>
+                          {res ? (
+                            <>
+                              <div className="text-lg font-semibold">{formatValue(station.key, res.best.value)}</div>
+                              <div className="text-sm font-medium">
+                                {res.best.student?.name || "-"} ({groupBy === "house" ? (res.best.student?.house || "-") : (res.best.student?.class || "-")})
+                              </div>
+                              <div className="text-xs text-gray-600">
+                                Next highest: {res.next ? formatValue(station.key, res.next.value) : "-"}
+                              </div>
+                            </>
+                          ) : (
+                            <div className="text-sm text-gray-500">No scores yet</div>
+                          )}
                         </div>
-                      </>
-                    ) : (
-                      <div className="text-sm text-gray-500 mt-2">No scores yet</div>
+                      );
+                    })}
+                    {resByGender.U && (
+                      <div className="mt-2">
+                        <div className="text-xs uppercase tracking-wide text-gray-500">Unspecified</div>
+                        <div className="text-sm font-medium">
+                          {resByGender.U.best?.student?.name || "-"} ({groupBy === "house" ? (resByGender.U.best?.student?.house || "-") : (resByGender.U.best?.student?.class || "-")})
+                        </div>
+                        <div className="text-xs text-gray-600">
+                          Next highest: {resByGender.U.next ? formatValue(station.key, resByGender.U.next.value) : "-"}
+                        </div>
+                      </div>
                     )}
                   </div>
                 ))}
@@ -315,13 +347,36 @@ export default function Gamification({ user }) {
                   {classLeaderboards.map(group => (
                     <div key={group.cls} className="border rounded p-4 bg-white shadow-sm">
                       <div className="font-medium mb-2">{group.cls}</div>
-                      <div className="space-y-1 text-sm">
-                        {group.items.map((it, idx) => (
-                          <div key={it.student.id} className="flex items-center justify-between">
-                            <div>{idx + 1}. {it.student.name || "Unknown"}</div>
-                            <div className="text-gray-600">{it.total}</div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                        {[
+                          { key: "M", label: "Boys" },
+                          { key: "F", label: "Girls" },
+                        ].map(section => (
+                          <div key={section.key} className="space-y-1">
+                            <div className="text-xs uppercase tracking-wide text-gray-500">{section.label}</div>
+                            {(group.buckets?.[section.key] || []).length === 0 ? (
+                              <div className="text-xs text-gray-500">No scores yet</div>
+                            ) : (
+                              group.buckets[section.key].map((it, idx) => (
+                                <div key={it.student.id} className="flex items-center justify-between">
+                                  <div>{idx + 1}. {it.student.name || "Unknown"}</div>
+                                  <div className="text-gray-600">{it.total}</div>
+                                </div>
+                              ))
+                            )}
                           </div>
                         ))}
+                        {group.buckets?.U?.length > 0 && (
+                          <div className="space-y-1">
+                            <div className="text-xs uppercase tracking-wide text-gray-500">Unspecified</div>
+                            {group.buckets.U.map((it, idx) => (
+                              <div key={it.student.id} className="flex items-center justify-between">
+                                <div>{idx + 1}. {it.student.name || "Unknown"}</div>
+                                <div className="text-gray-600">{it.total}</div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
                   ))}
