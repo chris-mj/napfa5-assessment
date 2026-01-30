@@ -58,31 +58,10 @@ export default function AddAttempt({ user }) {
   const [rosterLoading, setRosterLoading] = useState(false)
   const [rosterQuery, setRosterQuery] = useState('')
   const firstAttemptRef = useRef(null)
-  // Horizontal scroll + edge fade for stations bar
-  const tabsScrollRef = useRef(null)
-  const [tabsFadeLeft, setTabsFadeLeft] = useState(false)
-  const [tabsFadeRight, setTabsFadeRight] = useState(false)
   const navigate = useNavigate()
   const active = useMemo(() => stations.find(s => s.key === activeStation), [stations, activeStation])
   const { showToast } = useToast()
 
-  // Track scroll to show edge fade hints
-  useEffect(() => {
-    const el = tabsScrollRef.current
-    if (!el) return
-    const update = () => {
-      const { scrollLeft, scrollWidth, clientWidth } = el
-      setTabsFadeLeft(scrollLeft > 0)
-      setTabsFadeRight(scrollLeft + clientWidth < scrollWidth - 1)
-    }
-    update()
-    el.addEventListener('scroll', update, { passive: true })
-    window.addEventListener('resize', update)
-    return () => {
-      el.removeEventListener('scroll', update)
-      window.removeEventListener('resize', update)
-    }
-  }, [])
 
   // Live validation for current station + inputs
   const validation = useMemo(() => {
@@ -532,137 +511,144 @@ async function saveScore() {
         </div>
 
         <Tabs value={activeStation} onValueChange={setActiveStation}>
-          <div ref={tabsScrollRef} className="sticky top-0 z-30 -mx-4 sm:mx-0 backdrop-blur bg-white/85 supports-[backdrop-filter]:bg-white/70 border-b border-slate-200 overflow-x-auto overscroll-x-contain snap-x snap-proximity relative">
-            <div className="px-4 sm:px-0 min-w-max">
-              <TabsList className="bg-gray-100 rounded-lg p-1 flex flex-nowrap gap-1 whitespace-nowrap">
-                <TabsTrigger
-                  value="situps"
-                  className="relative rounded-full px-3 py-1.5 text-sm flex items-center gap-2
-                             bg-white text-slate-700 hover:bg-slate-50 ring-1 ring-slate-200
-                             border-b-4 border-transparent transition-colors
-                             data-[state=active]:bg-blue-600 data-[state=active]:text-white
-                             data-[state=active]:border-blue-600 data-[state=active]:ring-blue-600/20 data-[state=active]:shadow-sm"
-                  aria-label="Sit-ups"
-                  data-snap
-                  style={{ scrollSnapAlign: 'start' }}
-                >
-                  <SitupsIcon className="h-4 w-4" aria-hidden="true" />
-                  <span className="font-medium whitespace-nowrap">Sit-ups</span>
-                </TabsTrigger>
-
-                {isIppt3 && (
+          <div className="flex flex-col md:flex-row md:gap-4">
+            <div className="md:w-56 md:shrink-0">
+              <div className="md:sticky md:top-4">
+                <div className="md:hidden mb-3">
+                  <label className="text-sm text-gray-600">Station</label>
+                  <Select value={activeStation} onValueChange={setActiveStation}>
+                    <SelectTrigger className="mt-1 w-full rounded-full px-4 py-2 text-sm bg-white border-[3px] border-blue-600 text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-600">
+                      <span className="flex items-center gap-2 flex-1">
+                        {active?.Icon && <active.Icon className="h-4 w-4" aria-hidden="true" />}
+                        <span className="truncate">{active?.name || "Select station"}</span>
+                      </span>
+                    </SelectTrigger>
+                    <SelectContent className="rounded-2xl border border-slate-200 shadow-lg bg-white">
+                      {stations.map((s) => (
+                        <SelectItem key={s.key} value={s.key} className="flex items-center gap-2">
+                          {s.Icon && <s.Icon className="h-4 w-4" aria-hidden="true" />}
+                          <span>{s.name}</span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <TabsList className="hidden md:flex bg-gray-100 rounded-lg p-1 flex-col gap-1">
                   <TabsTrigger
-                    value="pushups"
-                    className="relative rounded-full px-3 py-1.5 text-sm flex items-center gap-2
+                    value="situps"
+                    className="relative rounded-full px-3 py-2 text-sm flex items-center gap-2 justify-start
                                bg-white text-slate-700 hover:bg-slate-50 ring-1 ring-slate-200
-                               border-b-4 border-transparent transition-colors
+                               border-l-4 border-transparent transition-colors
                                data-[state=active]:bg-blue-600 data-[state=active]:text-white
                                data-[state=active]:border-blue-600 data-[state=active]:ring-blue-600/20 data-[state=active]:shadow-sm"
-                    aria-label="Push-ups"
-                    data-snap
-                    style={{ scrollSnapAlign: 'start' }}
+                    aria-label="Sit-ups"
                   >
-                    <PushupsIcon className="h-4 w-4" aria-hidden="true" />
-                    <span className="font-medium whitespace-nowrap">Push-ups</span>
+                    <SitupsIcon className="h-4 w-4" aria-hidden="true" />
+                    <span className="font-medium whitespace-nowrap">Sit-ups</span>
                   </TabsTrigger>
-                )}
 
-                {!isIppt3 && (
-                <TabsTrigger
-                  value="broad_jump"
-                  className="relative rounded-full px-3 py-1.5 text-sm flex items-center gap-2
-                             bg-white text-slate-700 hover:bg-slate-50 ring-1 ring-slate-200
-                             border-b-4 border-transparent transition-colors
-                             data-[state=active]:bg-blue-600 data-[state=active]:text-white
-                             data-[state=active]:border-blue-600 data-[state=active]:ring-blue-600/20 data-[state=active]:shadow-sm"
-                  aria-label="Broad Jump"
-                  style={{ scrollSnapAlign: 'start' }}
-                >
-                  <BroadJumpIcon className="h-4 w-4" aria-hidden="true" />
-                  <span className="font-medium whitespace-nowrap">Broad Jump</span>
-                </TabsTrigger>
-                )}
+                  {isIppt3 && (
+                    <TabsTrigger
+                      value="pushups"
+                      className="relative rounded-full px-3 py-2 text-sm flex items-center gap-2 justify-start
+                                 bg-white text-slate-700 hover:bg-slate-50 ring-1 ring-slate-200
+                                 border-l-4 border-transparent transition-colors
+                                 data-[state=active]:bg-blue-600 data-[state=active]:text-white
+                                 data-[state=active]:border-blue-600 data-[state=active]:ring-blue-600/20 data-[state=active]:shadow-sm"
+                      aria-label="Push-ups"
+                    >
+                      <PushupsIcon className="h-4 w-4" aria-hidden="true" />
+                      <span className="font-medium whitespace-nowrap">Push-ups</span>
+                    </TabsTrigger>
+                  )}
 
-                {!isIppt3 && (
-                <TabsTrigger
-                  value="sit_and_reach"
-                  className="relative rounded-full px-3 py-1.5 text-sm flex items-center gap-2
-                             bg-white text-slate-700 hover:bg-slate-50 ring-1 ring-slate-200
-                             border-b-4 border-transparent transition-colors
-                             data-[state=active]:bg-blue-600 data-[state=active]:text-white
-                             data-[state=active]:border-blue-600 data-[state=active]:ring-blue-600/20 data-[state=active]:shadow-sm"
-                  aria-label="Sit & Reach"
-                  style={{ scrollSnapAlign: 'start' }}
-                >
-                  <ReachIcon className="h-4 w-4" aria-hidden="true" />
-                  <span className="font-medium whitespace-nowrap">Sit & Reach</span>
-                </TabsTrigger>
-                )}
+                  {!isIppt3 && (
+                  <TabsTrigger
+                    value="broad_jump"
+                    className="relative rounded-full px-3 py-2 text-sm flex items-center gap-2 justify-start
+                               bg-white text-slate-700 hover:bg-slate-50 ring-1 ring-slate-200
+                               border-l-4 border-transparent transition-colors
+                               data-[state=active]:bg-blue-600 data-[state=active]:text-white
+                               data-[state=active]:border-blue-600 data-[state=active]:ring-blue-600/20 data-[state=active]:shadow-sm"
+                    aria-label="Broad Jump"
+                  >
+                    <BroadJumpIcon className="h-4 w-4" aria-hidden="true" />
+                    <span className="font-medium whitespace-nowrap">Broad Jump</span>
+                  </TabsTrigger>
+                  )}
 
-                {!isIppt3 && (
-                <TabsTrigger
-                  value="pullups"
-                  className="relative rounded-full px-3 py-1.5 text-sm flex items-center gap-2
-                             bg-white text-slate-700 hover:bg-slate-50 ring-1 ring-slate-200
-                             border-b-4 border-transparent transition-colors
-                             data-[state=active]:bg-blue-600 data-[state=active]:text-white
-                             data-[state=active]:border-blue-600 data-[state=active]:ring-blue-600/20 data-[state=active]:shadow-sm"
-                  aria-label="Pull-ups"
-                  style={{ scrollSnapAlign: 'start' }}
-                >
-                  <PullupsIcon className="h-4 w-4" aria-hidden="true" />
-                  <span className="font-medium whitespace-nowrap">Pull-ups</span>
-                </TabsTrigger>
-                )}
+                  {!isIppt3 && (
+                  <TabsTrigger
+                    value="sit_and_reach"
+                    className="relative rounded-full px-3 py-2 text-sm flex items-center gap-2 justify-start
+                               bg-white text-slate-700 hover:bg-slate-50 ring-1 ring-slate-200
+                               border-l-4 border-transparent transition-colors
+                               data-[state=active]:bg-blue-600 data-[state=active]:text-white
+                               data-[state=active]:border-blue-600 data-[state=active]:ring-blue-600/20 data-[state=active]:shadow-sm"
+                    aria-label="Sit & Reach"
+                  >
+                    <ReachIcon className="h-4 w-4" aria-hidden="true" />
+                    <span className="font-medium whitespace-nowrap">Sit & Reach</span>
+                  </TabsTrigger>
+                  )}
 
-                {!isIppt3 && (
-                <TabsTrigger
-                  value="shuttle_run"
-                  className="relative rounded-full px-3 py-1.5 text-sm flex items-center gap-2
-                             bg-white text-slate-700 hover:bg-slate-50 ring-1 ring-slate-200
-                             border-b-4 border-transparent transition-colors
-                             data-[state=active]:bg-blue-600 data-[state=active]:text-white
-                             data-[state=active]:border-blue-600 data-[state=active]:ring-blue-600/20 data-[state=active]:shadow-sm"
-                  aria-label="Shuttle Run"
-                  style={{ scrollSnapAlign: 'start' }}
-                >
-                  <ShuttleIcon className="h-4 w-4" aria-hidden="true" />
-                  <span className="font-medium whitespace-nowrap">Shuttle Run</span>
-                </TabsTrigger>
-                )}
-                <TabsTrigger
-                  value="run"
-                  className="relative rounded-full px-3 py-1.5 text-sm flex items-center gap-2
-                             bg-white text-slate-700 hover:bg-slate-50 ring-1 ring-slate-200
-                             border-b-4 border-transparent transition-colors
-                             data-[state=active]:bg-blue-600 data-[state=active]:text-white
-                             data-[state=active]:border-blue-600 data-[state=active]:ring-blue-600/20 data-[state=active]:shadow-sm"
-                  aria-label="1.6/2.4km Run"
-                  style={{ scrollSnapAlign: 'start' }}
-                >
-                  <Timer className="h-4 w-4" aria-hidden="true" />
-                  <span className="font-medium whitespace-nowrap">Run 1.6/2.4km</span>
-                </TabsTrigger>
-              </TabsList>
+                  {!isIppt3 && (
+                  <TabsTrigger
+                    value="pullups"
+                    className="relative rounded-full px-3 py-2 text-sm flex items-center gap-2 justify-start
+                               bg-white text-slate-700 hover:bg-slate-50 ring-1 ring-slate-200
+                               border-l-4 border-transparent transition-colors
+                               data-[state=active]:bg-blue-600 data-[state=active]:text-white
+                               data-[state=active]:border-blue-600 data-[state=active]:ring-blue-600/20 data-[state=active]:shadow-sm"
+                    aria-label="Pull-ups"
+                  >
+                    <PullupsIcon className="h-4 w-4" aria-hidden="true" />
+                    <span className="font-medium whitespace-nowrap">Pull-ups</span>
+                  </TabsTrigger>
+                  )}
+
+                  {!isIppt3 && (
+                  <TabsTrigger
+                    value="shuttle_run"
+                    className="relative rounded-full px-3 py-2 text-sm flex items-center gap-2 justify-start
+                               bg-white text-slate-700 hover:bg-slate-50 ring-1 ring-slate-200
+                               border-l-4 border-transparent transition-colors
+                               data-[state=active]:bg-blue-600 data-[state=active]:text-white
+                               data-[state=active]:border-blue-600 data-[state=active]:ring-blue-600/20 data-[state=active]:shadow-sm"
+                    aria-label="Shuttle Run"
+                  >
+                    <ShuttleIcon className="h-4 w-4" aria-hidden="true" />
+                    <span className="font-medium whitespace-nowrap">Shuttle Run</span>
+                  </TabsTrigger>
+                  )}
+                  <TabsTrigger
+                    value="run"
+                    className="relative rounded-full px-3 py-2 text-sm flex items-center gap-2 justify-start
+                               bg-white text-slate-700 hover:bg-slate-50 ring-1 ring-slate-200
+                               border-l-4 border-transparent transition-colors
+                               data-[state=active]:bg-blue-600 data-[state=active]:text-white
+                               data-[state=active]:border-blue-600 data-[state=active]:ring-blue-600/20 data-[state=active]:shadow-sm"
+                    aria-label="1.6/2.4km Run"
+                  >
+                    <Timer className="h-4 w-4" aria-hidden="true" />
+                    <span className="font-medium whitespace-nowrap">Run 1.6/2.4km</span>
+                  </TabsTrigger>
+                </TabsList>
+              </div>
             </div>
-            {/* Edge fade hints */}
-            <div className={`pointer-events-none absolute inset-y-0 left-0 w-8 bg-gradient-to-r from-white/90 to-transparent transition-opacity ${tabsFadeLeft ? 'opacity-100' : 'opacity-0'}`} />
-            <div className={`pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-white/90 to-transparent transition-opacity ${tabsFadeRight ? 'opacity-100' : 'opacity-0'}`} />
-          </div>
-        </Tabs>
 
-        {/* Active Station Card */}
-        <Card className="mt-4">
-          <CardHeader>
+            <div className="flex-1">
+              {/* Active Station Card */}
+              <Card className="mt-4">
+                <CardHeader>
             <CardTitle>
               {active && <active.Icon className="h-5 w-5 text-blue-700" aria-hidden="true" />}
               <span className="font-bold">{active?.name || 'Station'}</span>
             </CardTitle>
-            <CardDescription>{active?.description}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={onSubmit} className="grid gap-3">
-              <div className="grid gap-1.5">
+                </CardHeader>
+                <CardContent>
+                  <form onSubmit={onSubmit} className="grid gap-3">
+                    <div className="grid gap-1.5">
                 <label htmlFor="studentId" className="text-gray-700 text-sm">Student ID</label>
                 <div className="flex gap-2">
                   <input
@@ -703,9 +689,10 @@ async function saveScore() {
                   </button>
                 </div>
                 {error && <div className="text-sm text-red-600 mt-1">{error}</div>}
-              </div>
-            </form>
-            {/* Expand student info and attempt form after a match */}
+                    </div>
+                  </form>
+
+{/* Expand student info and attempt form after a match */}
             <AnimatePresence initial={false}>
               {student && (
                 <motion.div
@@ -819,14 +806,17 @@ async function saveScore() {
                 </motion.div>
               )}
             </AnimatePresence>
-          </CardContent>
-          <CardFooter className="text-xs text-gray-500 flex items-center justify-between">
-            <div>
-              Station: <span className="font-medium">{active?.name}</span>
+                </CardContent>
+                <CardFooter className="text-xs text-gray-500 flex items-center justify-between">
+                  <div>
+                    Station: <span className="font-medium">{active?.name}</span>
+                  </div>
+                  <div className="text-gray-400" aria-hidden="true" />
+                </CardFooter>
+              </Card>
             </div>
-            <div className="text-gray-400" aria-hidden="true" />
-          </CardFooter>
-        </Card>
+          </div>
+        </Tabs>
       </section>
       {scannerOpen && (
         <ScannerModal

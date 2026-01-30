@@ -14,7 +14,8 @@ export function SelectTrigger({ className = "", children, ...rest }) {
     <button
       type="button"
       onClick={() => setOpen((o) => !o)}
-      className={"flex items-center justify-between border rounded-md px-3 py-2 bg-white " + className}
+      data-select-trigger
+      className={"flex items-center justify-between border-2 rounded-md px-3 py-2 bg-white " + className}
       {...rest}
     >
       {children}
@@ -32,12 +33,27 @@ export function SelectValue({ placeholder }) {
 
 export function SelectContent({ className = "", children }) {
   const { open, setOpen } = useRequiredCtx();
+  const [render, setRender] = useState(false);
+  const [entered, setEntered] = useState(false);
   const ref = useRef(null);
+
+  useEffect(() => {
+    if (open) {
+      setRender(true);
+      const id = requestAnimationFrame(() => setEntered(true));
+      return () => cancelAnimationFrame(id);
+    }
+    setEntered(false);
+    const timeout = setTimeout(() => setRender(false), 120);
+    return () => clearTimeout(timeout);
+  }, [open]);
+
   useEffect(() => {
     if (!open) return;
     const onDoc = (e) => {
       const el = ref.current;
       if (!el) return;
+      if (e.target instanceof Element && e.target.closest('[data-select-trigger]')) return;
       if (e.target instanceof Node && !el.contains(e.target)) {
         setOpen(false);
       }
@@ -52,23 +68,25 @@ export function SelectContent({ className = "", children }) {
       document.removeEventListener('keydown', onKey);
     };
   }, [open, setOpen]);
-  if (!open) return null;
+  if (!render) return null;
   return (
     <div
       ref={ref}
       className={
-        "absolute left-0 mt-1 border rounded-md bg-white shadow-sm p-1 z-50 w-full " +
+        "absolute left-0 mt-1 border-2 rounded-xl bg-white shadow-sm p-2 z-50 w-full transition-all duration-150 ease-out origin-top " +
+        (entered ? "opacity-100 scale-100" : "opacity-0 scale-95") + " " +
         className
       }
       role="listbox"
     >
-      {children}
+      <div className="space-y-1">{children}</div>
     </div>
   );
 }
 
-export function SelectItem({ value, children }) {
-  const { onValueChange, setOpen } = useRequiredCtx();
+export function SelectItem({ value, children, className = "" }) {
+  const { onValueChange, setOpen, value: selectedValue } = useRequiredCtx();
+  const isSelected = selectedValue === value;
   return (
     <button
       type="button"
@@ -77,7 +95,13 @@ export function SelectItem({ value, children }) {
         onValueChange?.(value);
         setOpen(false);
       }}
-      className="w-full text-left px-3 py-2 rounded hover:bg-gray-50"
+      className={
+        "w-full text-left px-3 py-2.5 rounded-full ring-2 flex items-center gap-2 " +
+        (isSelected
+          ? "bg-blue-600 text-white ring-blue-600"
+          : "bg-white text-slate-700 ring-slate-200 hover:bg-slate-50") +
+        " " + className
+      }
     >
       {children}
     </button>
