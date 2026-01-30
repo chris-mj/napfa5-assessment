@@ -422,7 +422,7 @@ export default function PftCalculator({ user }) {
             Upload PFT file with results, or select a session to calculate grades and award for all students.
         </p>
       <div className="bg-white rounded border shadow-sm p-4 space-y-4">
-        <div className="text-sm font-semibold text-slate-700 mb-2">Options</div>
+        <div className="text-sm font-semibold text-slate-700 mb-2">Test Configuration Options</div>
         {/* Source selector moved down to be with the upload/session section */}
         <div className="flex flex-wrap items-start gap-6">
           <div className="flex-1 min-w-[260px] border rounded p-3 bg-slate-50">
@@ -460,6 +460,7 @@ export default function PftCalculator({ user }) {
           </div>
         </div>
         <div className="border-t border-slate-200" />
+        <div className="text-sm font-semibold text-slate-700">Calculation Method</div>
         <div className="text-sm">
           <div className="inline-flex rounded-lg bg-slate-100 p-1">
             <button

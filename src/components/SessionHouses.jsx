@@ -21,6 +21,11 @@ export default function SessionHouses({ session, membership, canManage }) {
   const [selected, setSelected] = useState(new Set());
   const [filterClass, setFilterClass] = useState("");
   const [filterQuery, setFilterQuery] = useState("");
+  const [filterGender, setFilterGender] = useState("");
+  const [filterHouse, setFilterHouse] = useState("");
+  const [sortBy, setSortBy] = useState("class");
+  const [sortBy2, setSortBy2] = useState("name");
+  const [sortDir, setSortDir] = useState("asc");
   const houseFileRef = useRef(null);
 
   const loadData = async () => {
@@ -70,13 +75,40 @@ export default function SessionHouses({ session, membership, canManage }) {
   const filtered = useMemo(() => {
     const q = (filterQuery || "").trim().toLowerCase();
     const cls = (filterClass || "").trim().toLowerCase();
+    const gen = (filterGender || "").trim().toLowerCase();
+    const house = (filterHouse || "").trim().toLowerCase();
     return (roster || []).filter(r => {
       const matchClass = !cls || String(r.class || "").toLowerCase().includes(cls);
-      if (!q) return matchClass;
+      const matchGender = !gen || String(r.gender || "").toLowerCase().startsWith(gen);
+      const matchHouse = !house || String(r.house || "").toLowerCase().includes(house);
+      if (!q) return matchClass && matchGender && matchHouse;
       const hay = `${r.student_identifier || ''} ${r.name || ''} ${r.class || ''} ${r.house || ''}`.toLowerCase();
-      return matchClass && hay.includes(q);
+      return matchClass && matchGender && matchHouse && hay.includes(q);
     });
-  }, [roster, filterClass, filterQuery]);
+  }, [roster, filterClass, filterQuery, filterGender, filterHouse]);
+
+  const sorted = useMemo(() => {
+    const dir = sortDir === "desc" ? -1 : 1;
+    const getVal = (r, key) => {
+      if (key === "class") return String(r.class || "");
+      if (key === "gender") return String(r.gender || "");
+      if (key === "house") return String(r.house || "");
+      return String(r.name || "");
+    };
+    const primary = (r) => getVal(r, sortBy);
+    const secondary = (r) => getVal(r, sortBy2);
+    return [...filtered].sort((a, b) => {
+      const av = primary(a);
+      const bv = primary(b);
+      const primaryCmp = av.localeCompare(bv) * dir;
+      if (primaryCmp !== 0) return primaryCmp;
+      const sv = secondary(a);
+      const tv = secondary(b);
+      const secondaryCmp = sv.localeCompare(tv) * dir;
+      if (secondaryCmp !== 0) return secondaryCmp;
+      return String(a.name || "").localeCompare(String(b.name || "")) * dir;
+    });
+  }, [filtered, sortBy, sortBy2, sortDir]);
 
   const classOptions = useMemo(() => {
     const set = new Set((roster || []).map(r => r.class).filter(Boolean));
@@ -261,25 +293,6 @@ export default function SessionHouses({ session, membership, canManage }) {
   return (
     <section className="space-y-3">
       <div className="border rounded-lg bg-white p-3 flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-2">
-          <label className="text-sm text-gray-600">Class</label>
-          <select className="border rounded px-2 py-1 text-sm bg-white" value={filterClass} onChange={(e) => setFilterClass(e.target.value)}>
-            <option value="">All</option>
-            {classOptions.map(c => (
-              <option key={c} value={c}>{c}</option>
-            ))}
-          </select>
-        </div>
-        <div className="flex items-center gap-2">
-          <label className="text-sm text-gray-600">Search</label>
-          <input
-            type="text"
-            value={filterQuery}
-            onChange={(e) => setFilterQuery(e.target.value)}
-            placeholder="Name or ID"
-            className="text-sm border rounded px-2 py-1 bg-white"
-          />
-        </div>
         <div className="ml-auto flex items-center gap-2 flex-wrap">
           <button onClick={downloadHouseTemplate} className="px-3 py-1.5 rounded border bg-white hover:bg-gray-50">Download House Template</button>
           <button onClick={downloadHouseRoster} className="px-3 py-1.5 rounded border bg-white hover:bg-gray-50">Download House List</button>
@@ -334,6 +347,67 @@ export default function SessionHouses({ session, membership, canManage }) {
       )}
 
       <div className="border rounded-lg bg-white overflow-x-auto">
+        <div className="p-2 border-b bg-white grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-2 text-sm">
+          <div className="flex items-center gap-2">
+            <label className="text-gray-600">Search</label>
+            <input
+              type="text"
+              value={filterQuery}
+              onChange={(e) => setFilterQuery(e.target.value)}
+              placeholder="Name or ID"
+              className="border rounded px-2 py-1 bg-white w-full"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-gray-600">Class</label>
+            <select className="border rounded px-2 py-1 bg-white w-full" value={filterClass} onChange={(e) => setFilterClass(e.target.value)}>
+              <option value="">All</option>
+              {classOptions.map(c => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-gray-600">Gender</label>
+            <select className="border rounded px-2 py-1 bg-white w-full" value={filterGender} onChange={(e) => setFilterGender(e.target.value)}>
+              <option value="">All</option>
+              <option value="M">M</option>
+              <option value="F">F</option>
+            </select>
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-gray-600">House</label>
+            <select className="border rounded px-2 py-1 bg-white w-full" value={filterHouse} onChange={(e) => setFilterHouse(e.target.value)}>
+              <option value="">All</option>
+              {houseOptions.map(h => (
+                <option key={h} value={h}>{h}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-gray-600">Sort</label>
+            <select className="border rounded px-2 py-1 bg-white w-full" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+              <option value="name">Name</option>
+              <option value="class">Class</option>
+              <option value="gender">Gender</option>
+              <option value="house">House</option>
+            </select>
+            <select className="border rounded px-2 py-1 bg-white w-full" value={sortBy2} onChange={(e) => setSortBy2(e.target.value)}>
+              <option value="name">Then Name</option>
+              <option value="class">Then Class</option>
+              <option value="gender">Then Gender</option>
+              <option value="house">Then House</option>
+            </select>
+            <button
+              type="button"
+              onClick={() => setSortDir(d => (d === "asc" ? "desc" : "asc"))}
+              className="px-2 py-1 border rounded text-xs bg-white hover:bg-gray-50"
+              aria-label="Toggle sort direction"
+            >
+              {sortDir === "asc" ? "A-Z" : "Z-A"}
+            </button>
+          </div>
+        </div>
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-gray-100 text-left">
@@ -352,9 +426,9 @@ export default function SessionHouses({ session, membership, canManage }) {
             </tr>
           </thead>
           <tbody>
-            {filtered.length === 0 ? (
+            {sorted.length === 0 ? (
               <tr><td colSpan="6" className="px-3 py-4 text-center text-gray-500">No students in roster.</td></tr>
-            ) : filtered.map(s => (
+            ) : sorted.map(s => (
               <tr key={s.id} className="hover:bg-gray-50">
                 <td className="px-3 py-2 border">
                   <input type="checkbox" checked={selected.has(s.id)} onChange={() => toggleSelected(s.id)} />

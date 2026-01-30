@@ -91,6 +91,7 @@ export default function UserGuide({ user }) {
               <li><a href="#setup" className="underline">Set Up</a></li>
               <li><a href="#run" className="underline">Conduct Assessment</a></li>
               <li><a href="#after" className="underline">After Assessment</a></li>
+              <li><a href="#learn" className="underline">Learn & Improve</a></li>
               <li><a href="#faq" className="underline">FAQ</a></li>
             </ul>
           </nav>
@@ -157,7 +158,7 @@ export default function UserGuide({ user }) {
             )}
             {canManage && (
               <Card
-                title="Manage Students"
+                title="Student Enrollment"
                 desc="Import students in bulk, update details, and manage enrollments."
                 to="/manage-students"
                 tips={["Use CSV import for bulk updates.", "Ensure class/enrollment is up to date before sessions."]}
@@ -194,12 +195,28 @@ export default function UserGuide({ user }) {
                 title="Sessions"
                 desc="Create sessions, manage status, and organize class test days."
                 to="/sessions"
-                tips={["Create a session and set it to Active before score entry.", "Close the session when finished to prevent further edits."]}
+                tips={["Create a session and set it to Active before score entry.", "Close the session when finished to prevent further edits.", "Use the Houses tab inside a session to assign student clans."]}
                 onHowTo={(t, s) => { setHowToTitle(t); setHowToSteps(s); setHowToOpen(true); }}
                 howToSteps={[
                   "Open Sessions and click Create Session.",
                   "Fill in title, date, and class; save.",
                   "Set status to Active to allow score entry.",
+                ]}
+              />
+            )}
+            {canManage && (
+              <Card
+                title="Session Houses"
+                desc="Assign student clans within a session and manage house CSVs."
+                to="/sessions"
+                cta="Open Sessions"
+                tips={["Open a session and switch to the Houses tab.", "Download the house list, edit, and upload to bulk-assign."]}
+                onHowTo={(t, s) => { setHowToTitle(t); setHowToSteps(s); setHowToOpen(true); }}
+                howToSteps={[
+                  "Open Sessions and select a session.",
+                  "Go to the Houses tab.",
+                  "Assign houses per student or use the bulk dropdown.",
+                  "Download/upload the House CSV for bulk updates.",
                 ]}
               />
             )}
@@ -214,6 +231,20 @@ export default function UserGuide({ user }) {
                   "Go to Score Entry and choose the Active session.",
                   "Select the student and test item.",
                   "Enter result and save; repeat for each student.",
+                ]}
+              />
+            )}
+            {canManage && (
+              <Card
+                title="Challenge Hub"
+                desc="Track top scorers and gender-split leaderboards for a session."
+                to="/gamification"
+                tips={["Select a session to view top scorers.", "Group leaderboards by class or house."]}
+                onHowTo={(t, s) => { setHowToTitle(t); setHowToSteps(s); setHowToOpen(true); }}
+                howToSteps={[
+                  "Open Challenge Hub.",
+                  "Choose a session.",
+                  "Review top scorers by station and leaderboards by class/house.",
                 ]}
               />
             )}
@@ -248,6 +279,19 @@ export default function UserGuide({ user }) {
                   "Choose source: Upload file or From Session.",
                   "Set test date and run mode (auto/1.6/2.4).",
                   "Compute and export the results file.",
+                ]}
+              />
+            )}
+            {canManage && (
+              <Card
+                title="Charts"
+                desc="Quick visual summaries under Insights."
+                to="/charts"
+                tips={["Charts are under Insights in the navbar."]}
+                onHowTo={(t, s) => { setHowToTitle(t); setHowToSteps(s); setHowToOpen(true); }}
+                howToSteps={[
+                  "Open Charts from the Insights menu.",
+                  "Review available summary views.",
                 ]}
               />
             )}
@@ -305,6 +349,34 @@ export default function UserGuide({ user }) {
           </div>
         </section>
 
+        <section className="space-y-3" id="learn">
+          <h2 className="text-lg font-semibold">4. Learn & Improve</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            <Card
+              title="Learning Hub"
+              desc="Station-by-station technique, drills, mistakes, and cues."
+              to="/learning-hub"
+              tips={["Use this to coach students before and after tests."]}
+              onHowTo={(t, s) => { setHowToTitle(t); setHowToSteps(s); setHowToOpen(true); }}
+              howToSteps={[
+                "Open Learning Hub from the Learn menu.",
+                "Expand a station to see technique and drill ideas.",
+              ]}
+            />
+            <Card
+              title="Target Score"
+              desc="Estimate targets for a desired grade or award."
+              to="/target-score"
+              tips={["Use it as a goal-setting tool for students."]}
+              onHowTo={(t, s) => { setHowToTitle(t); setHowToSteps(s); setHowToOpen(true); }}
+              howToSteps={[
+                "Open Target Score from the Learn menu.",
+                "Select student details and desired award/grade.",
+                "Review the suggested station targets.",
+              ]}
+            />
+          </div>
+        </section>
         <section className="bg-white border rounded-lg p-4 shadow-sm space-y-4" id="faq">
           <h2 className="text-lg font-semibold">FAQ</h2>
           <div className="space-y-3 text-sm text-gray-700">

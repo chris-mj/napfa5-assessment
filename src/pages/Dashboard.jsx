@@ -364,6 +364,20 @@ export default function Dashboard({ user }) {
           </div>
         </section>
 
+        {/* What's new */}
+        <section>
+          <h2 className="text-xl font-semibold text-slate-900 mb-3">What's new</h2>
+          <div className="rounded-xl bg-white p-4 shadow-sm border border-gray-100">
+            <ul className="list-disc pl-5 text-sm text-slate-700 space-y-1">
+              <li>Challenge Hub with top scorers and gender-split leaderboards.</li>
+              <li>Session Houses tab with CSV import/export and bulk assignment.</li>
+              <li>Learning Hub with per-station guidance and drills.</li>
+              <li>Charts page added under Insights.</li>
+              <li>Improved PFT export (template headers, station scores, total points, awards).</li>
+            </ul>
+          </div>
+        </section>
+
         {/* Insights */}
         <section>
           <h2 className="text-xl font-semibold text-slate-900 mb-3">Insights</h2>
@@ -385,19 +399,8 @@ export default function Dashboard({ user }) {
 
         
 
-        {/* What's new */}
-        <section>
-          <h2 className="text-xl font-semibold text-slate-900 mb-3">What’s new</h2>
-          <div className="rounded-xl bg-white p-4 shadow-sm border border-gray-100">
-            <ul className="list-disc pl-5 text-sm text-slate-700 space-y-1">
-              <li>Dual-list roster with filters and pagination.</li>
-              <li>Improved PFT export (template header rows, attendance/date logic, per-class files).</li>
-              <li>Profile cards PDF with footer bands and class page breaks.</li>
-              <li>Live station validation and auto-select session when only one.</li>
-              <li>Homepage redesign with premium hero and animations.</li>
-            </ul>
-          </div>
-        </section>
+        
+        
 
         
       </div>
