@@ -66,7 +66,7 @@ export default function Navbar({ user, onLogout }) {
   }, [user?.id]);
 
   return (
-    <header className="bg-white/85 backdrop-blur border-b border-slate-200 shadow-sm">
+    <header className="sticky top-0 z-50 bg-white/85 backdrop-blur border-b border-slate-200 shadow-sm">
       <nav className="px-4 py-3 flex items-center justify-between">
         <NavLink to="/" className="flex items-center gap-2">
           <img src="/icon.png" alt="NAPFA5" className="w-6 h-6" />

@@ -244,7 +244,12 @@ export default function Gamification({ user }) {
     });
     const out = Array.from(byClass.entries()).map(([cls, buckets]) => {
       const sortTop = (list) => [...list].sort((a,b) => (b.total||0) - (a.total||0)).slice(0, 5);
-      return { cls, buckets: { M: sortTop(buckets.M), F: sortTop(buckets.F), U: sortTop(buckets.U) } };
+      const sum = (list) => list.reduce((acc, it) => acc + (Number(it.total) || 0), 0);
+      return {
+        cls,
+        buckets: { M: sortTop(buckets.M), F: sortTop(buckets.F), U: sortTop(buckets.U) },
+        totals: { M: sum(buckets.M), F: sum(buckets.F), U: sum(buckets.U), all: sum(buckets.M) + sum(buckets.F) + sum(buckets.U) },
+      };
     });
     return out;
   }, [roster, scoresMap, session?.assessment_type, session?.session_date, schoolType, groupBy]);
@@ -346,16 +351,25 @@ export default function Gamification({ user }) {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {classLeaderboards.map(group => (
                     <div key={group.cls} className="border rounded p-4 bg-white shadow-sm">
-                      <div className="font-medium mb-2">{group.cls}</div>
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="font-semibold text-base">{group.cls}</div>
+                        <div className="text-sm font-medium text-gray-700">
+                          Total: {group.totals?.all ?? 0}
+                        </div>
+                      </div>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                         {[
                           { key: "M", label: "Boys" },
                           { key: "F", label: "Girls" },
                         ].map(section => (
-                          <div key={section.key} className="space-y-1">
-                            <div className="text-xs uppercase tracking-wide text-gray-500">{section.label}</div>
+                          <div key={section.key} className="space-y-2">
+                            <div className="text-sm font-semibold text-gray-700">{section.label}</div>
+                            <div className="flex items-center justify-between text-sm font-medium text-gray-700">
+                              <div>{section.label} total</div>
+                              <div>{group.totals?.[section.key] ?? 0}</div>
+                            </div>
                             {(group.buckets?.[section.key] || []).length === 0 ? (
-                              <div className="text-xs text-gray-500">No scores yet</div>
+                              <div className="text-sm text-gray-500">No scores yet</div>
                             ) : (
                               group.buckets[section.key].map((it, idx) => (
                                 <div key={it.student.id} className="flex items-center justify-between">
