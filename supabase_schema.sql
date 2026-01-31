@@ -1294,5 +1294,309 @@ grant execute on function public.audit_log_event(text, text, text, text, text, j
 -- Platform owner: any membership with role 'superadmin' (global override)
 -- (removed) purge authorization helpers and RPCs
 
+-- =========================
+-- Pre-purge aggregate snapshots (detailed, non-identifiable)
+-- =========================
+
+-- Aggregate per school/year/assessment/station/age/gender
+create table if not exists assessment_agg (
+  id uuid primary key default gen_random_uuid(),
+  school_id uuid not null references schools(id) on delete cascade,
+  academic_year integer not null,
+  assessment_type text not null,
+  station_code text not null,
+  gender text,
+  age_years integer,
+  n integer not null,
+  avg numeric,
+  min numeric,
+  max numeric,
+  p25 numeric,
+  p50 numeric,
+  p75 numeric,
+  stddev numeric,
+  created_at timestamptz default now()
+);
+
+do $$ begin
+  create unique index assessment_agg_unique
+    on assessment_agg (school_id, academic_year, assessment_type, station_code, gender, age_years);
+exception when others then null; end $$;
+
+create index if not exists assessment_agg_school_year_idx
+  on assessment_agg (school_id, academic_year);
+
+-- Aggregate completion counts (NAPFA5 5-station / 6-station)
+create table if not exists assessment_award_agg (
+  id uuid primary key default gen_random_uuid(),
+  school_id uuid not null references schools(id) on delete cascade,
+  academic_year integer not null,
+  assessment_type text not null,
+  gender text,
+  age_years integer,
+  completed_5_count integer not null,
+  completed_6_count integer not null,
+  total_count integer not null,
+  created_at timestamptz default now()
+);
+
+do $$ begin
+  create unique index assessment_award_agg_unique
+    on assessment_award_agg (school_id, academic_year, assessment_type, gender, age_years);
+exception when others then null; end $$;
+
+create index if not exists assessment_award_agg_school_year_idx
+  on assessment_award_agg (school_id, academic_year);
+
+-- RLS for aggregate tables (readable by school admins)
+alter table if exists assessment_agg enable row level security;
+alter table if exists assessment_award_agg enable row level security;
+
+do $$ begin
+  create policy assessment_agg_select_by_membership
+  on assessment_agg for select
+  using (
+    exists (
+      select 1 from memberships m
+      where m.user_id = auth.uid()
+        and m.school_id = assessment_agg.school_id
+    )
+    or exists (
+      select 1 from memberships m2
+      where m2.user_id = auth.uid()
+        and m2.role = 'superadmin'
+    )
+  );
+exception when duplicate_object then null; end $$;
+
+do $$ begin
+  create policy assessment_award_agg_select_by_membership
+  on assessment_award_agg for select
+  using (
+    exists (
+      select 1 from memberships m
+      where m.user_id = auth.uid()
+        and m.school_id = assessment_award_agg.school_id
+    )
+    or exists (
+      select 1 from memberships m2
+      where m2.user_id = auth.uid()
+        and m2.role = 'superadmin'
+    )
+  );
+exception when duplicate_object then null; end $$;
+
+-- Snapshot function: run before purge
+do $$ begin
+create or replace function snapshot_assessment_agg(p_school uuid, p_academic_year integer)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $fn$
+declare
+  v_has_assessment_type boolean := false;
+  v_has_ippt3 boolean := false;
+  v_sql text;
+  v_prev_exists boolean := false;
+  v_station_rows integer := 0;
+  v_award_rows integer := 0;
+begin
+  -- Authorization: admin/superadmin at target school
+  if not exists (
+    select 1 from memberships m
+    where m.user_id = auth.uid()
+      and m.school_id = p_school
+      and m.role in ('admin','superadmin')
+  ) then
+    raise exception 'NOT_AUTHORIZED' using errcode = 'P0001';
+  end if;
+
+  select exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'sessions'
+      and column_name = 'assessment_type'
+  ) into v_has_assessment_type;
+
+  select to_regclass('public.ippt3_scores') is not null into v_has_ippt3;
+
+  select exists (
+    select 1 from assessment_agg
+    where school_id = p_school and academic_year = p_academic_year
+  ) into v_prev_exists;
+
+  -- Clear existing snapshot for this school/year
+  delete from assessment_agg where school_id = p_school and academic_year = p_academic_year;
+  delete from assessment_award_agg where school_id = p_school and academic_year = p_academic_year;
+
+  -- Station aggregates (NAPFA5 + optional IPPT3)
+  v_sql := '
+    with sess as (
+      select s.id as session_id,
+             s.school_id,
+             s.session_date,
+             extract(year from s.session_date)::int as session_year,
+             ' || case when v_has_assessment_type
+                then 'coalesce(s.assessment_type, ''NAPFA5'')'
+                else '''NAPFA5''' end || ' as assessment_type
+      from sessions s
+      where s.school_id = $1
+        and extract(year from s.session_date)::int = $2
+    ),
+    base as (
+      select s.school_id, s.session_id, s.assessment_type, s.session_date,
+             r.student_id,
+             coalesce(nullif(st.gender, ''''), ''U'') as gender,
+             st.dob,
+             extract(year from age(s.session_date, st.dob))::int as age_years
+      from sess s
+      join session_roster r on r.session_id = s.session_id
+      join students st on st.id = r.student_id
+      where st.dob is not null
+    ),
+    station_rows as (
+      select b.school_id, b.assessment_type, b.gender, b.age_years, ''situps''::text as station_code, sc.situps::numeric as value
+      from base b join scores sc on sc.session_id = b.session_id and sc.student_id = b.student_id
+      where sc.situps is not null
+      union all
+      select b.school_id, b.assessment_type, b.gender, b.age_years, ''shuttle_run'', sc.shuttle_run::numeric
+      from base b join scores sc on sc.session_id = b.session_id and sc.student_id = b.student_id
+      where sc.shuttle_run is not null
+      union all
+      select b.school_id, b.assessment_type, b.gender, b.age_years, ''sit_and_reach'', sc.sit_and_reach::numeric
+      from base b join scores sc on sc.session_id = b.session_id and sc.student_id = b.student_id
+      where sc.sit_and_reach is not null
+      union all
+      select b.school_id, b.assessment_type, b.gender, b.age_years, ''pullups'', sc.pullups::numeric
+      from base b join scores sc on sc.session_id = b.session_id and sc.student_id = b.student_id
+      where sc.pullups is not null
+      union all
+      select b.school_id, b.assessment_type, b.gender, b.age_years, ''broad_jump'', sc.broad_jump::numeric
+      from base b join scores sc on sc.session_id = b.session_id and sc.student_id = b.student_id
+      where sc.broad_jump is not null
+      union all
+      select b.school_id, b.assessment_type, b.gender, b.age_years, ''run_2400'', sc.run_2400::numeric
+      from base b join scores sc on sc.session_id = b.session_id and sc.student_id = b.student_id
+      where sc.run_2400 is not null
+      ' || case when v_has_ippt3 then '
+      union all
+      select b.school_id, b.assessment_type, b.gender, b.age_years, ''situps'', ip.situps::numeric
+      from base b join ippt3_scores ip on ip.session_id = b.session_id and ip.student_id = b.student_id
+      where ip.situps is not null
+      union all
+      select b.school_id, b.assessment_type, b.gender, b.age_years, ''pushups'', ip.pushups::numeric
+      from base b join ippt3_scores ip on ip.session_id = b.session_id and ip.student_id = b.student_id
+      where ip.pushups is not null
+      union all
+      select b.school_id, b.assessment_type, b.gender, b.age_years, ''run_2400'', ip.run_2400::numeric
+      from base b join ippt3_scores ip on ip.session_id = b.session_id and ip.student_id = b.student_id
+      where ip.run_2400 is not null
+      ' else '' end || '
+    )
+    insert into assessment_agg (
+      school_id, academic_year, assessment_type, station_code, gender, age_years,
+      n, avg, min, max, p25, p50, p75, stddev
+    )
+    select
+      school_id,
+      $2 as academic_year,
+      assessment_type,
+      station_code,
+      gender,
+      age_years,
+      count(*) as n,
+      avg(value) as avg,
+      min(value) as min,
+      max(value) as max,
+      percentile_cont(0.25) within group (order by value) as p25,
+      percentile_cont(0.50) within group (order by value) as p50,
+      percentile_cont(0.75) within group (order by value) as p75,
+      stddev_pop(value) as stddev
+    from station_rows
+    group by school_id, assessment_type, station_code, gender, age_years
+  ';
+  execute v_sql using p_school, p_academic_year;
+  get diagnostics v_station_rows = row_count;
+
+  -- Completion counts for NAPFA5 (5 stations vs 6 stations)
+  v_sql := '
+    with sess as (
+      select s.id as session_id,
+             s.school_id,
+             s.session_date,
+             extract(year from s.session_date)::int as session_year,
+             ' || case when v_has_assessment_type
+                then 'coalesce(s.assessment_type, ''NAPFA5'')'
+                else '''NAPFA5''' end || ' as assessment_type
+      from sessions s
+      where s.school_id = $1
+        and extract(year from s.session_date)::int = $2
+    ),
+    base as (
+      select s.school_id, s.session_id, s.assessment_type, s.session_date,
+             r.student_id,
+             coalesce(nullif(st.gender, ''''), ''U'') as gender,
+             st.dob,
+             extract(year from age(s.session_date, st.dob))::int as age_years
+      from sess s
+      join session_roster r on r.session_id = s.session_id
+      join students st on st.id = r.student_id
+      where st.dob is not null
+        and s.assessment_type = ''NAPFA5''
+    ),
+    scored as (
+      select b.school_id, b.assessment_type, b.gender, b.age_years,
+             (case when sc.situps is not null then 1 else 0 end
+              + case when sc.shuttle_run is not null then 1 else 0 end
+              + case when sc.sit_and_reach is not null then 1 else 0 end
+              + case when sc.pullups is not null then 1 else 0 end
+              + case when sc.broad_jump is not null then 1 else 0 end) as core_count,
+             (case when sc.run_2400 is not null then 1 else 0 end) as run_present
+      from base b
+      join scores sc on sc.session_id = b.session_id and sc.student_id = b.student_id
+    )
+    insert into assessment_award_agg (
+      school_id, academic_year, assessment_type, gender, age_years,
+      completed_5_count, completed_6_count, total_count
+    )
+    select
+      $1 as school_id,
+      $2 as academic_year,
+      assessment_type,
+      gender,
+      age_years,
+      sum(case when core_count = 5 then 1 else 0 end) as completed_5_count,
+      sum(case when core_count = 5 and run_present = 1 then 1 else 0 end) as completed_6_count,
+      count(*) as total_count
+    from scored
+    group by assessment_type, gender, age_years
+  ';
+  execute v_sql using p_school, p_academic_year;
+  get diagnostics v_award_rows = row_count;
+
+  -- Audit snapshot event (best-effort)
+  begin
+    perform public.audit_log_event(
+      'summary_data','snapshot', null, null, null,
+      jsonb_build_object(
+        'school_id', p_school,
+        'academic_year', p_academic_year,
+        'overwrote', v_prev_exists,
+        'station_rows', v_station_rows,
+        'award_rows', v_award_rows
+      ),
+      p_school, null, null, null
+    );
+  exception when others then null; end;
+end;
+$fn$;
+exception when others then null; end $$;
+
+do $$ begin
+  grant execute on function snapshot_assessment_agg(uuid, integer) to authenticated;
+  revoke execute on function snapshot_assessment_agg(uuid, integer) from anon;
+exception when others then null; end $$;
+
 
 

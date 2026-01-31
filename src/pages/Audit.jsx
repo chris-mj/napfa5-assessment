@@ -146,6 +146,7 @@ export default function Audit({ user }) {
       return `Student: ${who}`;
     }
     if (t === 'sessions') return `Session: ${ev.session_title || trunc(ev.entity_id)}`;
+    if (t === 'summary_data') return 'Summary Data Snapshot';
     if (t === 'export_pft') return 'PFT Export';
     if (t === 'profile_cards') return 'Profile Cards';
     if (t === 'import_students') return 'Import Students';
@@ -178,6 +179,11 @@ export default function Audit({ user }) {
       if (d.class) chips.push(`class: ${d.class}`);
       if (d.rows!=null) chips.push(`rows: ${d.rows}`);
       if (d.file) chips.push(d.file);
+    } else if (t === 'summary_data') {
+      if (d.academic_year != null) chips.push(`year: ${d.academic_year}`);
+      if (d.station_rows != null) chips.push(`station rows: ${d.station_rows}`);
+      if (d.award_rows != null) chips.push(`award rows: ${d.award_rows}`);
+      if (d.overwrote != null) chips.push(`overwrote: ${d.overwrote}`);
     } else if (t === 'profile_cards') {
       if (d.count!=null) chips.push(`count: ${d.count}`);
       if (d.file) chips.push(d.file);
@@ -223,8 +229,10 @@ export default function Audit({ user }) {
               <option value="scores">scores</option>
               <option value="session_roster">session_roster</option>
               <option value="sessions">sessions</option>
+              <option value="students">students</option>
               <option value="enrollments">enrollments</option>
               <option value="memberships">memberships</option>
+              <option value="summary_data">summary_data</option>
               <option value="export_pft">export_pft</option>
               <option value="profile_cards">profile_cards</option>
               <option value="import_students">import_students</option>

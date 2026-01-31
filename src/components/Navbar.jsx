@@ -197,10 +197,13 @@ export default function Navbar({ user, onLogout }) {
                         </svg>
                       </button>
                       {insightsOpen && (
-                        <div className="absolute left-0 top-full -mt-px w-44 bg-white border border-slate-200 rounded-md shadow-lg ring-1 ring-black/5 z-50" role="menu" aria-label="Insights menu">
+                        <div className="absolute left-0 top-full -mt-px w-52 bg-white border border-slate-200 rounded-md shadow-lg ring-1 ring-black/5 z-50" role="menu" aria-label="Insights menu">
                           <NavLink to="/gamification" onClick={() => setInsightsOpen(false)} className={({ isActive }) => `block px-3 py-2 text-slate-700 hover:bg-blue-50 ${isActive ? 'bg-blue-100/70 text-blue-900' : ''}`} role="menuitem">Challenge Hub</NavLink>
                           <NavLink to="/charts" onClick={() => setInsightsOpen(false)} className={({ isActive }) => `block px-3 py-2 text-slate-700 hover:bg-blue-50 ${isActive ? 'bg-blue-100/70 text-blue-900' : ''}`} role="menuitem">Charts</NavLink>
                           <NavLink to="/audit" onClick={() => setInsightsOpen(false)} className={({ isActive }) => `block px-3 py-2 text-slate-700 hover:bg-blue-50 ${isActive ? 'bg-blue-100/70 text-blue-900' : ''}`} role="menuitem">Audit</NavLink>
+                          {isOwner && (
+                            <NavLink to="/summary-data" onClick={() => setInsightsOpen(false)} className={({ isActive }) => `block px-3 py-2 text-slate-700 hover:bg-blue-50 ${isActive ? 'bg-blue-100/70 text-blue-900' : ''}`} role="menuitem">Summary Data</NavLink>
+                          )}
                         </div>
                       )}
                     </div>
@@ -309,6 +312,9 @@ export default function Navbar({ user, onLogout }) {
                           {canScoreEntry && (
                             <NavLink to="/add-attempt" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Score Entry</NavLink>
                           )}
+                          {canViewScore && (
+                            <NavLink to="/view-score" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>View Score</NavLink>
+                          )}
                           {(canManageUsers || isOwner) && (
                             <NavLink to="/pft-calculator" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Award Calculator</NavLink>
                           )}
@@ -329,9 +335,6 @@ export default function Navbar({ user, onLogout }) {
                   )}
                   <div className="pt-1">
                     <div className="text-xs uppercase tracking-wide text-gray-400 px-1">Learn</div>
-                    {canViewScore && (
-                      <NavLink to="/view-score" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>View Score</NavLink>
-                    )}
                     <NavLink to="/target-score" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Target Score</NavLink>
                     <NavLink to="/learning-hub" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Learning Hub</NavLink>
                   </div>
@@ -341,6 +344,9 @@ export default function Navbar({ user, onLogout }) {
                       <NavLink to="/gamification" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Challenge Hub</NavLink>
                       <NavLink to="/charts" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Charts</NavLink>
                       <NavLink to="/audit" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Audit</NavLink>
+                      {isOwner && (
+                        <NavLink to="/summary-data" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Summary Data</NavLink>
+                      )}
                     </div>
                   )}
                   <NavLink to="/contact" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Contact Us</NavLink>

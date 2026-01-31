@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabaseClient'
 import { parseNapfaCsv } from '../utils/napfaCsv'
 import { useToast } from '../components/ToastProvider'
 import { normalizeStudentId } from '../utils/ids'
+import { isPlatformOwner } from '../lib/roles'
 
 export default function ManageStudents({ user }) {
   const [membership, setMembership] = useState(null)
@@ -40,6 +41,10 @@ export default function ManageStudents({ user }) {
   const [importSummaryUrl, setImportSummaryUrl] = useState('')
   const [importProgress, setImportProgress] = useState(0)
   const { showToast } = useToast()
+  const isOwner = isPlatformOwner(user)
+  const [summaryYear, setSummaryYear] = useState(new Date().getFullYear())
+  const [summaryBusy, setSummaryBusy] = useState(false)
+  const [summaryLast, setSummaryLast] = useState('')
 
   useEffect(() => {
     if (!user?.id) return
@@ -107,6 +112,12 @@ export default function ManageStudents({ user }) {
     const set = new Set((rows || []).map(r => r.academic_year).filter(Boolean))
     return Array.from(set).sort((a,b)=>b-a)
   }, [rows])
+
+  const summaryYearOptions = useMemo(() => {
+    const y = new Date().getFullYear()
+    const set = new Set([y, ...(distinctYears || [])])
+    return Array.from(set).sort((a,b)=>b-a)
+  }, [distinctYears])
 
   // Convenience lower-cased role for gating actions
   const roleLower = String(membership?.role || '').toLowerCase()
@@ -196,6 +207,54 @@ export default function ManageStudents({ user }) {
       try { showToast('success', `Deactivated ${ids.length} enrollment(s).`) } catch {}
     } catch (e) {
       try { showToast('error', e?.message || 'Bulk deactivation failed.') } catch {}
+    }
+  }
+
+  useEffect(() => {
+    if (!isOwner || !membership?.school_id || !summaryYear) return
+    const loadSummaryStatus = async () => {
+      const { data, error: err } = await supabase
+        .from('assessment_agg')
+        .select('created_at')
+        .eq('school_id', membership.school_id)
+        .eq('academic_year', Number(summaryYear))
+        .order('created_at', { ascending: false })
+        .limit(1)
+      if (err) { setSummaryLast(''); return }
+      setSummaryLast(data?.[0]?.created_at || '')
+    }
+    loadSummaryStatus()
+  }, [isOwner, membership?.school_id, summaryYear])
+
+  const createSummaryData = async () => {
+    if (!membership?.school_id || !summaryYear) return
+    try {
+      const hasExisting = !!summaryLast
+      const ok = window.confirm(
+        hasExisting
+          ? `Summary data already exists for ${summaryYear}. Recreate it?`
+          : `Create summary data for ${summaryYear}?`
+      )
+      if (!ok) return
+      setSummaryBusy(true)
+      const { error: rpcErr } = await supabase.rpc('snapshot_assessment_agg', {
+        p_school: membership.school_id,
+        p_academic_year: Number(summaryYear)
+      })
+      if (rpcErr) throw rpcErr
+      try { showToast('success', 'Summary data created.') } catch {}
+      const { data } = await supabase
+        .from('assessment_agg')
+        .select('created_at')
+        .eq('school_id', membership.school_id)
+        .eq('academic_year', Number(summaryYear))
+        .order('created_at', { ascending: false })
+        .limit(1)
+      setSummaryLast(data?.[0]?.created_at || '')
+    } catch (e) {
+      try { showToast('error', e?.message || 'Failed to create summary data.') } catch {}
+    } finally {
+      setSummaryBusy(false)
     }
   }
 
@@ -735,6 +794,20 @@ export default function ManageStudents({ user }) {
                 )}
               </div>
             </div>
+            {isOwner && (
+              <div className="w-full flex flex-wrap items-center gap-2 rounded border bg-gray-50 px-3 py-2">
+                <div className="text-sm text-gray-700 font-semibold">Owner Tools</div>
+                <select className="px-2 py-2 border rounded bg-white" value={summaryYear} onChange={(e)=>setSummaryYear(e.target.value)}>
+                  {summaryYearOptions.map(y => (<option key={y} value={y}>{y}</option>))}
+                </select>
+                <button onClick={createSummaryData} disabled={summaryBusy || !membership?.school_id} className="px-3 py-2 border rounded bg-white hover:bg-gray-50 disabled:opacity-60">
+                  {summaryBusy ? 'Creating...' : 'Create Summary Data'}
+                </button>
+                <div className="text-xs text-gray-500 whitespace-nowrap">
+                  {summaryLast ? `Last snapshot: ${new Date(summaryLast).toLocaleString()}` : 'No snapshot yet'}
+                </div>
+              </div>
+            )}
             {/* Purge School Data button removed */}
               {/* Danger zone note removed */}
           </div>

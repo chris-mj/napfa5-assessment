@@ -29,6 +29,7 @@ const ManageStudents = lazy(() => import("./pages/ManageStudents"));
 const LearningHub = lazy(() => import("./pages/LearningHub"));
 const ChartsPage = lazy(() => import("./pages/Charts"));
 const Gamification = lazy(() => import("./pages/Gamification"));
+const SummaryData = lazy(() => import("./pages/SummaryData"));
 
 export default function App() {
     const [user, setUser] = useState(null);
@@ -79,6 +80,10 @@ function AdminGuard({ user, children }) {
     }, [user?.id]);
     if (allowed === null) return <LoadingOverlay />;
     return allowed ? children : <Navigate to="/dashboard" replace />;
+}
+
+function OwnerGuard({ user, children }) {
+    return isPlatformOwner(user) ? children : <Navigate to="/dashboard" replace />;
 }
 
 function AnimatedRoutes({ user, setUser }) {
@@ -226,6 +231,18 @@ function AnimatedRoutes({ user, setUser }) {
                             user ? (
                                 <PageFade>
                                   <AdminGuard user={user}><Gamification user={user} /></AdminGuard>
+                                </PageFade>
+                            ) : (
+                                <Navigate to="/login" replace />
+                            )
+                        }
+                    />
+                    <Route
+                        path="/summary-data"
+                        element={
+                            user ? (
+                                <PageFade>
+                                  <OwnerGuard user={user}><SummaryData user={user} /></OwnerGuard>
                                 </PageFade>
                             ) : (
                                 <Navigate to="/login" replace />
