@@ -1,6 +1,7 @@
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useState, lazy, Suspense } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { SpeedInsights } from "@vercel/speed-insights/react";
 import { supabase } from "./lib/supabaseClient";
 import { isPlatformOwner } from "./lib/roles";
 import Nav from "./components/Navbar";
@@ -50,9 +51,12 @@ export default function App() {
     if (loading) return <LoadingOverlay />;
 
     return (
-        <Router>
-            <AnimatedRoutes user={user} setUser={setUser} />
-        </Router>
+        <>
+            <Router>
+                <AnimatedRoutes user={user} setUser={setUser} />
+            </Router>
+            <SpeedInsights />
+        </>
     );
 }
 
