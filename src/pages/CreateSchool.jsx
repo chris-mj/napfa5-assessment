@@ -13,11 +13,15 @@ export default function CreateSchool({ user }) {
 
     const [query, setQuery] = useState("");
     const [adding, setAdding] = useState(false);
-    const [newSchool, setNewSchool] = useState({ name: "", type: "secondaryJC" });
+    const [newSchool, setNewSchool] = useState({ name: "", type: "secondaryJC", code: "" });
 
     const [editingId, setEditingId] = useState(null);
-    const [editForm, setEditForm] = useState({ name: "", type: "secondaryJC" });
+    const [editForm, setEditForm] = useState({ name: "", type: "secondaryJC", code: "" });
     const [saving, setSaving] = useState(false);
+    const normalizeCode = (value) => {
+        const trimmed = String(value || "").trim();
+        return trimmed ? trimmed.toUpperCase() : "";
+    };
 
     useEffect(() => {
         if (!allowed || !user) return;
@@ -27,7 +31,7 @@ export default function CreateSchool({ user }) {
             setMessage("");
             const { data, error } = await supabase
                 .from("schools")
-                .select("id, name, type")
+                .select("id, name, type, code")
                 .order("name");
             if (!ignore) {
                 if (error) {
@@ -48,41 +52,43 @@ export default function CreateSchool({ user }) {
         return !q ? schools : schools.filter(s => (s.name||"").toLowerCase().includes(q));
     }, [schools, query]);
 
-    const startAdd = () => { setAdding(true); setNewSchool({ name: "", type: "secondaryJC" }); setMessage(""); };
-    const cancelAdd = () => { setAdding(false); setNewSchool({ name: "", type: "secondaryJC" }); };
+    const startAdd = () => { setAdding(true); setNewSchool({ name: "", type: "secondaryJC", code: "" }); setMessage(""); };
+    const cancelAdd = () => { setAdding(false); setNewSchool({ name: "", type: "secondaryJC", code: "" }); };
 
     const submitAdd = async (e) => {
         e.preventDefault();
         if (!allowed) { setMessage("Access denied."); return; }
         if (!newSchool.name.trim()) { setMessage("School name is required."); return; }
         setSaving(true);
+        const code = normalizeCode(newSchool.code);
         const { data, error } = await supabase
             .from("schools")
-            .insert([{ name: newSchool.name.trim(), type: newSchool.type }])
-            .select("id, name, type")
+            .insert([{ name: newSchool.name.trim(), type: newSchool.type, code: code || null }])
+            .select("id, name, type, code")
             .single();
         setSaving(false);
         if (error) { setMessage(error.message || "Failed to create school."); return; }
         setSchools(prev => [...prev, data].sort((a,b)=>a.name.localeCompare(b.name)));
         setAdding(false);
-        setNewSchool({ name: "", type: "secondaryJC" });
+        setNewSchool({ name: "", type: "secondaryJC", code: "" });
         setMessage("School created.");
     };
 
-    const startEdit = (s) => { setEditingId(s.id); setEditForm({ name: s.name, type: s.type }); setMessage(""); };
-    const cancelEdit = () => { setEditingId(null); setEditForm({ name: "", type: "secondaryJC" }); };
+    const startEdit = (s) => { setEditingId(s.id); setEditForm({ name: s.name, type: s.type, code: s.code || "" }); setMessage(""); };
+    const cancelEdit = () => { setEditingId(null); setEditForm({ name: "", type: "secondaryJC", code: "" }); };
     const submitEdit = async (e) => {
         e?.preventDefault?.();
         if (!editingId) return;
         if (!editForm.name.trim()) { setMessage("School name is required."); return; }
         setSaving(true);
+        const code = normalizeCode(editForm.code);
         const { error } = await supabase
             .from("schools")
-            .update({ name: editForm.name.trim(), type: editForm.type })
+            .update({ name: editForm.name.trim(), type: editForm.type, code: code || null })
             .eq("id", editingId);
         setSaving(false);
         if (error) { setMessage(error.message || "Failed to update school."); return; }
-        setSchools(prev => prev.map(s => s.id === editingId ? { ...s, name: editForm.name.trim(), type: editForm.type } : s).sort((a,b)=>a.name.localeCompare(b.name)));
+        setSchools(prev => prev.map(s => s.id === editingId ? { ...s, name: editForm.name.trim(), type: editForm.type, code: code || null } : s).sort((a,b)=>a.name.localeCompare(b.name)));
         setEditingId(null);
         setMessage("School updated.");
     };
@@ -125,6 +131,10 @@ export default function CreateSchool({ user }) {
                         <input value={newSchool.name} onChange={(e)=>setNewSchool(p=>({...p, name: e.target.value}))} className="border rounded p-2 w-full" required />
                     </label>
                     <label className="text-sm">
+                        <div className="mb-1">Abbreviation</div>
+                        <input value={newSchool.code} onChange={(e)=>setNewSchool(p=>({...p, code: e.target.value}))} className="border rounded p-2 w-full" placeholder="e.g. ABC" />
+                    </label>
+                    <label className="text-sm">
                         <div className="mb-1">Type</div>
                         <select value={newSchool.type} onChange={(e)=>setNewSchool(p=>({...p, type: e.target.value}))} className="border rounded p-2 w-full">
                             <option value="primary">Primary</option>
@@ -151,6 +161,7 @@ export default function CreateSchool({ user }) {
                                     <thead>
                                         <tr className="bg-gray-100 text-left">
                                             <th className="px-3 py-2 border">Name</th>
+                                            <th className="px-3 py-2 border w-32">Abbrev</th>
                                             <th className="px-3 py-2 border w-40">Actions</th>
                                         </tr>
                                     </thead>
@@ -167,6 +178,13 @@ export default function CreateSchool({ user }) {
                                                         s.name
                                                     )}
                                                 </td>
+                                                <td className="px-3 py-2 border">
+                                                    {editingId === s.id ? (
+                                                        <input value={editForm.code} onChange={(e)=>setEditForm(p=>({...p, code: e.target.value}))} className="border rounded p-1 w-full" />
+                                                    ) : (
+                                                        s.code || "-"
+                                                    )}
+                                                </td>
                                                 <td className="px-3 py-2 border space-x-2">
                                                     {editingId === s.id ? (
                                                         <>
@@ -175,7 +193,7 @@ export default function CreateSchool({ user }) {
                                                         </>
                                                     ) : (
                                                         <>
-                                                            <button className="px-2 py-1 border rounded" onClick={()=>{ setEditForm({ name: s.name, type: 'primary' }); startEdit(s); }}>Edit</button>
+                                                            <button className="px-2 py-1 border rounded" onClick={()=>{ setEditForm({ name: s.name, type: 'primary', code: s.code || '' }); startEdit(s); }}>Edit</button>
                                                             <button className="px-2 py-1 border rounded text-red-600" onClick={()=>removeSchool(s)} disabled={saving}>Delete</button>
                                                         </>
                                                     )}
@@ -201,6 +219,7 @@ export default function CreateSchool({ user }) {
                                     <thead>
                                         <tr className="bg-gray-100 text-left">
                                             <th className="px-3 py-2 border">Name</th>
+                                            <th className="px-3 py-2 border w-32">Abbrev</th>
                                             <th className="px-3 py-2 border w-40">Actions</th>
                                         </tr>
                                     </thead>
@@ -217,6 +236,13 @@ export default function CreateSchool({ user }) {
                                                         s.name
                                                     )}
                                                 </td>
+                                                <td className="px-3 py-2 border">
+                                                    {editingId === s.id ? (
+                                                        <input value={editForm.code} onChange={(e)=>setEditForm(p=>({...p, code: e.target.value}))} className="border rounded p-1 w-full" />
+                                                    ) : (
+                                                        s.code || "-"
+                                                    )}
+                                                </td>
                                                 <td className="px-3 py-2 border space-x-2">
                                                     {editingId === s.id ? (
                                                         <>
@@ -225,7 +251,7 @@ export default function CreateSchool({ user }) {
                                                         </>
                                                     ) : (
                                                         <>
-                                                            <button className="px-2 py-1 border rounded" onClick={()=>{ setEditForm({ name: s.name, type: 'secondaryJC' }); startEdit(s); }}>Edit</button>
+                                                            <button className="px-2 py-1 border rounded" onClick={()=>{ setEditForm({ name: s.name, type: 'secondaryJC', code: s.code || '' }); startEdit(s); }}>Edit</button>
                                                             <button className="px-2 py-1 border rounded text-red-600" onClick={()=>removeSchool(s)} disabled={saving}>Delete</button>
                                                         </>
                                                     )}

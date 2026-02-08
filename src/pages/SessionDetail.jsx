@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import AttemptEditor from "../components/AttemptEditor";
 import { jsPDF } from "jspdf";
 import { drawBarcode } from "../utils/barcode";
@@ -13,6 +13,9 @@ import RosterDualList from "../components/RosterDualList";
 import SessionHouses from "../components/SessionHouses";
 
 const ROLE_CAN_MANAGE = ["superadmin", "admin"];
+const RESET_RUN_ENDPOINT = import.meta.env.DEV
+    ? 'http://localhost:3000/api/run/resetConfig'
+    : 'https://napfa5.sg/api/run/resetConfig';
 
 function RosterRow({ s, sessionId, canRecord, onSaved }) {
     const [open, setOpen] = useState(false);
@@ -70,9 +73,21 @@ export default function SessionDetail({ user }) {
     const [showIncomplete, setShowIncomplete] = useState(true);
     const [statusUpdating, setStatusUpdating] = useState(false);
     const [summaryOpen, setSummaryOpen] = useState(false);
+    const [runConfigs, setRunConfigs] = useState([]);
+    const [expandedRunConfigId, setExpandedRunConfigId] = useState(null);
+    const [runConfigForm, setRunConfigForm] = useState({
+        name: "",
+        template_key: "A",
+        laps_required: 3,
+        enforcement: "OFF",
+        scan_gap_ms: 10000
+    });
+    const [runConfigSaving, setRunConfigSaving] = useState(false);
+    const [runConfigFlash, setRunConfigFlash] = useState("");
     const [activeTab, setActiveTab] = useState(() => {
         if (location.hash === '#scores') return 'scores';
         if (location.hash === '#houses') return 'houses';
+        if (location.hash === '#run-setup') return 'run-setup';
         return 'roster';
     });
 
@@ -83,6 +98,8 @@ export default function SessionDetail({ user }) {
     const platformOwner = isPlatformOwner(user);
     const canManage = useMemo(() => platformOwner || ROLE_CAN_MANAGE.includes(membership?.role), [platformOwner, membership]);
     const rosterEditable = canManage && session?.status !== 'completed';
+    const checkpointTemplates = new Set(["B", "C"]);
+    const defaultRunEnforcement = (templateKey) => (checkpointTemplates.has(templateKey) ? "SOFT" : "OFF");
 
     const formatDDMMYYYY = (iso) => {
         if (!iso) return "";
@@ -174,6 +191,12 @@ export default function SessionDetail({ user }) {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [id, session?.assessment_type]);
 
+    useEffect(() => {
+        if (!id) return;
+        loadRunConfigs();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [id]);
+
     // Recompute counts whenever roster changes to keep progress in sync
     useEffect(() => {
         if (!id) return;
@@ -184,13 +207,21 @@ export default function SessionDetail({ user }) {
 
     // Keep tab state in sync with URL hash
     useEffect(() => {
-        const fromHash = location.hash === '#scores' ? 'scores' : (location.hash === '#houses' ? 'houses' : 'roster');
+        const fromHash = location.hash === '#scores'
+            ? 'scores'
+            : (location.hash === '#houses'
+                ? 'houses'
+                : (location.hash === '#run-setup' ? 'run-setup' : 'roster'));
         if (fromHash !== activeTab) setActiveTab(fromHash);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [location.hash]);
 
     useEffect(() => {
-        const desiredHash = activeTab === 'scores' ? '#scores' : (activeTab === 'houses' ? '#houses' : '#roster');
+        const desiredHash = activeTab === 'scores'
+            ? '#scores'
+            : (activeTab === 'houses'
+                ? '#houses'
+                : (activeTab === 'run-setup' ? '#run-setup' : '#roster'));
         if (location.hash !== desiredHash) {
             navigate({ hash: desiredHash }, { replace: true });
         }
@@ -219,6 +250,17 @@ export default function SessionDetail({ user }) {
             return { id: s.id, student_identifier: s.student_identifier, name: s.name, class: cls };
         });
         setRoster(list);
+    };
+
+    const loadRunConfigs = async () => {
+        if (!id) return;
+        const { data, error: err } = await supabase
+            .from('run_configs')
+            .select('*')
+            .eq('session_id', id)
+            .order('created_at', { ascending: false });
+        if (err) return;
+        setRunConfigs(data || []);
     };
 
     // Reload roster when session year becomes available to compute class column
@@ -363,6 +405,12 @@ export default function SessionDetail({ user }) {
         return () => clearTimeout(timer);
     }, [flash]);
 
+    useEffect(() => {
+        if (!runConfigFlash) return;
+        const timer = setTimeout(() => setRunConfigFlash(""), 3500);
+        return () => clearTimeout(timer);
+    }, [runConfigFlash]);
+
     const handleEditToggle = () => {
         if (!session) return;
         setFormState({ title: session.title, session_date: toInputDate(session.session_date) });
@@ -391,6 +439,190 @@ export default function SessionDetail({ user }) {
             setFlash(err.message || "Unable to update session.");
         } finally {
             setFormSubmitting(false);
+        }
+    };
+
+    const handleDownloadDataUrl = (dataUrl, fileName) => {
+        if (!dataUrl) return;
+        const link = document.createElement('a');
+        link.href = dataUrl;
+        link.download = fileName;
+        link.click();
+    };
+    const handleCreateRunConfig = async () => {
+        if (!session) return;
+        setRunConfigSaving(true);
+        setRunConfigFlash("");
+        try {
+            const token = crypto.randomUUID();
+            const payload = {
+                session_id: session.id,
+                name: runConfigForm.name || null,
+                template_key: runConfigForm.template_key,
+                laps_required: Number(runConfigForm.laps_required) || 1,
+                enforcement: runConfigForm.enforcement,
+                scan_gap_ms: Number(runConfigForm.scan_gap_ms) || 10000,
+                pairing_token: token
+            };
+            const { data, error: err } = await supabase
+                .from('run_configs')
+                .insert(payload)
+                .select()
+                .single();
+            if (err) throw err;
+            setRunConfigForm({
+                name: "",
+                template_key: "A",
+                laps_required: 3,
+                enforcement: "OFF",
+                scan_gap_ms: 10000
+            });
+            setRunConfigFlash("Run config created. Generate QR/barcode if needed.");
+            await loadRunConfigs();
+        } catch (err) {
+            setRunConfigFlash(err.message || "Failed to create run config.");
+        } finally {
+            setRunConfigSaving(false);
+        }
+    };
+
+    const updateRunConfigLocal = (configId, patch) => {
+        setRunConfigs((prev) => prev.map((c) => {
+            if (c.id !== configId) return c;
+            const next = { ...c, ...patch };
+            if (patch.template_key && !checkpointTemplates.has(patch.template_key)) {
+                next.enforcement = "OFF";
+            } else if (patch.template_key && checkpointTemplates.has(patch.template_key) && !next.enforcement) {
+                next.enforcement = defaultRunEnforcement(patch.template_key);
+            }
+            return next;
+        }));
+    };
+
+    const handleSaveRunConfig = async (config) => {
+        setRunConfigSaving(true);
+        setRunConfigFlash("");
+        try {
+            const { error: err } = await supabase
+                .from('run_configs')
+                .update({
+                    name: config.name || null,
+                    template_key: config.template_key,
+                    laps_required: Number(config.laps_required) || 1,
+                    enforcement: config.enforcement,
+                    scan_gap_ms: Number(config.scan_gap_ms) || 10000
+                })
+                .eq('id', config.id);
+            if (err) throw err;
+            setRunConfigFlash("Run config saved.");
+            await loadRunConfigs();
+        } catch (err) {
+            setRunConfigFlash(err.message || "Failed to save run config.");
+        } finally {
+            setRunConfigSaving(false);
+        }
+    };
+
+    const handleGenerateRunToken = async (config) => {
+        setRunConfigSaving(true);
+        setRunConfigFlash("");
+        try {
+            const token = crypto.randomUUID();
+            const { error: err } = await supabase
+                .from('run_configs')
+                .update({
+                    pairing_token: token,
+                    pairing_qr_data_url: null,
+                    pairing_barcode_data_url: null
+                })
+                .eq('id', config.id);
+            if (err) throw err;
+            setRunConfigFlash("New token generated. Create QR/barcode if needed.");
+            await loadRunConfigs();
+        } catch (err) {
+            setRunConfigFlash(err.message || "Failed to generate token.");
+        } finally {
+            setRunConfigSaving(false);
+        }
+    };
+
+    const handleResetRunConfig = async (config) => {
+        const confirmReset = window.confirm("Reset all synced run data for this config? Stations will need to resync after reset.");
+        if (!confirmReset) return;
+        setRunConfigSaving(true);
+        setRunConfigFlash("");
+        try {
+            const { data } = await supabase.auth.getSession();
+            const accessToken = data?.session?.access_token;
+            if (!accessToken) throw new Error("Missing login session.");
+            const response = await fetch(RESET_RUN_ENDPOINT, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${accessToken}`
+                },
+                body: JSON.stringify({ runConfigId: config.id, sessionId: session.id })
+            });
+            const body = await response.json().catch(() => null);
+            if (!response.ok) throw new Error(body?.error || 'Failed to reset run data.');
+            setRunConfigFlash("Run data reset. Ask stations to clear local data or wait for reset sync.");
+        } catch (err) {
+            setRunConfigFlash(err.message || "Failed to reset run data.");
+        } finally {
+            setRunConfigSaving(false);
+        }
+    };
+
+    const handleGenerateRunCodes = async (config) => {
+        if (!session?.id || !config?.pairing_token) {
+            setRunConfigFlash("Please generate or enter a pairing token first.");
+            return;
+        }
+        try {
+            const payload = `napfa5-run://pair?sessionId=${session.id}&runConfigId=${config.id}&token=${config.pairing_token}`;
+            const qrUrl = await drawQrDataUrl(payload, 256, 'M', 1);
+            const canvas = document.createElement('canvas');
+            drawBarcode(canvas, payload, { width: 2, height: 80, margin: 12, displayValue: false });
+            const barcodeUrl = canvas.toDataURL('image/png');
+            const { error: err } = await supabase
+                .from('run_configs')
+                .update({ pairing_qr_data_url: qrUrl, pairing_barcode_data_url: barcodeUrl })
+                .eq('id', config.id);
+            if (err) throw err;
+            setRunConfigFlash("QR and barcode generated.");
+            await loadRunConfigs();
+        } catch {
+            setRunConfigFlash("Failed to generate QR or barcode.");
+        }
+    };
+
+    const handleCopyRunToken = async (token) => {
+        if (!token) return;
+        try {
+            await navigator.clipboard.writeText(token);
+            setRunConfigFlash("Token copied.");
+        } catch {
+            setRunConfigFlash("Unable to copy token.");
+        }
+    };
+
+    const handleDeleteRunConfig = async (config) => {
+        const confirmDelete = window.confirm("Delete this run config? This action cannot be undone.");
+        if (!confirmDelete) return;
+        setRunConfigSaving(true);
+        setRunConfigFlash("");
+        try {
+            const { error: err } = await supabase
+                .from('run_configs')
+                .delete()
+                .eq('id', config.id);
+            if (err) throw err;
+            setRunConfigFlash("Run config deleted.");
+            await loadRunConfigs();
+        } catch (err) {
+            setRunConfigFlash(err.message || "Failed to delete run config.");
+        } finally {
+            setRunConfigSaving(false);
         }
     };
 
@@ -894,7 +1126,6 @@ export default function SessionDetail({ user }) {
                                     <option value="completed">completed</option>
                                 </select>
                             </div>
-
                             <div className="text-xs text-gray-600 flex items-center gap-1">
                                 <span>Type</span>
                                 {canManage ? (
@@ -1089,12 +1320,13 @@ export default function SessionDetail({ user }) {
                                 Delete Session
                             </button>
                         </div>
-                        
                     )
                 ) : (
                     <p className="text-sm text-gray-500">You have view-only access to this session.</p>
                 )}
             </section>
+
+            
             {/* Tabs (outside sticky header) */}
             <nav className="pb-2 overflow-x-auto">
                 <div role="tablist" aria-label="Session sections" className="inline-flex rounded-lg bg-gray-100 p-1 text-sm">
@@ -1128,6 +1360,18 @@ export default function SessionDetail({ user }) {
                     >
                         Houses
                     </button>
+                    {canManage && (
+                        <button
+                            role="tab"
+                            aria-selected={activeTab === 'run-setup'}
+                            className={(activeTab === 'run-setup'
+                                ? 'bg-white text-blue-700 shadow border border-gray-200'
+                                : 'text-gray-600 hover:text-gray-800') + ' px-3 py-1.5 rounded-md transition-colors'}
+                            onClick={() => setActiveTab('run-setup')}
+                        >
+                            Run Setup
+                        </button>
+                    )}
                 </div>
             </nav>
 
@@ -1147,6 +1391,311 @@ export default function SessionDetail({ user }) {
                   membership={membership}
                   canManage={rosterEditable}
                 />
+            ) : activeTab === 'run-setup' ? (
+                <section className="space-y-4">
+                    <div className="grid lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)] gap-4">
+                        <div className="border rounded-lg bg-white p-4">
+                            <div className="text-sm font-semibold text-gray-800 mb-2">How it works</div>
+                            <div className="text-xs text-gray-600 space-y-2">
+                                <div>1. Create a run config for a specific setup.</div>
+                                <div>2. Generate the pairing token + QR/barcode.</div>
+                                <div>3. Scan the token on each run device to join.</div>
+                            </div>
+                            <div className="text-sm font-semibold text-gray-800 mt-4 mb-3">Create Run Config</div>
+                            <div className="text-xs text-gray-600 mb-3">
+                                Create a run configuration and share its pairing token with run devices.
+                            </div>
+                            <div className="grid sm:grid-cols-2 gap-3">
+                                {['A','B','C','D','E'].map((k) => (
+                                    <button
+                                        key={k}
+                                        type="button"
+                                        onClick={() => setRunConfigForm((prev) => ({
+                                            ...prev,
+                                            template_key: k,
+                                            enforcement: defaultRunEnforcement(k)
+                                        }))}
+                                        className={`border rounded-lg p-0 text-left hover:border-blue-300 ${runConfigForm.template_key === k ? 'border-blue-500 bg-blue-50/40' : 'border-gray-200'}`}
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <img src={`/setup${k}.svg`} alt={`Setup ${k}`} className="w-64 h-64 object-contain" />
+                                            <div className="max-w-[160px]">
+                                                <div className="text-sm font-semibold">Setup {k}</div>
+                                                <div className="text-xs text-gray-600">
+                                                    {k === 'A' && 'Single scan (lap start/end)'}
+                                                    {k === 'B' && 'Lap scan + Checkpoint A'}
+                                                    {k === 'C' && 'Lap scan + Checkpoints A & B'}
+                                                    {k === 'D' && 'Start + Lap scan'}
+                                                    {k === 'E' && 'Lap scan + Finish'}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </button>
+                                ))}
+                            </div>
+                            <div className="text-xs text-gray-500 mt-2">
+                                Setups B/C include checkpoint scans; others are single-lap scan points.
+                            </div>
+                            <div className="grid sm:grid-cols-2 gap-3 mt-4">
+                                <div>
+                                    <label className="block text-sm mb-1">Config Name</label>
+                                    <input
+                                        value={runConfigForm.name}
+                                        onChange={(e) => setRunConfigForm((prev) => ({ ...prev, name: e.target.value }))}
+                                        className="border rounded p-2 w-full"
+                                        placeholder="e.g., P5 Run Setup"
+                                    />
+                                    <div className="text-xs text-gray-500 mt-1">Shown to staff only.</div>
+                                </div>
+                                <div>
+                                    <label className="block text-sm mb-1">Laps Required</label>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        value={runConfigForm.laps_required}
+                                        onChange={(e) => setRunConfigForm((prev) => ({ ...prev, laps_required: e.target.value }))}
+                                        className="border rounded p-2 w-full"
+                                    />
+                                    <div className="text-xs text-gray-500 mt-1">Total laps needed to finish.</div>
+                                </div>
+                                <div>
+                                    <label className="block text-sm mb-1">Checkpoint Enforcement</label>
+                                    <select
+                                        value={runConfigForm.enforcement}
+                                        onChange={(e) => setRunConfigForm((prev) => ({ ...prev, enforcement: e.target.value }))}
+                                        className="border rounded p-2 w-full"
+                                        disabled={!checkpointTemplates.has(runConfigForm.template_key)}
+                                    >
+                                        {['OFF','SOFT','STRICT'].map((k) => (
+                                            <option key={k} value={k}>{k}</option>
+                                        ))}
+                                    </select>
+                                    <div className="text-xs text-gray-500 mt-1">
+                                        Used only in Setup B/C. Default OFF for A/D/E, SOFT for B/C.
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="block text-sm mb-1">Time Between Scans</label>
+                                    <select
+                                        value={runConfigForm.scan_gap_ms}
+                                        onChange={(e) => setRunConfigForm((prev) => ({ ...prev, scan_gap_ms: e.target.value }))}
+                                        className="border rounded p-2 w-full"
+                                    >
+                                        {[5,10,15,20,25,30].map((s) => (
+                                            <option key={s} value={s * 1000}>{s} seconds</option>
+                                        ))}
+                                    </select>
+                                    <div className="text-xs text-gray-500 mt-1">Debounce window per runner.</div>
+                                </div>
+                            </div>
+                            <div className="pt-3 flex flex-wrap gap-2">
+                                <button
+                                    type="button"
+                                    onClick={handleCreateRunConfig}
+                                    disabled={runConfigSaving}
+                                    className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-60"
+                                >
+                                    {runConfigSaving ? 'Saving...' : 'Create Run Config'}
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="border rounded-lg bg-white p-4">
+                            <div className="text-sm font-semibold text-gray-800 mb-2">Run Configs</div>
+                            {runConfigs.length === 0 && (
+                                <div className="text-sm text-gray-600">No run configurations yet.</div>
+                            )}
+                            <div className="space-y-2">
+                                {runConfigs.map((config) => {
+                                const expanded = expandedRunConfigId === config.id;
+                                return (
+                                    <div key={config.id} className="border rounded-lg">
+                                        <div className="flex items-center justify-between gap-3 px-3 py-2">
+                                            <div className="flex items-center gap-3">
+                                                <img src={`/setup${config.template_key}.svg`} alt={`Setup ${config.template_key}`} className="w-12 h-12 object-contain" />
+                                                <div>
+                                                    <div className="text-sm font-semibold text-gray-800">
+                                                        {config.name || `Run Config ${config.id?.slice(0, 6)}`}
+                                                    </div>
+                                                    <div className="text-xs text-gray-600">
+                                                        Setup {config.template_key} - Laps {config.laps_required} - Enforcement {config.enforcement || 'OFF'}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setExpandedRunConfigId(expanded ? null : config.id)}
+                                                    className="text-xs px-3 py-1.5 border rounded hover:bg-gray-50"
+                                                >
+                                                    {expanded ? 'Hide' : 'Edit'}
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleDeleteRunConfig(config)}
+                                                    className="text-xs px-3 py-1.5 border rounded hover:bg-gray-50"
+                                                >
+                                                    Delete
+                                                </button>
+                                            </div>
+                                        </div>
+                                        {expanded && (
+                                            <div className="border-t px-3 py-3 space-y-3">
+                                                <div className="grid sm:grid-cols-2 gap-3">
+                                                    <div>
+                                                        <label className="block text-xs mb-1">Config Name</label>
+                                                        <input
+                                                            value={config.name || ''}
+                                                            onChange={(e) => updateRunConfigLocal(config.id, { name: e.target.value })}
+                                                            className="border rounded p-2 w-full"
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-xs mb-1">Template</label>
+                                                        <select
+                                                            value={config.template_key}
+                                                            onChange={(e) => updateRunConfigLocal(config.id, { template_key: e.target.value })}
+                                                            className="border rounded p-2 w-full"
+                                                        >
+                                                            {['A','B','C','D','E'].map((k) => (
+                                                                <option key={k} value={k}>Setup {k}</option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-xs mb-1">Laps Required</label>
+                                                        <input
+                                                            type="number"
+                                                            min="1"
+                                                            value={config.laps_required}
+                                                            onChange={(e) => updateRunConfigLocal(config.id, { laps_required: e.target.value })}
+                                                            className="border rounded p-2 w-full"
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-xs mb-1">Checkpoint Enforcement</label>
+                                                        <select
+                                                            value={config.enforcement || 'OFF'}
+                                                            onChange={(e) => updateRunConfigLocal(config.id, { enforcement: e.target.value })}
+                                                            className="border rounded p-2 w-full"
+                                                            disabled={!checkpointTemplates.has(config.template_key)}
+                                                        >
+                                                            {['OFF','SOFT','STRICT'].map((k) => (
+                                                                <option key={k} value={k}>{k}</option>
+                                                            ))}
+                                                        </select>
+                                                        <div className="text-xs text-gray-500 mt-1">
+                                                            Used only in Setup B/C.
+                                                        </div>
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-xs mb-1">Time Between Scans</label>
+                                                        <select
+                                                            value={config.scan_gap_ms || 10000}
+                                                            onChange={(e) => updateRunConfigLocal(config.id, { scan_gap_ms: e.target.value })}
+                                                            className="border rounded p-2 w-full"
+                                                        >
+                                                            {[5,10,15,20,25,30].map((s) => (
+                                                                <option key={s} value={s * 1000}>{s} seconds</option>
+                                                            ))}
+                                                        </select>
+                                                        <div className="text-xs text-gray-500 mt-1">Debounce window per runner.</div>
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-xs mb-1">Pairing Token</label>
+                                                        <input
+                                                            value={config.pairing_token || ''}
+                                                            readOnly
+                                                            className="border rounded p-2 w-full bg-gray-50"
+                                                        />
+                                                        <div className="text-xs text-gray-500 mt-1">Use this token in the run app.</div>
+                                                    </div>
+                                                </div>
+                                                <div className="flex flex-wrap gap-2">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleSaveRunConfig(config)}
+                                                        className="text-xs px-3 py-1.5 border rounded hover:bg-gray-50"
+                                                    >
+                                                        Save
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleGenerateRunToken(config)}
+                                                        className="text-xs px-3 py-1.5 border rounded hover:bg-gray-50"
+                                                    >
+                                                        Generate Token
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleGenerateRunCodes(config)}
+                                                        className="text-xs px-3 py-1.5 border rounded hover:bg-gray-50"
+                                                    >
+                                                        Create QR + Barcode
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleCopyRunToken(config.pairing_token)}
+                                                        className="text-xs px-3 py-1.5 border rounded hover:bg-gray-50"
+                                                        disabled={!config.pairing_token}
+                                                    >
+                                                        Copy Token
+                                                    </button>
+                                                </div>
+                                                <div className="flex flex-wrap gap-2">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleResetRunConfig(config)}
+                                                        className="text-xs px-3 py-1.5 border rounded hover:bg-gray-50"
+                                                    >
+                                                        Reset Run Data
+                                                    </button>
+                                                </div>
+                                                <div className="text-xs text-amber-600">Warning: reset deletes synced run events for this config. Stations should clear local data.</div>
+                                                {runConfigFlash && <div className="text-xs text-blue-600">{runConfigFlash}</div>}
+                                                {(config.pairing_qr_data_url || config.pairing_barcode_data_url) && (
+                                                    <div className="grid sm:grid-cols-2 gap-3 pt-2">
+                                                        <div className="border rounded-lg bg-gray-50 p-2 flex flex-col items-center gap-2">
+                                                            {config.pairing_qr_data_url ? (
+                                                                <img src={config.pairing_qr_data_url} alt="Pairing QR" className="w-40 h-40 object-contain" />
+                                                            ) : (
+                                                                <div className="text-xs text-gray-500">No QR generated yet.</div>
+                                                            )}
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleDownloadDataUrl(config.pairing_qr_data_url, `pairing-${config.id}-qr.png`)}
+                                                                className="text-xs px-3 py-1 border rounded hover:bg-gray-100"
+                                                                disabled={!config.pairing_qr_data_url}
+                                                            >
+                                                                Download QR
+                                                            </button>
+                                                        </div>
+                                                        <div className="border rounded-lg bg-gray-50 p-2 flex flex-col items-center gap-2">
+                                                            {config.pairing_barcode_data_url ? (
+                                                                <img src={config.pairing_barcode_data_url} alt="Pairing Barcode" className="w-full max-w-[240px] object-contain" />
+                                                            ) : (
+                                                                <div className="text-xs text-gray-500">No barcode generated yet.</div>
+                                                            )}
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleDownloadDataUrl(config.pairing_barcode_data_url, `pairing-${config.id}-barcode.png`)}
+                                                                className="text-xs px-3 py-1 border rounded hover:bg-gray-100"
+                                                                disabled={!config.pairing_barcode_data_url}
+                                                            >
+                                                                Download Barcode
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                </div>
+                </section>
             ) : (
                 <section className="space-y-4">
                     <div className="border rounded-lg overflow-x-auto bg-white">
@@ -1203,8 +1752,8 @@ export default function SessionDetail({ user }) {
                         </div>
                         <table className="w-full">
                             <thead>
-                                {((session?.assessment_type || 'NAPFA5') === 'IPPT3') ? (
-                                  <tr className="bg-gray-100 text-left">
+                            {((session?.assessment_type || 'NAPFA5') === 'IPPT3') ? (
+                                <tr className="bg-gray-100 text-left">
                                     <th className="px-3 py-2 border">Student ID</th>
                                     <th className="px-3 py-2 border">Name</th>
                                     <th className="px-3 py-2 border">Class</th>
@@ -1212,9 +1761,9 @@ export default function SessionDetail({ user }) {
                                     <th className="px-3 py-2 border">Push-ups</th>
                                     <th className="px-3 py-2 border">2.4km Run (mm:ss)</th>
                                     <th className="px-3 py-2 border w-40">Actions</th>
-                                  </tr>
-                                ) : (
-                                  <tr className="bg-gray-100 text-left">
+                                </tr>
+                            ) : (
+                                <tr className="bg-gray-100 text-left">
                                     <th className="px-3 py-2 border">Student ID</th>
                                     <th className="px-3 py-2 border">Name</th>
                                     <th className="px-3 py-2 border">Class</th>
@@ -1225,9 +1774,9 @@ export default function SessionDetail({ user }) {
                                     <th className="px-3 py-2 border">Broad Jump</th>
                                     <th className="px-3 py-2 border">Run (mm:ss)</th>
                                     <th className="px-3 py-2 border w-40">Actions</th>
-                                  </tr>
-                                )}
-                            </thead>
+                                </tr>
+                            )}
+                        </thead>
                             <tbody>
                             {(() => {
                                 const total = filteredSortedRoster.length;
@@ -1341,6 +1890,8 @@ function ScoreRowActions({ student, sessionId, canRecord, onSaved, isIppt3 }) {
 }
 
  
+
+
 
 
 

@@ -34,11 +34,18 @@ export default function difyUser({ user }) {
     const [profileSaving, setProfileSaving] = useState(false);
     const [profileForm, setProfileForm] = useState({ fullName: "", email: "" });
     const [profileFeedback, setProfileFeedback] = useState(null);
+    const [schoolCode, setSchoolCode] = useState("");
+    const [schoolCodeSaving, setSchoolCodeSaving] = useState(false);
+    const [schoolCodeFeedback, setSchoolCodeFeedback] = useState(null);
     
 
     const { showToast } = useToast();
 
     const platformOwner = isPlatformOwner(user);
+    const normalizeCode = (value) => {
+        const trimmed = String(value || "").trim();
+        return trimmed ? trimmed.toUpperCase() : "";
+    };
 
     useEffect(() => {
         if (!user) return;
@@ -46,7 +53,7 @@ export default function difyUser({ user }) {
             if (platformOwner) {
                 const { data, error } = await supabase
                     .from('schools')
-                    .select('id, name, type')
+                    .select('id, name, type, code')
                     .order('name');
                 if (error) {
                     console.error('Failed to load schools:', error.message);
@@ -57,7 +64,7 @@ export default function difyUser({ user }) {
             } else {
                 const { data, error } = await supabase
                     .from('memberships')
-                    .select('role, schools:schools!inner(id, name, type)')
+                    .select('role, schools:schools!inner(id, name, type, code)')
                     .eq('user_id', user.id)
                     .in('role', ['admin','superadmin']);
                 if (error) {
@@ -89,6 +96,14 @@ export default function difyUser({ user }) {
     }, [schools, schoolId]);
 
     const [currentRole, setCurrentRole] = useState("");
+    const currentSchool = useMemo(() => (schools || []).find(s => s.id === schoolId) || null, [schools, schoolId]);
+    const canEditSchoolCode = platformOwner || currentRole === 'superadmin' || currentRole === 'admin';
+    const codeDirty = normalizeCode(schoolCode) !== normalizeCode(currentSchool?.code || "");
+
+    useEffect(() => {
+        setSchoolCode(currentSchool?.code || "");
+        setSchoolCodeFeedback(null);
+    }, [currentSchool?.id]);
 
     const loadMembers = useCallback(
         async (targetSchoolId) => {
@@ -190,6 +205,30 @@ export default function difyUser({ user }) {
         } finally {
             setProfileSaving(false);
         }
+    };
+
+    const handleSaveSchoolCode = async () => {
+        if (!schoolId) return;
+        if (!canEditSchoolCode) {
+            setSchoolCodeFeedback({ type: 'error', text: 'You do not have permission to update the school abbreviation.' });
+            return;
+        }
+        setSchoolCodeSaving(true);
+        setSchoolCodeFeedback(null);
+        const code = normalizeCode(schoolCode);
+        const { error } = await supabase
+            .from('schools')
+            .update({ code: code || null })
+            .eq('id', schoolId);
+        if (error) {
+            setSchoolCodeFeedback({ type: 'error', text: error.message || 'Unable to update abbreviation.' });
+            showToast('error', error.message || 'Unable to update abbreviation');
+        } else {
+            setSchools((prev) => prev.map((s) => (s.id === schoolId ? { ...s, code: code || null } : s)));
+            setSchoolCodeFeedback({ type: 'success', text: 'School abbreviation updated.' });
+            showToast('success', 'School abbreviation updated');
+        }
+        setSchoolCodeSaving(false);
     };
 
     const handleAddUser = async (event) => {
@@ -382,6 +421,34 @@ export default function difyUser({ user }) {
       })()}
     </div>
   </label>
+  <div className="text-sm border rounded p-3 bg-gray-50">
+    <div className="font-medium mb-1">School Abbreviation</div>
+    <div className="flex items-center gap-2">
+      <input
+        value={schoolCode}
+        onChange={(e) => setSchoolCode(e.target.value)}
+        className="border rounded p-2 w-full"
+        placeholder="e.g. ABC"
+        disabled={!schoolId || !canEditSchoolCode}
+      />
+      <button
+        type="button"
+        onClick={handleSaveSchoolCode}
+        className="px-3 py-2 bg-blue-600 text-white rounded disabled:opacity-50"
+        disabled={!schoolId || !canEditSchoolCode || !codeDirty || schoolCodeSaving}
+      >
+        {schoolCodeSaving ? 'Saving...' : 'Save'}
+      </button>
+    </div>
+    {schoolCodeFeedback && (
+      <div className={`text-xs mt-2 ${schoolCodeFeedback.type === 'error' ? 'text-red-600' : 'text-green-600'}`}>
+        {schoolCodeFeedback.text}
+      </div>
+    )}
+    {!canEditSchoolCode && (
+      <div className="text-xs text-gray-500 mt-2">Only admins or above can edit this field.</div>
+    )}
+  </div>
   <div className="text-sm text-gray-700 border rounded p-3 bg-gray-50">
     <div className="font-medium mb-1">Role legend</div>
     <div className="flex flex-wrap gap-3">

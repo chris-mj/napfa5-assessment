@@ -34,7 +34,7 @@ export default function Sessions({ user }) {
     setMembershipLoading(true);
     supabase
       .from("memberships")
-      .select("id, school_id, role")
+      .select("id, school_id, role, schools:schools!inner(code)")
       .eq("user_id", user.id)
       .maybeSingle()
       .then(({ data, error: err }) => {
@@ -70,7 +70,8 @@ export default function Sessions({ user }) {
       // DB expects ISO date; display title uses DD/MM/YYYY
       const dateISO = `${yyyy}-${mm}-${dd}`;
       const dateDisplay = `${dd}/${mm}/${yyyy}`;
-      const title = `NAPFA Session ${dateDisplay}`;
+      const schoolCode = String(membership?.schools?.code || '').trim().toUpperCase();
+      const title = schoolCode ? `${schoolCode} - ${dateDisplay}` : `Session - ${dateDisplay}`;
       // Avoid created_by to prevent PostgREST schema cache errors
       const payload = { school_id: membership.school_id, title, session_date: dateISO, status: 'draft', assessment_type: 'NAPFA5' };
       const { data, error: err } = await supabase

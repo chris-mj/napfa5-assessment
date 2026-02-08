@@ -1,0 +1,27 @@
+{
+  "name": "@napfa5/run-app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@napfa5/run-core": "file:../../packages/run-core",
+    "@supabase/supabase-js": "^2.75.1",
+    "dexie": "^4.0.8",
+    "react": "^18.2.0",
+    "react-router-dom": "^7.9.4",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.66",
+    "@types/react-dom": "^18.2.22",
+    "@vitejs/plugin-react": "^4.0.0",
+    "typescript": "^5.6.3",
+    "vite": "6.4.1",
+    "vite-plugin-pwa": "^0.20.0"
+  }
+}

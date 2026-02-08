@@ -7,7 +7,10 @@
     },
     "scripts": {
         "dev": "vite",
+        "dev:main": "vite",
+        "dev:run": "vite --config apps/run/vite.config.ts --port 5174",
         "build": "node node_modules/vite/bin/vite.js build",
+        "build:run": "vite build --config apps/run/vite.config.ts",
         "preview": "vite preview",
         "generate:standards": "node scripts/generate-standards-json.js",
         "build:ippt3:tables": "node scripts/build-ippt3-tables.mjs"
@@ -17,11 +20,13 @@
         "@supabase/supabase-js": "^2.75.1",
         "@vitejs/plugin-react": "^4.0.0",
         "@zxing/browser": "^0.1.5",
+        "@zxing/library": "^0.21.0",
         "chart.js": "^4.3.0",
         "clsx": "^1.2.1",
+        "dexie": "^4.3.0",
         "framer-motion": "^12.23.24",
         "jsbarcode": "^3.12.1",
-        "jspdf": "^3.0.3",
+        "jspdf": "^4.0.0",
         "qrcode": "^1.5.3",
         "react": "^18.2.0",
         "react-chartjs-2": "^5.2.0",
@@ -34,6 +39,7 @@
         "postcss": "^8.4.24",
         "supabase": "^2.53.6",
         "tailwindcss": "^3.4.7",
-        "vite": "6.4.1"
+        "vite": "6.4.1",
+        "vite-plugin-pwa": "^0.20.0"
     }
 }

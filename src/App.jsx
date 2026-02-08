@@ -30,6 +30,7 @@ const LearningHub = lazy(() => import("./pages/LearningHub"));
 const ChartsPage = lazy(() => import("./pages/Charts"));
 const Gamification = lazy(() => import("./pages/Gamification"));
 const SummaryData = lazy(() => import("./pages/SummaryData"));
+const PlatformOwner = lazy(() => import("./pages/PlatformOwner"));
 
 export default function App() {
     const [user, setUser] = useState(null);
@@ -243,6 +244,18 @@ function AnimatedRoutes({ user, setUser }) {
                             user ? (
                                 <PageFade>
                                   <OwnerGuard user={user}><SummaryData user={user} /></OwnerGuard>
+                                </PageFade>
+                            ) : (
+                                <Navigate to="/login" replace />
+                            )
+                        }
+                    />
+                    <Route
+                        path="/platform-owner"
+                        element={
+                            user ? (
+                                <PageFade>
+                                  <OwnerGuard user={user}><PlatformOwner /></OwnerGuard>
                                 </PageFade>
                             ) : (
                                 <Navigate to="/login" replace />

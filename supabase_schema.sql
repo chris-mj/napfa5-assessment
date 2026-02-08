@@ -93,13 +93,21 @@ do $$ begin
 exception when others then null; end $$;
 
 -- Schools
-create table if not exists schools (
-  id uuid primary key default gen_random_uuid(),
-  name text not null,
-  code text unique,
-  type text,
-  created_at timestamptz default now()
-);
+  create table if not exists schools (
+    id uuid primary key default gen_random_uuid(),
+    name text not null,
+    code text unique,
+    type text,
+    created_at timestamptz default now()
+  );
+  do $$ begin
+    alter table if exists schools
+      add column if not exists code text;
+  exception when others then null; end $$;
+  do $$ begin
+    alter table if exists schools
+      add constraint schools_code_key unique (code);
+  exception when others then null; end $$;
 
 -- Restrict school type
 do $$ begin
@@ -153,6 +161,9 @@ create table if not exists sessions (
   title text not null,
   session_date date not null,
   status text default 'draft' not null,
+  pairing_token text,
+  pairing_qr_data_url text,
+  pairing_barcode_data_url text,
   created_by uuid,
   created_at timestamptz default now()
 );
@@ -161,6 +172,52 @@ do $$ begin
   alter table if exists sessions
     add constraint sessions_status_check check (status in ('draft','active','completed'));
 exception when others then null; end $$;
+
+do $$ begin
+  alter table if exists sessions
+    add column if not exists pairing_token text;
+exception when others then null; end $$;
+
+do $$ begin
+  alter table if exists sessions
+    add column if not exists pairing_qr_data_url text;
+exception when others then null; end $$;
+
+do $$ begin
+  alter table if exists sessions
+    add column if not exists pairing_barcode_data_url text;
+exception when others then null; end $$;
+
+-- Run configs: per-session run setup + pairing tokens
+create table if not exists run_configs (
+  id uuid primary key default gen_random_uuid(),
+  session_id uuid not null references sessions(id) on delete cascade,
+  name text,
+  template_key text not null,
+  laps_required integer not null,
+  enforcement text,
+  scan_gap_ms integer,
+  pairing_token text,
+  pairing_qr_data_url text,
+  pairing_barcode_data_url text,
+  created_at timestamptz default now()
+);
+create index if not exists idx_run_configs_session on run_configs (session_id);
+create unique index if not exists idx_run_configs_pairing_token on run_configs (pairing_token);
+
+-- Run events: append-only event log for run devices
+create table if not exists run_events (
+  event_id uuid primary key,
+  run_config_id uuid not null references run_configs(id) on delete cascade,
+  session_id uuid not null references sessions(id) on delete cascade,
+  station_id text,
+  event_type text not null,
+  occurred_at timestamptz not null,
+  payload jsonb,
+  created_at timestamptz default now()
+);
+create index if not exists idx_run_events_run_config_time on run_events (run_config_id, occurred_at);
+create index if not exists idx_run_events_session_time on run_events (session_id, occurred_at);
 
 -- Session roster: link students to a session
 create table if not exists session_roster (
@@ -280,6 +337,7 @@ alter table if exists session_roster add column if not exists house text;
 alter table if exists students enable row level security;
 alter table if exists enrollments enable row level security;
 alter table if exists sessions enable row level security;
+alter table if exists run_configs enable row level security;
 alter table if exists session_roster enable row level security;
 alter table if exists scores enable row level security;
 alter table if exists memberships enable row level security;
@@ -414,6 +472,42 @@ do $$ begin
       select 1 from memberships m
       where m.user_id = auth.uid()
         and m.school_id = sessions.school_id
+        and m.role in ('admin','superadmin')
+    )
+  );
+exception when duplicate_object then null; end $$;
+
+-- Run configs: select by membership; CUD by admin/superadmin
+do $$ begin
+  create policy run_configs_select_by_membership
+  on run_configs for select
+  using (
+    exists (
+      select 1 from sessions s
+      join memberships m on m.school_id = s.school_id
+      where s.id = run_configs.session_id
+        and m.user_id = auth.uid()
+    )
+  );
+exception when duplicate_object then null; end $$;
+
+do $$ begin
+  create policy run_configs_admin_cud
+  on run_configs for all
+  using (
+    exists (
+      select 1 from sessions s
+      join memberships m on m.school_id = s.school_id
+      where s.id = run_configs.session_id
+        and m.user_id = auth.uid()
+        and m.role in ('admin','superadmin')
+    )
+  ) with check (
+    exists (
+      select 1 from sessions s
+      join memberships m on m.school_id = s.school_id
+      where s.id = run_configs.session_id
+        and m.user_id = auth.uid()
         and m.role in ('admin','superadmin')
     )
   );
