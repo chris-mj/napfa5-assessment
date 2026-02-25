@@ -158,6 +158,10 @@ main {
   margin-top: 6px;
 }
 
+.capture-right .note {
+  font-size: 14px;
+}
+
 .capture-table-wrap {
   max-height: 320px;
   overflow: auto;

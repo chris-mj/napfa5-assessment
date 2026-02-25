@@ -778,6 +778,17 @@ export default function CaptureScreen() {
 
         <section className="capture-right card">
           <div className="capture-section-title">Runner Summary</div>
+          <div className="note">
+            {(() => {
+              const total = runnerSummaries.length;
+              const lapsRequired = session?.lapsRequired;
+              const completed = runnerSummaries.filter((runner) =>
+                lapsRequired != null ? runner.lapCount >= lapsRequired : runner.finished
+              ).length;
+              const running = Math.max(0, total - completed);
+              return `Running: ${running} | Completed: ${completed} | Total: ${total}`;
+            })()}
+          </div>
           <div className="capture-table-wrap">
             <table className="table">
               <thead>

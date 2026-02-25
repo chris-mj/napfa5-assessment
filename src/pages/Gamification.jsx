@@ -33,6 +33,10 @@ function bestWithNext(items, lowerBetter) {
   return { best, next };
 }
 
+function hasValue(v) {
+  return v != null && Number.isFinite(Number(v));
+}
+
 export default function Gamification({ user }) {
   const [membership, setMembership] = useState(null);
   const [schoolType, setSchoolType] = useState(null);
@@ -205,11 +209,37 @@ export default function Gamification({ user }) {
     });
   }, [stations, roster, scoresMap]);
 
-  const classLeaderboards = useMemo(() => {
+  const groupLabel = groupBy === "house" ? "House" : "Class";
+
+  const groupStats = useMemo(() => {
     const isIppt3 = (session?.assessment_type || "NAPFA5") === "IPPT3";
+    if (!session || roster.length === 0) return [];
+    const requiredFields = isIppt3
+      ? ["situps", "pushups", "run_2400"]
+      : ["situps", "broad_jump", "sit_and_reach", "pullups", "shuttle_run", "run_2400"];
     const testDate = session?.session_date ? new Date(session.session_date) : new Date();
     const level = String(schoolType || "").toLowerCase() === "primary" ? "Primary" : "Secondary";
-    const byClass = new Map();
+    const byGroup = new Map();
+    const studentTotals = [];
+    const stationLeadsByGroup = new Map();
+
+    for (const st of stations) {
+      let best = null;
+      for (const r of roster) {
+        const row = scoresMap.get(r.id) || {};
+        const val = row[st.key];
+        if (!hasValue(val)) continue;
+        const key = groupBy === "house" ? (r.house || "Unassigned") : (r.class || "Unassigned");
+        if (!best) {
+          best = { key, value: Number(val) };
+          continue;
+        }
+        const better = st.lowerBetter ? Number(val) < best.value : Number(val) > best.value;
+        if (better) best = { key, value: Number(val) };
+      }
+      if (best) stationLeadsByGroup.set(best.key, (stationLeadsByGroup.get(best.key) || 0) + 1);
+    }
+
     roster.forEach(r => {
       const row = scoresMap.get(r.id) || {};
       const sex = normalizeSex(r.gender);
@@ -238,21 +268,96 @@ export default function Gamification({ user }) {
         }
       }
       const key = groupBy === "house" ? (r.house || "Unassigned") : (r.class || "Unassigned");
-      if (!byClass.has(key)) byClass.set(key, { M: [], F: [], U: [] });
+      if (!byGroup.has(key)) {
+        byGroup.set(key, {
+          cls: key,
+          buckets: { M: [], F: [], U: [] },
+          totals: { M: 0, F: 0, U: 0, all: 0 },
+          members: 0,
+          completionSum: 0,
+          completedMembers: 0,
+          totalPointsSum: 0,
+          scoredCount: 0,
+        });
+      }
+      const entry = byGroup.get(key);
+      entry.members += 1;
+      const doneCount = requiredFields.reduce((acc, f) => acc + (hasValue(row[f]) ? 1 : 0), 0);
+      const completionRate = requiredFields.length ? doneCount / requiredFields.length : 0;
+      entry.completionSum += completionRate;
+      if (completionRate === 1) entry.completedMembers += 1;
+
       const genderKey = sex === "Male" ? "M" : sex === "Female" ? "F" : "U";
-      byClass.get(key)[genderKey].push({ student: r, total });
+      entry.buckets[genderKey].push({ student: r, total });
+      entry.totals[genderKey] += Number(total) || 0;
+      entry.totals.all += Number(total) || 0;
+      if (sex && age != null) {
+        entry.totalPointsSum += Number(total) || 0;
+        entry.scoredCount += 1;
+        studentTotals.push({ groupKey: key, total: Number(total) || 0 });
+      }
     });
-    const out = Array.from(byClass.entries()).map(([cls, buckets]) => {
+    const top3 = [...studentTotals].sort((a, b) => b.total - a.total).slice(0, 3);
+    const top3ByGroup = new Map();
+    top3.forEach(x => top3ByGroup.set(x.groupKey, (top3ByGroup.get(x.groupKey) || 0) + 1));
+
+    const rows = Array.from(byGroup.values()).map(c => {
       const sortTop = (list) => [...list].sort((a,b) => (b.total||0) - (a.total||0)).slice(0, 5);
-      const sum = (list) => list.reduce((acc, it) => acc + (Number(it.total) || 0), 0);
+      const avgCompletion = c.members ? c.completionSum / c.members : 0;
+      const avgTotal = c.scoredCount ? c.totalPointsSum / c.scoredCount : 0;
+      const stationLeads = stationLeadsByGroup.get(c.cls) || 0;
       return {
-        cls,
-        buckets: { M: sortTop(buckets.M), F: sortTop(buckets.F), U: sortTop(buckets.U) },
-        totals: { M: sum(buckets.M), F: sum(buckets.F), U: sum(buckets.U), all: sum(buckets.M) + sum(buckets.F) + sum(buckets.U) },
+        ...c,
+        buckets: { M: sortTop(c.buckets.M), F: sortTop(c.buckets.F), U: sortTop(c.buckets.U) },
+        avgCompletion,
+        avgTotal,
+        stationLeads,
+        top3Count: top3ByGroup.get(c.cls) || 0,
       };
     });
-    return out;
-  }, [roster, scoresMap, session?.assessment_type, session?.session_date, schoolType, groupBy]);
+
+    const maxAvgTotal = rows.reduce((m, r) => Math.max(m, r.avgTotal || 0), 0);
+    const ranked = [...rows].sort((a, b) => b.avgTotal - a.avgTotal);
+    const rankMap = new Map(ranked.map((r, i) => [r.cls, i + 1]));
+    const groupLabelLocal = groupBy === "house" ? "House" : "Class";
+
+    return rows
+      .map(c => {
+        const normTotal = maxAvgTotal > 0 ? c.avgTotal / maxAvgTotal : 0;
+        const challengeScore = Math.round((c.avgCompletion * 60) + (normTotal * 30) + (Math.min(c.stationLeads, 3) * 5));
+        const targets = {
+          completeCircuit: 0.9,
+          top3Push: 1,
+          stationSweep: 2,
+        };
+        const progress = {
+          completeCircuit: c.avgCompletion,
+          top3Push: c.top3Count,
+          stationSweep: c.stationLeads,
+        };
+
+        const badges = [];
+        if (rankMap.get(c.cls) === 1) badges.push({ key: "champion", name: `${groupLabelLocal} Champion`, desc: "Highest average points in this session." });
+        if (c.avgCompletion >= 0.9) badges.push({ key: "completion", name: `${groupLabelLocal} Completion Masters`, desc: `90%+ station completion across ${groupLabelLocal.toLowerCase()} roster.` });
+        if (c.stationLeads >= 2) badges.push({ key: "station", name: "Station Strikers", desc: "Leads at least 2 station leaderboards." });
+        if (c.top3Count >= 1) badges.push({ key: "podium", name: "Podium Presence", desc: "At least one student in session top 3 totals." });
+        if (c.scoredCount >= Math.ceil(c.members * 0.85)) badges.push({ key: "participation", name: `${groupLabelLocal} High Participation`, desc: "85%+ students have scores recorded." });
+        if (badges.length === 0) badges.push({ key: "momentum", name: "Momentum Builders", desc: `Keep recording scores to unlock ${groupLabelLocal.toLowerCase()} badges.` });
+
+        return {
+          ...c,
+          challengeScore,
+          badges,
+          targets,
+          progress,
+        };
+      })
+      .sort((a, b) => b.challengeScore - a.challengeScore || b.avgTotal - a.avgTotal);
+  }, [groupBy, roster, scoresMap, session, schoolType, stations]);
+
+  const classLeaderboards = useMemo(() => {
+    return groupStats.map(g => ({ cls: g.cls, buckets: g.buckets, totals: g.totals }));
+  }, [groupStats]);
 
   return (
     <main className="w-full">
@@ -307,7 +412,6 @@ export default function Gamification({ user }) {
                     {["M","F"].map((g) => {
                       const label = g === "M" ? "Boys" : "Girls";
                       const res = resByGender[g];
-                      const labelKey = groupBy === "house" ? "House" : "Class";
                       return (
                         <div key={g} className="mt-2">
                           <div className="text-xs uppercase tracking-wide text-gray-500">{label}</div>
@@ -344,7 +448,7 @@ export default function Gamification({ user }) {
             </section>
 
             <section className="space-y-3">
-              <h2 className="text-lg font-semibold">Leaderboards</h2>
+              <h2 className="text-lg font-semibold">{groupLabel} Leaderboards</h2>
               {classLeaderboards.length === 0 ? (
                 <div className="text-sm text-gray-500">No leaderboard data yet.</div>
               ) : (
@@ -391,6 +495,52 @@ export default function Gamification({ user }) {
                             ))}
                           </div>
                         )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            <section className="space-y-3">
+              <h2 className="text-lg font-semibold">{groupLabel} Challenges & Badges</h2>
+              {groupStats.length === 0 ? (
+                <div className="text-sm text-gray-500">No {groupLabel.toLowerCase()} challenge data yet.</div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {groupStats.map(c => (
+                    <div key={c.cls} className="border rounded p-4 bg-white shadow-sm space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="font-semibold text-base">{c.cls}</div>
+                        <div className="text-xs px-2 py-1 rounded-full bg-blue-50 text-blue-800 border border-blue-200">
+                          Challenge Score: {c.challengeScore}
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 text-sm">
+                        <div className="text-gray-600">Avg completion</div>
+                        <div className="text-right font-medium">{Math.round(c.avgCompletion * 100)}%</div>
+                        <div className="text-gray-600">Avg points</div>
+                        <div className="text-right font-medium">{c.avgTotal.toFixed(1)}</div>
+                        <div className="text-gray-600">Station leads</div>
+                        <div className="text-right font-medium">{c.stationLeads}</div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <div className="text-xs uppercase tracking-wide text-gray-500">Active challenges</div>
+                        <div className="text-sm">Complete-the-Circuit: {Math.round(c.progress.completeCircuit * 100)}% / 90%</div>
+                        <div className="text-sm">Top-3 Push: {c.progress.top3Push} / {c.targets.top3Push}</div>
+                        <div className="text-sm">Station Sweep: {c.progress.stationSweep} / {c.targets.stationSweep}</div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <div className="text-xs uppercase tracking-wide text-gray-500">Badges earned</div>
+                        <div className="flex flex-wrap gap-2">
+                          {c.badges.map(b => (
+                            <span key={b.key} className="text-xs px-2 py-1 rounded-full border bg-amber-50 border-amber-200 text-amber-900" title={b.desc}>
+                              {b.name}
+                            </span>
+                          ))}
+                        </div>
                       </div>
                     </div>
                   ))}
