@@ -693,7 +693,11 @@ export default function SessionDetail({ user }) {
         }
     };
 
-    const downloadProfileCardsPdf = async () => {
+    const downloadProfileCardsPdf = async (format = 'a4') => {
+        if (format === 'wristband_19') {
+            setFlash('Wristband (19mm) export is coming soon.');
+            return;
+        }
         try {
             const { data, error } = await supabase
                 .from('session_roster')
@@ -708,6 +712,142 @@ export default function SessionDetail({ user }) {
             }).sort((a, b) => (String(a.class||'').localeCompare(String(b.class||''), undefined, { numeric: true, sensitivity: 'base' })
                 || String(a.name||'').localeCompare(String(b.name||''), undefined, { sensitivity: 'base' })));
             if (!list.length) { setFlash('No students in roster.'); return; }
+
+            if (format === 'wristband_25') {
+                // Paper dimensions specified in cm by user; convert to mm for jsPDF.
+                const pageWcm = 25;
+                const pageHcm = 21;
+                const pageW = pageWcm * 10;
+                const pageH = pageHcm * 10;
+                const wbDoc = new jsPDF({ unit: 'mm', format: [pageW, pageH], orientation: 'landscape' });
+                const stripsPerPage = 8;
+                const stripH = 25;
+                const stripBlockH = stripsPerPage * stripH;
+                const topBottomMargin = (pageH - stripBlockH) / 2; // 5mm top/bottom
+                const leftNoPrint = 30; // required blank zone at leading left side
+                const rightNoPrint = 30; // required blank zone at trailing right side
+                const rightPad = 4;
+                const stripYStart = (stripIdx) => topBottomMargin + (stripIdx * stripH);
+                const centerYForStrip = (stripIdx) => stripYStart(stripIdx) + (stripH / 2);
+                const bcCanvas = document.createElement('canvas');
+
+                const truncateToWidth = (text, maxW, fontSize) => {
+                    const raw = String(text || '');
+                    if (!raw) return '';
+                    wbDoc.setFontSize(fontSize);
+                    const ellipsis = '...';
+                    if (wbDoc.getTextWidth(raw) <= maxW) return raw;
+                    let out = raw;
+                    while (out.length > 0 && wbDoc.getTextWidth(out + ellipsis) > maxW) {
+                        out = out.slice(0, -1);
+                    }
+                    return out ? (out + ellipsis) : ellipsis;
+                };
+                const splitNameForWristband = (name, maxW) => {
+                    const raw = String(name || '').trim();
+                    if (!raw) return { line1: '', line2: '' };
+                    if (raw.length <= 25) {
+                        return { line1: truncateToWidth(raw, maxW, 18.8), line2: '' };
+                    }
+                    let cut = raw.lastIndexOf(' ', 25);
+                    if (cut < 12) cut = 25;
+                    const first = truncateToWidth(raw.slice(0, cut).trim(), maxW, 18.8);
+                    const secondRaw = raw.slice(cut).trim();
+                    const second = truncateToWidth(secondRaw, maxW, 18.8);
+                    return { line1: first, line2: second };
+                };
+
+                const drawSheetGuides = () => {
+                    wbDoc.setDrawColor(225);
+                    wbDoc.setLineWidth(0.2);
+                    wbDoc.line(leftNoPrint, 0, leftNoPrint, pageH);
+                    wbDoc.line(pageW - rightNoPrint, 0, pageW - rightNoPrint, pageH);
+                    for (let i = 0; i <= stripsPerPage; i++) {
+                        const y = topBottomMargin + (i * stripH);
+                        wbDoc.line(0, y, pageW, y);
+                    }
+                };
+
+                for (let idx = 0; idx < list.length; idx++) {
+                    const stripIdx = idx % stripsPerPage;
+                    if (idx > 0 && stripIdx === 0) wbDoc.addPage([pageW, pageH], 'landscape');
+                    if (stripIdx === 0) drawSheetGuides();
+
+                    const s = list[idx];
+                    const idNorm = normalizeStudentId(s.student_identifier);
+                    const y0 = stripYStart(stripIdx);
+                    const cy = centerYForStrip(stripIdx);
+
+                    const qrSize = 21;
+                    const qrX = leftNoPrint + 2;
+                    const qrY = cy - (qrSize / 2);
+
+                    const barX = qrX + qrSize + 3;
+                    const barW = 54;
+                    const barH = 9;
+                    const barY = y0 + 4;
+
+                    const idY = barY + barH + 4.8;
+
+                    const textX = barX + barW + 6;
+                    const textW = Math.max(20, (pageW - rightNoPrint - rightPad) - textX);
+                    const nameY = y0 + 10.8;
+                    const nameLineGap = 6.4;
+                    const { line1: nameLine1, line2: nameLine2 } = splitNameForWristband(s.name || '', textW);
+                    const classY = nameLine2 ? (nameY + nameLineGap + 5.0) : (nameY + 9.5);
+
+                    const classLine = truncateToWidth(s.class || '', textW, 8.8);
+                    const idLine = truncateToWidth(idNorm, barW, 9.4);
+
+                    // 1) QR
+                    try {
+                        const qrUrl = await drawQrDataUrl(idNorm, 220, 'M', 1);
+                        wbDoc.addImage(qrUrl, 'PNG', qrX, qrY, qrSize, qrSize);
+                    } catch {}
+
+                    // 2) Barcode
+                    try {
+                        drawBarcode(bcCanvas, idNorm, { format: 'CODE128', width: 1.2, height: 36, margin: 6, displayValue: false });
+                        const bcUrl = bcCanvas.toDataURL('image/png');
+                        wbDoc.addImage(bcUrl, 'PNG', barX, barY, barW, barH);
+                    } catch {}
+
+                    // 3) ID below barcode, then Name + Class
+                    wbDoc.setFontSize(9.4);
+                    if (idLine) wbDoc.text(idLine, barX + (barW / 2), idY, { align: 'center' });
+                    wbDoc.setFontSize(18.8);
+                    if (nameLine1) wbDoc.text(nameLine1, textX, nameY);
+                    if (nameLine2) wbDoc.text(nameLine2, textX, nameY + nameLineGap);
+                    wbDoc.setFontSize(8.8);
+                    if (classLine) wbDoc.text(classLine, textX, classY);
+                }
+
+                const d = new Date(session.session_date);
+                const dd = String(d.getDate()).padStart(2, '0');
+                const mm = String(d.getMonth() + 1).padStart(2, '0');
+                const yyyy = d.getFullYear();
+                const ddmmyyyy = `${dd}${mm}${yyyy}`;
+                const safeTitle = String(session?.title || 'session')
+                    .trim()
+                    .replace(/[\\/:*?"<>|]+/g, '')
+                    .replace(/\s+/g, '_');
+                const wbFile = `${safeTitle}_${ddmmyyyy}_wristband25.pdf`;
+                wbDoc.save(wbFile);
+                try {
+                    const validUuid = (v) => typeof v === 'string' && /[0-9a-fA-F-]{36}/.test(v);
+                    const sid = validUuid(id) ? id : null;
+                    const sch = validUuid(membership?.school_id) ? membership.school_id : null;
+                    await supabase.rpc('audit_log_event', {
+                        p_entity_type: 'profile_cards',
+                        p_action: 'download',
+                        p_entity_id: null,
+                        p_school_id: sch,
+                        p_session_id: sid,
+                        p_details: { file: wbFile, count: list.length, format: 'wristband_25' }
+                    });
+                } catch {}
+                return;
+            }
 
             const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
             const pageW = 210, pageH = 297;
@@ -739,6 +879,48 @@ export default function SessionDetail({ user }) {
                     t = t.slice(0, -1);
                 }
                 return t.length ? (t + ellipsis) : '';
+            };
+            const wrapToMaxLines = (text, maxW, fontSize, maxLines = 2) => {
+                const raw = String(text || '').trim();
+                if (!raw) return [];
+                const words = raw.split(/\s+/).filter(Boolean);
+                const lines = [];
+                let cur = '';
+                doc.setFontSize(fontSize);
+                for (const w of words) {
+                    if (!cur) {
+                        if (doc.getTextWidth(w) <= maxW) {
+                            cur = w;
+                        } else {
+                            lines.push(truncateToWidth(w, maxW, fontSize));
+                            cur = '';
+                        }
+                    } else {
+                        const candidate = `${cur} ${w}`;
+                        if (doc.getTextWidth(candidate) <= maxW) {
+                            cur = candidate;
+                        } else {
+                            lines.push(cur);
+                            cur = (doc.getTextWidth(w) <= maxW) ? w : truncateToWidth(w, maxW, fontSize);
+                        }
+                    }
+                    if (lines.length >= maxLines) break;
+                }
+                if (lines.length < maxLines && cur) lines.push(cur);
+                if (lines.length > maxLines) lines.length = maxLines;
+                if (words.length && lines.length === maxLines) {
+                    const consumed = lines.join(' ').split(/\s+/).filter(Boolean).length;
+                    if (consumed < words.length) {
+                        doc.setFontSize(fontSize);
+                        let last = String(lines[maxLines - 1] || '');
+                        const ellipsis = '...';
+                        while (last.length > 0 && doc.getTextWidth(last + ellipsis) > maxW) {
+                            last = last.slice(0, -1);
+                        }
+                        lines[maxLines - 1] = last ? (last + ellipsis) : ellipsis;
+                    }
+                }
+                return lines;
             };
 
             // Group by class so each class starts on a fresh page
@@ -782,12 +964,24 @@ export default function SessionDetail({ user }) {
                 doc.setLineWidth(0.3);
                 doc.rect(x0 + 2, y0 + 2, cellW - 4, cellH - 4);
 
-                // Text
+                // Text area is constrained to the left of the QR to prevent overflow into QR/next card
+                const cardPadX = 6;
+                const qrX = x0 + cellW - qrSize - cardPadX;
+                const textStartX = x0 + cardPadX;
+                const textMaxW = Math.max(20, qrX - textStartX - 4);
+                const idLabel = truncateToWidth(String(idNorm), textMaxW, 14);
+                const nameLines = wrapToMaxLines(s.name || '', textMaxW, 12, 2);
+                const classLabel = truncateToWidth((s.class || ''), textMaxW, 11);
+
                 doc.setFontSize(14);
-                doc.text(String(idNorm), x0 + 6, y0 + 12);
+                doc.text(idLabel, textStartX, y0 + 12);
                 doc.setFontSize(12);
-                doc.text(s.name || '', x0 + 6, y0 + 20);
-                doc.text((s.class || ''), x0 + 6, y0 + 26);
+                nameLines.forEach((line, i) => {
+                    doc.text(line, textStartX, y0 + 20 + (i * 4.5));
+                });
+                doc.setFontSize(11);
+                const classY = y0 + 20 + (Math.max(nameLines.length, 1) * 4.5) + 2;
+                doc.text(classLabel, textStartX, classY);
 
                 // Images
                 // QR on right
@@ -802,8 +996,8 @@ export default function SessionDetail({ user }) {
                 const bcY = y0 + cellH - bottomPad - bcH; // barcode sits above bottom padding
 
                 // Footer band (draw text, not a filled rect). Centered text, truncated to fit cell width - paddings
-                const textPadX = 6; // left/right text padding inside cell
-                const maxTextW = cellW - textPadX * 2;
+                const footerTextPadX = 6; // left/right text padding inside cell
+                const maxTextW = cellW - footerTextPadX * 2;
                 const line1 = truncateToWidth(schoolLine, maxTextW, 9);
                 const line2 = truncateToWidth(titleLine, maxTextW, 9);
                 const footerBottomY = bcY - gap; // band sits directly above barcode

@@ -32,6 +32,8 @@ export default function RosterDualList({ user, session, membership, canManage, o
   const [tipOpen, setTipOpen] = useState(true);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const [cardsMenuOpen, setCardsMenuOpen] = useState(false);
+  const cardsMenuRef = useRef(null);
 
   useEffect(() => {
     const updateRows = () => setRowsPerPage(window.matchMedia('(max-width: 640px)').matches ? 40 : 100);
@@ -105,6 +107,21 @@ export default function RosterDualList({ user, session, membership, canManage, o
   };
 
   useEffect(() => { loadData(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [sessionId, schoolId, sessionYear]);
+
+  useEffect(() => {
+    if (!cardsMenuOpen) return;
+    const onDocDown = (e) => {
+      const root = cardsMenuRef.current;
+      if (root && !root.contains(e.target)) setCardsMenuOpen(false);
+    };
+    const onEsc = (e) => { if (e.key === 'Escape') setCardsMenuOpen(false); };
+    document.addEventListener('mousedown', onDocDown);
+    document.addEventListener('keydown', onEsc);
+    return () => {
+      document.removeEventListener('mousedown', onDocDown);
+      document.removeEventListener('keydown', onEsc);
+    };
+  }, [cardsMenuOpen]);
 
   const leftFiltered = useMemo(() => applyFilters(eligible, leftFilter), [eligible, leftFilter]);
   const rightFiltered = useMemo(() => applyFilters(roster, rightFilter), [roster, rightFilter]);
@@ -252,7 +269,45 @@ export default function RosterDualList({ user, session, membership, canManage, o
           <div className="px-3 py-2 border-b bg-gray-50 text-sm font-medium flex items-center justify-between">
             <span>Session Roster</span>
             {onProfileCards && (
-              <button onClick={() => onProfileCards()} className="text-xs px-3 py-1.5 border rounded bg-white hover:bg-gray-50">Profile Cards</button>
+              <div className="relative" ref={cardsMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => setCardsMenuOpen(v => !v)}
+                  className="text-xs px-3 py-1.5 border rounded bg-white hover:bg-gray-50"
+                  aria-haspopup="menu"
+                  aria-expanded={cardsMenuOpen}
+                >
+                  Profile Cards
+                </button>
+                {cardsMenuOpen && (
+                  <div className="absolute right-0 top-full mt-1 w-56 bg-white border rounded shadow-lg z-20" role="menu" aria-label="Profile card formats">
+                    <button
+                      type="button"
+                      className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50"
+                      onClick={() => { setCardsMenuOpen(false); onProfileCards('a4'); }}
+                      role="menuitem"
+                    >
+                      A4 paper (8 cards per page)
+                    </button>
+                    <button
+                      type="button"
+                      className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50"
+                      onClick={() => { setCardsMenuOpen(false); onProfileCards('wristband_25'); }}
+                      role="menuitem"
+                    >
+                      Wristband (25mm width)
+                    </button>
+                    <button
+                      type="button"
+                      className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50"
+                      onClick={() => { setCardsMenuOpen(false); onProfileCards('wristband_19'); }}
+                      role="menuitem"
+                    >
+                      Wristband (19mm width)
+                    </button>
+                  </div>
+                )}
+              </div>
             )}
           </div>
           <TableFilters filter={rightFilter} setFilter={setRightFilter} disabled={loading} />
