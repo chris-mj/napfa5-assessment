@@ -9,6 +9,7 @@ import { isPlatformOwner } from "../lib/roles";
 import { supabase } from "../lib/supabaseClient";
 import { fmtRun } from "../lib/scores";
 import { evaluateIppt3, awardForTotal } from "../utils/ippt3Standards";
+import { evaluateNapfa } from "../utils/napfaStandards";
 import RosterDualList from "../components/RosterDualList";
 import SessionHouses from "../components/SessionHouses";
 
@@ -45,6 +46,7 @@ export default function SessionDetail({ user }) {
 
     const [membership, setMembership] = useState(null);
     const [schoolName, setSchoolName] = useState("");
+    const [schoolType, setSchoolType] = useState(null);
     const [membershipLoading, setMembershipLoading] = useState(true);
     const [membershipError, setMembershipError] = useState("");
 
@@ -133,10 +135,10 @@ export default function SessionDetail({ user }) {
         if (!membership?.school_id) return;
         supabase
             .from('schools')
-            .select('id,name')
+            .select('id,name,type')
             .eq('id', membership.school_id)
             .maybeSingle()
-            .then(({ data }) => { setSchoolName(data?.name || ""); });
+            .then(({ data }) => { setSchoolName(data?.name || ""); setSchoolType(data?.type || null); });
     }, [membership?.school_id]);
 
     useEffect(() => {
@@ -199,7 +201,7 @@ export default function SessionDetail({ user }) {
     const loadRoster = async () => {
         const { data, error: err } = await supabase
             .from("session_roster")
-            .select("student_id, students!inner(id, student_identifier, name, enrollments(class,academic_year))")
+            .select("student_id, students!inner(id, student_identifier, name, gender, dob, enrollments(class,academic_year))")
             .eq("session_id", id)
             .order("student_id", { ascending: true });
         if (err) return;
@@ -216,7 +218,7 @@ export default function SessionDetail({ user }) {
                 const sorted = [...ens].sort((a,b)=> (b.academic_year||0)-(a.academic_year||0));
                 cls = sorted[0]?.class || '';
             }
-            return { id: s.id, student_identifier: s.student_identifier, name: s.name, class: cls };
+            return { id: s.id, student_identifier: s.student_identifier, name: s.name, class: cls, gender: s.gender, dob: s.dob };
         });
         setRoster(list);
     };
@@ -269,6 +271,70 @@ export default function SessionDetail({ user }) {
         });
         return list;
     }, [sortedRoster, filterClass, filterQuery, showCompleted, showIncomplete, completedSet]);
+
+    const stationMetaByStudent = useMemo(() => {
+        const map = new Map();
+        const toNum = (v) => (v == null || v === '' ? null : Number(v));
+        const toInt = (v) => {
+            const n = toNum(v);
+            return (n == null || !Number.isFinite(n)) ? null : Math.trunc(n);
+        };
+        const testDate = session?.session_date ? new Date(session.session_date) : new Date();
+        const levelLabel = String(schoolType || '').toLowerCase() === 'primary' ? 'Primary' : 'Secondary';
+
+        (sortedRoster || []).forEach((s) => {
+            const row = scoresByStudent.get(s.id) || {};
+            const sex = s.gender;
+            const age = calcAgeAt(s.dob, testDate);
+            if (!sex || age == null) { map.set(s.id, null); return; }
+
+            if (isIppt3) {
+                const measures3 = {};
+                const su = toInt(row.situps);
+                const pu = toInt(row.pushups);
+                const runMin = toNum(row.run_2400);
+                if (su != null) measures3.situps = su;
+                if (pu != null) measures3.pushups = pu;
+                if (runMin != null) measures3.run_seconds = Math.round(runMin * 60);
+                const res3 = evaluateIppt3({ sex, age }, measures3);
+                map.set(s.id, {
+                    ippt3: {
+                        situpsPoints: res3?.stations?.situps?.points ?? null,
+                        pushupsPoints: res3?.stations?.pushups?.points ?? null,
+                        runPoints: res3?.stations?.run?.points ?? null
+                    }
+                });
+                return;
+            }
+
+            const runKm = age >= 14 ? 2.4 : (levelLabel === 'Primary' ? 1.6 : 2.4);
+            const measures = {};
+            const situps = toInt(row.situps);
+            const shuttle = toNum(row.shuttle_run);
+            const reach = toNum(row.sit_and_reach);
+            const pullups = toInt(row.pullups);
+            const broad = toNum(row.broad_jump);
+            const runMin = toNum(row.run_2400);
+            if (situps != null) measures.situps = situps;
+            if (shuttle != null) measures.shuttle_s = shuttle;
+            if (reach != null) measures.sit_and_reach_cm = reach;
+            if (pullups != null) measures.pullups = pullups;
+            if (broad != null) measures.broad_jump_cm = broad;
+            if (runMin != null) measures.run_seconds = Math.round(runMin * 60);
+            const res = evaluateNapfa({ level: levelLabel, sex, age, run_km: runKm }, measures);
+            map.set(s.id, {
+                napfa: {
+                    situps: res?.stations?.situps?.grade ?? null,
+                    shuttle: res?.stations?.shuttle_s?.grade ?? null,
+                    reach: res?.stations?.sit_and_reach_cm?.grade ?? null,
+                    pullups: res?.stations?.pullups?.grade ?? null,
+                    broad: res?.stations?.broad_jump_cm?.grade ?? null,
+                    run: res?.stations?.run?.grade ?? null
+                }
+            });
+        });
+        return map;
+    }, [sortedRoster, scoresByStudent, session?.session_date, schoolType, isIppt3]);
 
     const loadScoresCount = async () => {
         if ((session?.assessment_type || 'NAPFA5') === 'IPPT3') {
@@ -694,10 +760,6 @@ export default function SessionDetail({ user }) {
     };
 
     const downloadProfileCardsPdf = async (format = 'a4') => {
-        if (format === 'wristband_19') {
-            setFlash('Wristband (19mm) export is coming soon.');
-            return;
-        }
         try {
             const { data, error } = await supabase
                 .from('session_roster')
@@ -713,15 +775,16 @@ export default function SessionDetail({ user }) {
                 || String(a.name||'').localeCompare(String(b.name||''), undefined, { sensitivity: 'base' })));
             if (!list.length) { setFlash('No students in roster.'); return; }
 
-            if (format === 'wristband_25') {
+            if (format === 'wristband_25' || format === 'wristband_19') {
                 // Paper dimensions specified in cm by user; convert to mm for jsPDF.
                 const pageWcm = 25;
                 const pageHcm = 21;
                 const pageW = pageWcm * 10;
                 const pageH = pageHcm * 10;
                 const wbDoc = new jsPDF({ unit: 'mm', format: [pageW, pageH], orientation: 'landscape' });
-                const stripsPerPage = 8;
-                const stripH = 25;
+                const is19 = format === 'wristband_19';
+                const stripsPerPage = is19 ? 10 : 8;
+                const stripH = is19 ? 19 : 25;
                 const stripBlockH = stripsPerPage * stripH;
                 const topBottomMargin = (pageH - stripBlockH) / 2; // 5mm top/bottom
                 const leftNoPrint = 30; // required blank zone at leading left side
@@ -747,13 +810,13 @@ export default function SessionDetail({ user }) {
                     const raw = String(name || '').trim();
                     if (!raw) return { line1: '', line2: '' };
                     if (raw.length <= 25) {
-                        return { line1: truncateToWidth(raw, maxW, 18.8), line2: '' };
+                        return { line1: truncateToWidth(raw, maxW, is19 ? 12.0 : 18.8), line2: '' };
                     }
                     let cut = raw.lastIndexOf(' ', 25);
                     if (cut < 12) cut = 25;
-                    const first = truncateToWidth(raw.slice(0, cut).trim(), maxW, 18.8);
+                    const first = truncateToWidth(raw.slice(0, cut).trim(), maxW, is19 ? 12.0 : 18.8);
                     const secondRaw = raw.slice(cut).trim();
-                    const second = truncateToWidth(secondRaw, maxW, 18.8);
+                    const second = truncateToWidth(secondRaw, maxW, is19 ? 12.0 : 18.8);
                     return { line1: first, line2: second };
                 };
 
@@ -778,26 +841,26 @@ export default function SessionDetail({ user }) {
                     const y0 = stripYStart(stripIdx);
                     const cy = centerYForStrip(stripIdx);
 
-                    const qrSize = 21;
-                    const qrX = leftNoPrint + 2;
+                    const qrSize = is19 ? 15 : 21;
+                    const qrX = leftNoPrint + (is19 ? 1.5 : 2);
                     const qrY = cy - (qrSize / 2);
 
-                    const barX = qrX + qrSize + 3;
-                    const barW = 54;
-                    const barH = 9;
-                    const barY = y0 + 4;
+                    const barX = qrX + qrSize + (is19 ? 2 : 3);
+                    const barW = is19 ? 44 : 54;
+                    const barH = is19 ? 6.5 : 9;
+                    const barY = y0 + (is19 ? 3 : 4);
 
-                    const idY = barY + barH + 4.8;
+                    const idY = barY + barH + (is19 ? 3.2 : 4.8);
 
-                    const textX = barX + barW + 6;
+                    const textX = barX + barW + (is19 ? 4 : 6);
                     const textW = Math.max(20, (pageW - rightNoPrint - rightPad) - textX);
-                    const nameY = y0 + 10.8;
-                    const nameLineGap = 6.4;
+                    const nameY = y0 + (is19 ? 8.2 : 10.8);
+                    const nameLineGap = is19 ? 4.6 : 6.4;
                     const { line1: nameLine1, line2: nameLine2 } = splitNameForWristband(s.name || '', textW);
-                    const classY = nameLine2 ? (nameY + nameLineGap + 5.0) : (nameY + 9.5);
+                    const classY = nameLine2 ? (nameY + nameLineGap + (is19 ? 3.6 : 5.0)) : (nameY + (is19 ? 6.8 : 9.5));
 
-                    const classLine = truncateToWidth(s.class || '', textW, 8.8);
-                    const idLine = truncateToWidth(idNorm, barW, 9.4);
+                    const classLine = truncateToWidth(s.class || '', textW, is19 ? 6.4 : 8.8);
+                    const idLine = truncateToWidth(idNorm, barW, is19 ? 6.8 : 9.4);
 
                     // 1) QR
                     try {
@@ -807,18 +870,24 @@ export default function SessionDetail({ user }) {
 
                     // 2) Barcode
                     try {
-                        drawBarcode(bcCanvas, idNorm, { format: 'CODE128', width: 1.2, height: 36, margin: 6, displayValue: false });
+                        drawBarcode(bcCanvas, idNorm, {
+                            format: 'CODE128',
+                            width: is19 ? 1.0 : 1.2,
+                            height: is19 ? 28 : 36,
+                            margin: is19 ? 4 : 6,
+                            displayValue: false
+                        });
                         const bcUrl = bcCanvas.toDataURL('image/png');
                         wbDoc.addImage(bcUrl, 'PNG', barX, barY, barW, barH);
                     } catch {}
 
                     // 3) ID below barcode, then Name + Class
-                    wbDoc.setFontSize(9.4);
+                    wbDoc.setFontSize(is19 ? 6.8 : 9.4);
                     if (idLine) wbDoc.text(idLine, barX + (barW / 2), idY, { align: 'center' });
-                    wbDoc.setFontSize(18.8);
+                    wbDoc.setFontSize(is19 ? 12.0 : 18.8);
                     if (nameLine1) wbDoc.text(nameLine1, textX, nameY);
                     if (nameLine2) wbDoc.text(nameLine2, textX, nameY + nameLineGap);
-                    wbDoc.setFontSize(8.8);
+                    wbDoc.setFontSize(is19 ? 6.4 : 8.8);
                     if (classLine) wbDoc.text(classLine, textX, classY);
                 }
 
@@ -831,7 +900,7 @@ export default function SessionDetail({ user }) {
                     .trim()
                     .replace(/[\\/:*?"<>|]+/g, '')
                     .replace(/\s+/g, '_');
-                const wbFile = `${safeTitle}_${ddmmyyyy}_wristband25.pdf`;
+                const wbFile = `${safeTitle}_${ddmmyyyy}_${is19 ? 'wristband19' : 'wristband25'}.pdf`;
                 wbDoc.save(wbFile);
                 try {
                     const validUuid = (v) => typeof v === 'string' && /[0-9a-fA-F-]{36}/.test(v);
@@ -843,7 +912,152 @@ export default function SessionDetail({ user }) {
                         p_entity_id: null,
                         p_school_id: sch,
                         p_session_id: sid,
-                        p_details: { file: wbFile, count: list.length, format: 'wristband_25' }
+                        p_details: { file: wbFile, count: list.length, format }
+                    });
+                } catch {}
+                return;
+            }
+
+            if (format === 'a4_sticker_105x74') {
+                const stDoc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+                const pageW = 210;
+                const pageH = 297;
+                const cols = 2;
+                const rows = 4;
+                const stickerW = 105;
+                const stickerH = 74;
+                const perPage = cols * rows; // 8
+                const safeInset = 5; // printer non-printable margin safety inside each sticker
+                const qrSize = 32;
+                const bcCanvas = document.createElement('canvas');
+                const titleLine = String(session?.title || "");
+                const schoolLine = String(schoolName || "");
+
+                const truncateToWidth = (text, maxW, fontSize) => {
+                    if (!text) return '';
+                    stDoc.setFontSize(fontSize);
+                    const ellipsis = '...';
+                    let t = String(text);
+                    if (stDoc.getTextWidth(t) <= maxW) return t;
+                    while (t.length > 0 && stDoc.getTextWidth(t + ellipsis) > maxW) t = t.slice(0, -1);
+                    return t.length ? (t + ellipsis) : ellipsis;
+                };
+                const wrapNameTwoLines = (text, maxW, fontSize) => {
+                    const raw = String(text || '').trim();
+                    if (!raw) return ['', ''];
+                    stDoc.setFontSize(fontSize);
+                    const words = raw.split(/\s+/).filter(Boolean);
+                    if (!words.length) return ['', ''];
+                    let line1 = '';
+                    let i = 0;
+                    for (; i < words.length; i++) {
+                        const candidate = line1 ? `${line1} ${words[i]}` : words[i];
+                        if (stDoc.getTextWidth(candidate) <= maxW) line1 = candidate;
+                        else break;
+                    }
+                    if (!line1) {
+                        line1 = truncateToWidth(words[0], maxW, fontSize);
+                        i = 1;
+                    }
+                    const rest = words.slice(i).join(' ');
+                    const line2 = rest ? truncateToWidth(rest, maxW, fontSize) : '';
+                    return [line1, line2];
+                };
+
+                const drawSheetGuides = () => {
+                    stDoc.setDrawColor(230);
+                    stDoc.setLineWidth(0.15);
+                    for (let c = 0; c <= cols; c++) {
+                        const x = c * stickerW;
+                        stDoc.line(x, 0, x, pageH);
+                    }
+                    for (let r = 0; r <= rows; r++) {
+                        const y = r * stickerH;
+                        stDoc.line(0, y, pageW, y);
+                    }
+                };
+
+                for (let i = 0; i < list.length; i++) {
+                    const idxInPage = i % perPage;
+                    if (i > 0 && idxInPage === 0) stDoc.addPage('a4', 'portrait');
+                    if (idxInPage === 0) drawSheetGuides();
+
+                    const s = list[i];
+                    const idNorm = normalizeStudentId(s.student_identifier);
+                    const col = idxInPage % cols;
+                    const row = Math.floor(idxInPage / cols);
+                    const x0 = col * stickerW;
+                    const y0 = row * stickerH;
+
+                    const innerX = x0 + safeInset;
+                    const innerY = y0 + safeInset;
+                    const innerW = stickerW - (safeInset * 2);
+                    const innerH = stickerH - (safeInset * 2);
+
+                    const qrX = innerX + innerW - qrSize;
+                    const qrY = innerY + 1;
+                    const textX = innerX + 2;
+                    const textMaxW = Math.max(24, (qrX - textX - 3));
+                    const idLabel = truncateToWidth(idNorm, textMaxW, 15);
+                    const [nameLine1, nameLine2] = wrapNameTwoLines(s.name || '', textMaxW, 12.5);
+                    const classLabel = truncateToWidth(s.class || '', textMaxW, 11.5);
+                    const schoolLabel = truncateToWidth(schoolLine, textMaxW, 8.5);
+                    const sessionLabel = truncateToWidth(titleLine, textMaxW, 8.5);
+                    const bcW = innerW - 4;
+                    const bcH = 17;
+                    const bcX = innerX + 2;
+                    const bcY = innerY + innerH - bcH - 6;
+
+                    // QR
+                    try {
+                        const qrUrl = await drawQrDataUrl(idNorm, 240, 'M', 1);
+                        stDoc.addImage(qrUrl, 'PNG', qrX, qrY, qrSize, qrSize);
+                    } catch {}
+
+                    // Text block
+                    stDoc.setFontSize(15);
+                    if (idLabel) stDoc.text(idLabel, textX, innerY + 9);
+                    stDoc.setFontSize(12.5);
+                    if (nameLine1) stDoc.text(nameLine1, textX, innerY + 17);
+                    if (nameLine2) stDoc.text(nameLine2, textX, innerY + 23);
+                    stDoc.setFontSize(11.5);
+                    if (classLabel) stDoc.text(classLabel, textX, innerY + (nameLine2 ? 29 : 25));
+                    stDoc.setFontSize(8.5);
+                    if (schoolLabel) stDoc.text(schoolLabel, textX, bcY - 4.5);
+                    if (sessionLabel) stDoc.text(sessionLabel, textX, bcY - 1.2);
+
+                    // Barcode + caption
+                    try {
+                        drawBarcode(bcCanvas, idNorm, { format: 'CODE128', width: 1.6, height: 46, margin: 10, displayValue: false });
+                        const bcUrl = bcCanvas.toDataURL('image/png');
+                        stDoc.addImage(bcUrl, 'PNG', bcX, bcY, bcW, bcH);
+                        stDoc.setFontSize(10.5);
+                        stDoc.text(truncateToWidth(idNorm, bcW, 10.5), bcX + (bcW / 2), bcY + bcH + 4, { align: 'center' });
+                    } catch {}
+                }
+
+                const d = new Date(session.session_date);
+                const dd = String(d.getDate()).padStart(2, '0');
+                const mm = String(d.getMonth() + 1).padStart(2, '0');
+                const yyyy = d.getFullYear();
+                const ddmmyyyy = `${dd}${mm}${yyyy}`;
+                const safeTitle = String(session?.title || 'session')
+                    .trim()
+                    .replace(/[\\/:*?"<>|]+/g, '')
+                    .replace(/\s+/g, '_');
+                const outFile = `${safeTitle}_${ddmmyyyy}_a4_sticker_105x74.pdf`;
+                stDoc.save(outFile);
+                try {
+                    const validUuid = (v) => typeof v === 'string' && /[0-9a-fA-F-]{36}/.test(v);
+                    const sid = validUuid(id) ? id : null;
+                    const sch = validUuid(membership?.school_id) ? membership.school_id : null;
+                    await supabase.rpc('audit_log_event', {
+                        p_entity_type: 'profile_cards',
+                        p_action: 'download',
+                        p_entity_id: null,
+                        p_school_id: sch,
+                        p_session_id: sid,
+                        p_details: { file: outFile, count: list.length, format: 'a4_sticker_105x74' }
                     });
                 } catch {}
                 return;
@@ -1434,6 +1648,19 @@ export default function SessionDetail({ user }) {
                                 const pageItems = filteredSortedRoster.slice(start, start + scoresPageSize);
                                     return pageItems.flatMap((s) => {
                                         const row = scoresByStudent.get(s.id) || {};
+                                        const meta = stationMetaByStudent.get(s.id) || {};
+                                        const napfaGrades = meta?.napfa || {};
+                                        const ippt3 = meta?.ippt3 || {};
+                                        const withGrade = (val, grade, formatter) => {
+                                            if (val == null) return '-';
+                                            const shown = formatter ? formatter(val) : String(val);
+                                            return `${shown} (${grade || '-'})`;
+                                        };
+                                        const withPoints = (val, pts, formatter) => {
+                                            if (val == null) return '-';
+                                            const shown = formatter ? formatter(val) : String(val);
+                                            return Number.isFinite(pts) ? `${shown} | ${pts} pts` : shown;
+                                        };
                                     const canRecord = true;
                                         const isCompleted = completedSet.has(s.id);
                                         const isInProgress = inProgressSet.has(s.id);
@@ -1446,9 +1673,9 @@ export default function SessionDetail({ user }) {
                                               <td className={`px-3 py-2 border align-top ${statusLeft}`}>{normalizeStudentId(s.student_identifier)}</td>
                                               <td className="px-3 py-2 border align-top">{s.name}</td>
                                               <td className="px-3 py-2 border align-top">{s.class || '-'}</td>
-                                              <td className="px-3 py-2 border align-top">{row.situps ?? '-'}</td>
-                                              <td className="px-3 py-2 border align-top">{row.pushups ?? '-'}</td>
-                                              <td className="px-3 py-2 border align-top">{fmtRun(row.run_2400) || '-'}</td>
+                                              <td className="px-3 py-2 border align-top">{withPoints(row.situps, ippt3.situpsPoints)}</td>
+                                              <td className="px-3 py-2 border align-top">{withPoints(row.pushups, ippt3.pushupsPoints)}</td>
+                                              <td className="px-3 py-2 border align-top">{withPoints(row.run_2400, ippt3.runPoints, (v) => fmtRun(v) || '-')}</td>
                                               <td className="px-3 py-2 border align-top">
                                                 <ScoreRowActions student={s} canRecord={canRecord} onSaved={async () => { await loadScoresMap(); await loadScoresCount(); }} sessionId={id} isIppt3={isIppt3} />
                                               </td>
@@ -1460,12 +1687,12 @@ export default function SessionDetail({ user }) {
                                                 <td className={`px-3 py-2 border align-top ${statusLeft}`}>{normalizeStudentId(s.student_identifier)}</td>
                                                 <td className="px-3 py-2 border align-top">{s.name}</td>
                                                 <td className="px-3 py-2 border align-top">{s.class || '-'}</td>
-                                                <td className="px-3 py-2 border align-top">{row.situps ?? '-'}</td>
-                                                <td className="px-3 py-2 border align-top">{row.shuttle_run ?? '-'}</td>
-                                                <td className="px-3 py-2 border align-top">{row.sit_and_reach ?? '-'}</td>
-                                                <td className="px-3 py-2 border align-top">{row.pullups ?? '-'}</td>
-                                                <td className="px-3 py-2 border align-top">{row.broad_jump ?? '-'}</td>
-                                                <td className="px-3 py-2 border align-top">{fmtRun(row.run_2400) || '-'}</td>
+                                                <td className="px-3 py-2 border align-top">{withGrade(row.situps, napfaGrades.situps)}</td>
+                                                <td className="px-3 py-2 border align-top">{withGrade(row.shuttle_run, napfaGrades.shuttle)}</td>
+                                                <td className="px-3 py-2 border align-top">{withGrade(row.sit_and_reach, napfaGrades.reach)}</td>
+                                                <td className="px-3 py-2 border align-top">{withGrade(row.pullups, napfaGrades.pullups)}</td>
+                                                <td className="px-3 py-2 border align-top">{withGrade(row.broad_jump, napfaGrades.broad)}</td>
+                                                <td className="px-3 py-2 border align-top">{withGrade(row.run_2400, napfaGrades.run, (v) => fmtRun(v) || '-')}</td>
                                                 <td className="px-3 py-2 border align-top">
                                                     <ScoreRowActions student={s} canRecord={canRecord} onSaved={async () => { await loadScoresMap(); await loadScoresCount(); }} sessionId={id} isIppt3={isIppt3} />
                                                 </td>

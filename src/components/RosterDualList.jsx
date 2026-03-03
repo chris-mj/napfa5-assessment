@@ -292,6 +292,14 @@ export default function RosterDualList({ user, session, membership, canManage, o
                     <button
                       type="button"
                       className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50"
+                      onClick={() => { setCardsMenuOpen(false); onProfileCards('a4_sticker_105x74'); }}
+                      role="menuitem"
+                    >
+                      A4 precut sticker 105x74mm
+                    </button>
+                    <button
+                      type="button"
+                      className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50"
                       onClick={() => { setCardsMenuOpen(false); onProfileCards('wristband_25'); }}
                       role="menuitem"
                     >
