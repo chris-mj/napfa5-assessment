@@ -172,7 +172,7 @@ export default function Dashboard({ user }) {
 
         {/* Header */}
         <div className="flex items-center gap-3">
-          <img src="/icon.png" alt="NAPFA 5" className="w-8 h-8" />
+          <img src="/iconsmall.png" alt="NAPFA 5" className="w-8 h-8" />
           <div>
             <h1 className="text-3xl font-semibold tracking-tight text-slate-900">Dashboard</h1>
             <div className="text-sm text-slate-600">Welcome back{user?.email ? `, ${user.email}` : ''}.</div>

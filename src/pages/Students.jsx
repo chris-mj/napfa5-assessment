@@ -81,7 +81,7 @@ export default function Students() {
                             <tr>
                                                                 <td colSpan="4" className="border px-3 py-6 text-center text-sm text-gray-500">
                                     <div className="flex flex-col items-center gap-2">
-                                        <img src="/icon.png" alt="No students" className="w-10 h-10 opacity-80" />
+                                        <img src="/iconsmall.png" alt="No students" className="w-10 h-10 opacity-80" />
                                         <div>
                                             No students found. Add students in Supabase &rarr; Table Editor &rarr; students.
                                         </div>

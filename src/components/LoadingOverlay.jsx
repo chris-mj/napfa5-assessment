@@ -11,7 +11,7 @@ export default function LoadingOverlay() {
         >
             {/* Icon */}
             <motion.img
-                src="/icon.png"
+                src="/iconsmall.png"
                 alt="NAPFA5"
                 initial={{ scale: 0.9, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
