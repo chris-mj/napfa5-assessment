@@ -298,6 +298,14 @@ export default function AddAttempt({ user }) {
   const openScanner = () => setScannerOpen(true)
   const openRoster = () => setRosterOpen(true)
   const openTools = () => { if (toolStationEnabled) setToolsOpen(true) }
+  const clearStudentEntry = () => {
+    setStudentId('')
+    setStudent(null)
+    setExisting(null)
+    setAttempt1('')
+    setAttempt2('')
+    setError('')
+  }
 
   const resetCountdown = () => {
     setCountdownRunning(false)
@@ -783,7 +791,17 @@ async function saveScore() {
                 <CardContent>
                   <form onSubmit={onSubmit} className="grid gap-3">
                     <div className="grid gap-1.5">
-                <label htmlFor="studentId" className="text-gray-700 text-sm">Student ID</label>
+                <div className="flex items-center gap-2">
+                  <label htmlFor="studentId" className="text-gray-700 text-sm">Student ID</label>
+                  <button
+                    type="button"
+                    onClick={clearStudentEntry}
+                    disabled={!studentId && !student}
+                    className="text-xs border rounded px-2 py-1 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    Clear
+                  </button>
+                </div>
                 <div className="flex gap-2">
                   <input
                     id="studentId"
@@ -1064,7 +1082,7 @@ function StationToolsDrawer({
   const counterCap = station === 'pullups' ? 30 : 60
 
   return (
-    <div className="fixed inset-0 z-40" aria-hidden={!open}>
+    <div className="fixed inset-0 z-[60]" aria-hidden={!open}>
       <motion.div
         className="absolute inset-0 bg-black/40"
         onClick={onClose}
