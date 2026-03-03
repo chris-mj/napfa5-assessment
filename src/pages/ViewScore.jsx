@@ -1055,13 +1055,15 @@ function ScannerModal({ onClose, onDetected }) {
   const streamRef = useRef(null)
   const controlsRef = useRef(null)
   const [supported, setSupported] = useState(true)
-  const [err, setErr] = useState('')
+  const [err, setErr] = useState('')
+  const [facingMode, setFacingMode] = useState('environment')
   useEffect(() => {
     let cleanupFn = null
     const hasBarcode = 'BarcodeDetector' in window
     const start = async () => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+        setErr('')
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode } })
         streamRef.current = stream
         if (videoRef.current) {
           videoRef.current.srcObject = stream
@@ -1113,7 +1115,7 @@ function ScannerModal({ onClose, onDetected }) {
       if (videoRef.current) { try { videoRef.current.pause(); videoRef.current.srcObject = null } catch {} }
       if (typeof cleanupFn === 'function') cleanupFn()
     }
-  }, [onDetected])
+  }, [onDetected, facingMode])
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
@@ -1135,8 +1137,15 @@ function ScannerModal({ onClose, onDetected }) {
           {err && <div className="text-sm text-red-600">{err}</div>}
           <div className="text-xs text-gray-500">Tip: Point the camera at the QR/Barcode on the student card.</div>
         </div>
-        <div className="px-3 py-2 border-t flex justify-end">
-          <button onClick={onClose} className="px-3 py-1.5 border rounded hover:bg-gray-50">Close</button>
+        <div className="px-3 py-2 border-t flex items-center justify-between gap-2">
+          <button
+            type="button"
+            onClick={() => setFacingMode(prev => (prev === 'environment' ? 'user' : 'environment'))}
+            className="px-3 py-1.5 border rounded hover:bg-gray-50"
+          >
+            Switch Camera
+          </button>
+          <button onClick={onClose} className="px-3 py-1.5 border rounded hover:bg-gray-50">Close</button>
         </div>
       </div>
     </div>
