@@ -24,7 +24,7 @@ export default function Home() {
               <div className="grid md:grid-cols-2 gap-8 items-center">
                 <div className="text-left">
                   <div className="flex items-center gap-2 mb-2">
-                    <img src="/icon.png" alt="NAPFA 5" className="h-8 w-8 rounded" loading="lazy" decoding="async" />
+                    <img src="/iconsmall.png" alt="NAPFA 5" className="h-8 w-8 rounded" loading="lazy" decoding="async" />
                     <span className="text-sm font-semibold text-[#0F172A]">NAPFA 5</span>
                   </div>
                   <h1 className="text-5xl md:text-6xl font-bold tracking-tight leading-tight text-[#0F172A]">Simplify Your School's NAPFA Assessments</h1>
@@ -156,7 +156,7 @@ export default function Home() {
         {/* Footer */}
         <footer className="py-8 text-center text-sm bg-slate-50 rounded-2xl">
           {/*<div className="flex items-center justify-center gap-2 text-[#0F172A] mb-2">*/}
-          {/*  <img src="/icon.png" alt="NAPFA 5" className="h-5 w-5" />*/}
+          {/*  <img src="/iconsmall.png" alt="NAPFA 5" className="h-5 w-5" />*/}
           {/*  <span>Built for Singapore schools</span>*/}
           {/*</div>*/}
           <div className="text-[#64748B] flex items-center justify-center gap-4">

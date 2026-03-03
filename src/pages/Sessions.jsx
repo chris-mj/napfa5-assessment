@@ -179,7 +179,7 @@ export default function Sessions({ user }) {
           </div>
         ) : sessions.length === 0 ? (
           <div className="text-gray-600 flex flex-col items-center justify-center py-10 text-center">
-            <img src="/icon.png" alt="No sessions" className="w-12 h-12 mb-3 opacity-80" />
+            <img src="/iconsmall.png" alt="No sessions" className="w-12 h-12 mb-3 opacity-80" />
             <p>No sessions found.</p>
           </div>
         ) : (
