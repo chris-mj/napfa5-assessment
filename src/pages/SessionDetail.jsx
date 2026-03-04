@@ -9,8 +9,10 @@ import { isPlatformOwner } from "../lib/roles";
 import { supabase } from "../lib/supabaseClient";
 import { fmtRun } from "../lib/scores";
 import { evaluateIppt3, awardForTotal } from "../utils/ippt3Standards";
+import { evaluateNapfa } from "../utils/napfaStandards";
 import RosterDualList from "../components/RosterDualList";
 import SessionHouses from "../components/SessionHouses";
+import SessionGroups from "../components/SessionGroups";
 
 const ROLE_CAN_MANAGE = ["superadmin", "admin"];
 const RESET_RUN_ENDPOINT = import.meta.env.DEV
@@ -48,6 +50,7 @@ export default function SessionDetail({ user }) {
 
     const [membership, setMembership] = useState(null);
     const [schoolName, setSchoolName] = useState("");
+    const [schoolType, setSchoolType] = useState(null);
     const [membershipLoading, setMembershipLoading] = useState(true);
     const [membershipError, setMembershipError] = useState("");
 
@@ -67,6 +70,13 @@ export default function SessionDetail({ user }) {
     const isIppt3 = (session?.assessment_type || 'NAPFA5') === 'IPPT3';
     const [scoresPage, setScoresPage] = useState(1);
     const [scoresPageSize, setScoresPageSize] = useState(100);
+    const [massEditMode, setMassEditMode] = useState(false);
+    const [massEditBusy, setMassEditBusy] = useState(false);
+    const [massEditErr, setMassEditErr] = useState("");
+    const [massEditNotice, setMassEditNotice] = useState("");
+    const [massEdits, setMassEdits] = useState(new Map()); // studentId -> partial score object
+    const [massEditCancelOpen, setMassEditCancelOpen] = useState(false);
+    const [massEditSaveOpen, setMassEditSaveOpen] = useState(false);
     const [filterClass, setFilterClass] = useState("");
     const [filterQuery, setFilterQuery] = useState("");
     const [showCompleted, setShowCompleted] = useState(true);
@@ -87,6 +97,7 @@ export default function SessionDetail({ user }) {
     const [activeTab, setActiveTab] = useState(() => {
         if (location.hash === '#scores') return 'scores';
         if (location.hash === '#houses') return 'houses';
+        if (location.hash === '#groups') return 'groups';
         if (location.hash === '#run-setup') return 'run-setup';
         return 'roster';
     });
@@ -150,10 +161,10 @@ export default function SessionDetail({ user }) {
         if (!membership?.school_id) return;
         supabase
             .from('schools')
-            .select('id,name')
+            .select('id,name,type')
             .eq('id', membership.school_id)
             .maybeSingle()
-            .then(({ data }) => { setSchoolName(data?.name || ""); });
+            .then(({ data }) => { setSchoolName(data?.name || ""); setSchoolType(data?.type || null); });
     }, [membership?.school_id]);
 
     useEffect(() => {
@@ -211,7 +222,9 @@ export default function SessionDetail({ user }) {
             ? 'scores'
             : (location.hash === '#houses'
                 ? 'houses'
-                : (location.hash === '#run-setup' ? 'run-setup' : 'roster'));
+                : (location.hash === '#groups'
+                    ? 'groups'
+                    : (location.hash === '#run-setup' ? 'run-setup' : 'roster')));
         if (fromHash !== activeTab) setActiveTab(fromHash);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [location.hash]);
@@ -221,16 +234,167 @@ export default function SessionDetail({ user }) {
             ? '#scores'
             : (activeTab === 'houses'
                 ? '#houses'
-                : (activeTab === 'run-setup' ? '#run-setup' : '#roster'));
+                : (activeTab === 'groups'
+                    ? '#groups'
+                    : (activeTab === 'run-setup' ? '#run-setup' : '#roster')));
         if (location.hash !== desiredHash) {
             navigate({ hash: desiredHash }, { replace: true });
         }
     }, [activeTab, location.hash, navigate]);
 
+    useEffect(() => {
+        if (activeTab !== 'scores') {
+            setMassEditMode(false);
+            setMassEdits(new Map());
+            setMassEditErr('');
+            setMassEditNotice('');
+            setMassEditCancelOpen(false);
+            setMassEditSaveOpen(false);
+        }
+    }, [activeTab]);
+
+    const runToInput = (runMin) => {
+        const n = Number(runMin);
+        if (!Number.isFinite(n)) return '';
+        const total = Math.round(n * 60);
+        const mm = Math.floor(total / 60);
+        const ss = total % 60;
+        return `${mm}${String(ss).padStart(2, '0')}`;
+    };
+
+    const parseRunInput = (raw) => {
+        const s = String(raw || '').trim();
+        if (!s) return { ok: true, value: null };
+        const digits = s.includes(':') ? s.replace(':', '') : s.replace(/[^0-9]/g, '');
+        if (!/^\d{3,4}$/.test(digits)) return { ok: false, error: 'Run must be MSS/MMSS digits (e.g. 930 or 1330).' };
+        const mm = digits.length === 3 ? parseInt(digits.slice(0, 1), 10) : parseInt(digits.slice(0, 2), 10);
+        const ss = parseInt(digits.slice(-2), 10);
+        if (!Number.isFinite(mm) || !Number.isFinite(ss) || ss >= 60) return { ok: false, error: 'Run seconds must be 00-59.' };
+        return { ok: true, value: Number.parseFloat((mm + ss / 60).toFixed(2)) };
+    };
+
+    const parseIntOrNull = (raw, min, max, label) => {
+        const s = String(raw ?? '').trim();
+        if (!s) return { ok: true, value: null };
+        const n = Number.parseInt(s, 10);
+        if (!Number.isFinite(n)) return { ok: false, error: `${label} must be a number.` };
+        if (n < min || n > max) return { ok: false, error: `${label} must be ${min}-${max}.` };
+        return { ok: true, value: n };
+    };
+
+    const parseFloatOrNull = (raw, min, max, label, dp = 1) => {
+        const s = String(raw ?? '').trim();
+        if (!s) return { ok: true, value: null };
+        const n = Number.parseFloat(s);
+        if (!Number.isFinite(n)) return { ok: false, error: `${label} must be a number.` };
+        if (n < min || n > max) return { ok: false, error: `${label} must be ${min}-${max}.` };
+        return { ok: true, value: Number.parseFloat(n.toFixed(dp)) };
+    };
+
+    const saveMassEditVisible = async () => {
+        const visible = pagedScoresRoster || [];
+        if (!visible.length) return;
+        setMassEditErr('');
+        setMassEditNotice('');
+
+        const payload = [];
+        const errors = [];
+
+        visible.forEach((s) => {
+            const edits = massEdits.get(s.id);
+            if (!edits) return;
+            const patch = { session_id: id, student_id: s.id };
+
+            if (isIppt3) {
+                if ('situps' in edits) {
+                    const r = parseIntOrNull(edits.situps, 0, 60, `${s.name} sit-ups`);
+                    if (!r.ok) { errors.push(r.error); return; }
+                    patch.situps = r.value;
+                }
+                if ('pushups' in edits) {
+                    const r = parseIntOrNull(edits.pushups, 0, 60, `${s.name} push-ups`);
+                    if (!r.ok) { errors.push(r.error); return; }
+                    patch.pushups = r.value;
+                }
+                if ('run_2400' in edits) {
+                    const r = parseRunInput(edits.run_2400);
+                    if (!r.ok) { errors.push(`${s.name} ${r.error}`); return; }
+                    patch.run_2400 = r.value;
+                }
+            } else {
+                if ('situps' in edits) {
+                    const r = parseIntOrNull(edits.situps, 0, 60, `${s.name} sit-ups`);
+                    if (!r.ok) { errors.push(r.error); return; }
+                    patch.situps = r.value;
+                }
+                if ('shuttle_run' in edits) {
+                    const r = parseFloatOrNull(edits.shuttle_run, 0, 20, `${s.name} shuttle run`);
+                    if (!r.ok) { errors.push(r.error); return; }
+                    patch.shuttle_run = r.value;
+                }
+                if ('sit_and_reach' in edits) {
+                    const r = parseIntOrNull(edits.sit_and_reach, 0, 80, `${s.name} sit & reach`);
+                    if (!r.ok) { errors.push(r.error); return; }
+                    patch.sit_and_reach = r.value;
+                }
+                if ('pullups' in edits) {
+                    const r = parseIntOrNull(edits.pullups, 0, 60, `${s.name} pull-ups`);
+                    if (!r.ok) { errors.push(r.error); return; }
+                    patch.pullups = r.value;
+                }
+                if ('broad_jump' in edits) {
+                    const r = parseIntOrNull(edits.broad_jump, 0, 300, `${s.name} broad jump`);
+                    if (!r.ok) { errors.push(r.error); return; }
+                    patch.broad_jump = r.value;
+                }
+                if ('run_2400' in edits) {
+                    const r = parseRunInput(edits.run_2400);
+                    if (!r.ok) { errors.push(`${s.name} ${r.error}`); return; }
+                    patch.run_2400 = r.value;
+                }
+            }
+
+            if (Object.keys(patch).length > 2) payload.push(patch);
+        });
+
+        if (errors.length) {
+            setMassEditErr(errors[0]);
+            return;
+        }
+        if (!payload.length) {
+            setMassEditErr('No visible edits to save.');
+            return;
+        }
+
+        setMassEditBusy(true);
+        try {
+            const table = isIppt3 ? 'ippt3_scores' : 'scores';
+            const { error: upErr } = await supabase.from(table).upsert(payload, { onConflict: 'session_id,student_id' });
+            if (upErr) throw upErr;
+
+            await loadScoresMap();
+            await loadScoresCount();
+
+            setMassEdits((prev) => {
+                const next = new Map(prev);
+                visible.forEach((s) => next.delete(s.id));
+                return next;
+            });
+            setMassEditNotice(`Saved ${payload.length} row(s) from the current table page.`);
+            setMassEditMode(false);
+            setMassEdits(new Map());
+            setMassEditErr('');
+        } catch (e) {
+            setMassEditErr(e.message || 'Failed to save visible score edits.');
+        } finally {
+            setMassEditBusy(false);
+        }
+    };
+
     const loadRoster = async () => {
         const { data, error: err } = await supabase
             .from("session_roster")
-            .select("student_id, students!inner(id, student_identifier, name, enrollments(class,academic_year))")
+            .select("student_id, students!inner(id, student_identifier, name, gender, dob, enrollments(class,academic_year))")
             .eq("session_id", id)
             .order("student_id", { ascending: true });
         if (err) return;
@@ -247,7 +411,7 @@ export default function SessionDetail({ user }) {
                 const sorted = [...ens].sort((a,b)=> (b.academic_year||0)-(a.academic_year||0));
                 cls = sorted[0]?.class || '';
             }
-            return { id: s.id, student_identifier: s.student_identifier, name: s.name, class: cls };
+            return { id: s.id, student_identifier: s.student_identifier, name: s.name, class: cls, gender: s.gender, dob: s.dob };
         });
         setRoster(list);
     };
@@ -311,6 +475,95 @@ export default function SessionDetail({ user }) {
         });
         return list;
     }, [sortedRoster, filterClass, filterQuery, showCompleted, showIncomplete, completedSet]);
+
+    const pagedScoresRoster = useMemo(() => {
+        const total = filteredSortedRoster.length;
+        if (total === 0) return [];
+        const totalPages = Math.max(1, Math.ceil(total / scoresPageSize));
+        const cur = Math.min(scoresPage, totalPages);
+        const start = (cur - 1) * scoresPageSize;
+        return filteredSortedRoster.slice(start, start + scoresPageSize);
+    }, [filteredSortedRoster, scoresPage, scoresPageSize]);
+
+    const readMassEdit = (studentId, key, fallback = '') => {
+        const row = massEdits.get(studentId);
+        if (!row || !(key in row)) return fallback;
+        return row[key];
+    };
+
+    const setMassEditValue = (studentId, key, value) => {
+        setMassEdits((prev) => {
+            const next = new Map(prev);
+            const row = { ...(next.get(studentId) || {}) };
+            row[key] = value;
+            next.set(studentId, row);
+            return next;
+        });
+    };
+
+    const stationMetaByStudent = useMemo(() => {
+        const map = new Map();
+        const toNum = (v) => (v == null || v === '' ? null : Number(v));
+        const toInt = (v) => {
+            const n = toNum(v);
+            return (n == null || !Number.isFinite(n)) ? null : Math.trunc(n);
+        };
+        const testDate = session?.session_date ? new Date(session.session_date) : new Date();
+        const levelLabel = String(schoolType || '').toLowerCase() === 'primary' ? 'Primary' : 'Secondary';
+
+        (sortedRoster || []).forEach((s) => {
+            const row = scoresByStudent.get(s.id) || {};
+            const sex = s.gender;
+            const age = calcAgeAt(s.dob, testDate);
+            if (!sex || age == null) { map.set(s.id, null); return; }
+
+            if (isIppt3) {
+                const measures3 = {};
+                const su = toInt(row.situps);
+                const pu = toInt(row.pushups);
+                const runMin = toNum(row.run_2400);
+                if (su != null) measures3.situps = su;
+                if (pu != null) measures3.pushups = pu;
+                if (runMin != null) measures3.run_seconds = Math.round(runMin * 60);
+                const res3 = evaluateIppt3({ sex, age }, measures3);
+                map.set(s.id, {
+                    ippt3: {
+                        situpsPoints: res3?.stations?.situps?.points ?? null,
+                        pushupsPoints: res3?.stations?.pushups?.points ?? null,
+                        runPoints: res3?.stations?.run?.points ?? null
+                    }
+                });
+                return;
+            }
+
+            const runKm = age >= 14 ? 2.4 : (levelLabel === 'Primary' ? 1.6 : 2.4);
+            const measures = {};
+            const situps = toInt(row.situps);
+            const shuttle = toNum(row.shuttle_run);
+            const reach = toNum(row.sit_and_reach);
+            const pullups = toInt(row.pullups);
+            const broad = toNum(row.broad_jump);
+            const runMin = toNum(row.run_2400);
+            if (situps != null) measures.situps = situps;
+            if (shuttle != null) measures.shuttle_s = shuttle;
+            if (reach != null) measures.sit_and_reach_cm = reach;
+            if (pullups != null) measures.pullups = pullups;
+            if (broad != null) measures.broad_jump_cm = broad;
+            if (runMin != null) measures.run_seconds = Math.round(runMin * 60);
+            const res = evaluateNapfa({ level: levelLabel, sex, age, run_km: runKm }, measures);
+            map.set(s.id, {
+                napfa: {
+                    situps: res?.stations?.situps?.grade ?? null,
+                    shuttle: res?.stations?.shuttle_s?.grade ?? null,
+                    reach: res?.stations?.sit_and_reach_cm?.grade ?? null,
+                    pullups: res?.stations?.pullups?.grade ?? null,
+                    broad: res?.stations?.broad_jump_cm?.grade ?? null,
+                    run: res?.stations?.run?.grade ?? null
+                }
+            });
+        });
+        return map;
+    }, [sortedRoster, scoresByStudent, session?.session_date, schoolType, isIppt3]);
 
     const loadScoresCount = async () => {
         if ((session?.assessment_type || 'NAPFA5') === 'IPPT3') {
@@ -925,7 +1178,7 @@ export default function SessionDetail({ user }) {
         }
     };
 
-    const downloadProfileCardsPdf = async () => {
+    const downloadProfileCardsPdf = async (format = 'a4') => {
         try {
             const { data, error } = await supabase
                 .from('session_roster')
@@ -940,6 +1193,294 @@ export default function SessionDetail({ user }) {
             }).sort((a, b) => (String(a.class||'').localeCompare(String(b.class||''), undefined, { numeric: true, sensitivity: 'base' })
                 || String(a.name||'').localeCompare(String(b.name||''), undefined, { sensitivity: 'base' })));
             if (!list.length) { setFlash('No students in roster.'); return; }
+
+            if (format === 'wristband_25' || format === 'wristband_19') {
+                // Paper dimensions specified in cm by user; convert to mm for jsPDF.
+                const pageWcm = 25;
+                const pageHcm = 21;
+                const pageW = pageWcm * 10;
+                const pageH = pageHcm * 10;
+                const wbDoc = new jsPDF({ unit: 'mm', format: [pageW, pageH], orientation: 'landscape' });
+                const is19 = format === 'wristband_19';
+                const stripsPerPage = is19 ? 10 : 8;
+                const stripH = is19 ? 19 : 25;
+                const stripBlockH = stripsPerPage * stripH;
+                const topBottomMargin = (pageH - stripBlockH) / 2; // 5mm top/bottom
+                const leftNoPrint = 30; // required blank zone at leading left side
+                const rightNoPrint = 30; // required blank zone at trailing right side
+                const rightPad = 4;
+                const stripYStart = (stripIdx) => topBottomMargin + (stripIdx * stripH);
+                const centerYForStrip = (stripIdx) => stripYStart(stripIdx) + (stripH / 2);
+                const bcCanvas = document.createElement('canvas');
+
+                const truncateToWidth = (text, maxW, fontSize) => {
+                    const raw = String(text || '');
+                    if (!raw) return '';
+                    wbDoc.setFontSize(fontSize);
+                    const ellipsis = '...';
+                    if (wbDoc.getTextWidth(raw) <= maxW) return raw;
+                    let out = raw;
+                    while (out.length > 0 && wbDoc.getTextWidth(out + ellipsis) > maxW) {
+                        out = out.slice(0, -1);
+                    }
+                    return out ? (out + ellipsis) : ellipsis;
+                };
+                const splitNameForWristband = (name, maxW) => {
+                    const raw = String(name || '').trim();
+                    if (!raw) return { line1: '', line2: '' };
+                    if (raw.length <= 25) {
+                        return { line1: truncateToWidth(raw, maxW, is19 ? 12.0 : 18.8), line2: '' };
+                    }
+                    let cut = raw.lastIndexOf(' ', 25);
+                    if (cut < 12) cut = 25;
+                    const first = truncateToWidth(raw.slice(0, cut).trim(), maxW, is19 ? 12.0 : 18.8);
+                    const secondRaw = raw.slice(cut).trim();
+                    const second = truncateToWidth(secondRaw, maxW, is19 ? 12.0 : 18.8);
+                    return { line1: first, line2: second };
+                };
+
+                const drawSheetGuides = () => {
+                    wbDoc.setDrawColor(225);
+                    wbDoc.setLineWidth(0.2);
+                    wbDoc.line(leftNoPrint, 0, leftNoPrint, pageH);
+                    wbDoc.line(pageW - rightNoPrint, 0, pageW - rightNoPrint, pageH);
+                    for (let i = 0; i <= stripsPerPage; i++) {
+                        const y = topBottomMargin + (i * stripH);
+                        wbDoc.line(0, y, pageW, y);
+                    }
+                };
+
+                for (let idx = 0; idx < list.length; idx++) {
+                    const stripIdx = idx % stripsPerPage;
+                    if (idx > 0 && stripIdx === 0) wbDoc.addPage([pageW, pageH], 'landscape');
+                    if (stripIdx === 0) drawSheetGuides();
+
+                    const s = list[idx];
+                    const idNorm = normalizeStudentId(s.student_identifier);
+                    const y0 = stripYStart(stripIdx);
+                    const cy = centerYForStrip(stripIdx);
+
+                    const qrSize = is19 ? 15 : 21;
+                    const qrX = leftNoPrint + (is19 ? 1.5 : 2);
+                    const qrY = cy - (qrSize / 2);
+
+                    const barX = qrX + qrSize + (is19 ? 2 : 3);
+                    const barW = is19 ? 44 : 54;
+                    const barH = is19 ? 6.5 : 9;
+                    const barY = y0 + (is19 ? 3 : 4);
+
+                    const idY = barY + barH + (is19 ? 3.2 : 4.8);
+
+                    const textX = barX + barW + (is19 ? 4 : 6);
+                    const textW = Math.max(20, (pageW - rightNoPrint - rightPad) - textX);
+                    const nameY = y0 + (is19 ? 8.2 : 10.8);
+                    const nameLineGap = is19 ? 4.6 : 6.4;
+                    const { line1: nameLine1, line2: nameLine2 } = splitNameForWristband(s.name || '', textW);
+                    const classY = nameLine2 ? (nameY + nameLineGap + (is19 ? 3.6 : 5.0)) : (nameY + (is19 ? 6.8 : 9.5));
+
+                    const classLine = truncateToWidth(s.class || '', textW, is19 ? 6.4 : 8.8);
+                    const idLine = truncateToWidth(idNorm, barW, is19 ? 6.8 : 9.4);
+
+                    // 1) QR
+                    try {
+                        const qrUrl = await drawQrDataUrl(idNorm, 220, 'M', 1);
+                        wbDoc.addImage(qrUrl, 'PNG', qrX, qrY, qrSize, qrSize);
+                    } catch {}
+
+                    // 2) Barcode
+                    try {
+                        drawBarcode(bcCanvas, idNorm, {
+                            format: 'CODE128',
+                            width: is19 ? 1.0 : 1.2,
+                            height: is19 ? 28 : 36,
+                            margin: is19 ? 4 : 6,
+                            displayValue: false
+                        });
+                        const bcUrl = bcCanvas.toDataURL('image/png');
+                        wbDoc.addImage(bcUrl, 'PNG', barX, barY, barW, barH);
+                    } catch {}
+
+                    // 3) ID below barcode, then Name + Class
+                    wbDoc.setFontSize(is19 ? 6.8 : 9.4);
+                    if (idLine) wbDoc.text(idLine, barX + (barW / 2), idY, { align: 'center' });
+                    wbDoc.setFontSize(is19 ? 12.0 : 18.8);
+                    if (nameLine1) wbDoc.text(nameLine1, textX, nameY);
+                    if (nameLine2) wbDoc.text(nameLine2, textX, nameY + nameLineGap);
+                    wbDoc.setFontSize(is19 ? 6.4 : 8.8);
+                    if (classLine) wbDoc.text(classLine, textX, classY);
+                }
+
+                const d = new Date(session.session_date);
+                const dd = String(d.getDate()).padStart(2, '0');
+                const mm = String(d.getMonth() + 1).padStart(2, '0');
+                const yyyy = d.getFullYear();
+                const ddmmyyyy = `${dd}${mm}${yyyy}`;
+                const safeTitle = String(session?.title || 'session')
+                    .trim()
+                    .replace(/[\\/:*?"<>|]+/g, '')
+                    .replace(/\s+/g, '_');
+                const wbFile = `${safeTitle}_${ddmmyyyy}_${is19 ? 'wristband19' : 'wristband25'}.pdf`;
+                wbDoc.save(wbFile);
+                try {
+                    const validUuid = (v) => typeof v === 'string' && /[0-9a-fA-F-]{36}/.test(v);
+                    const sid = validUuid(id) ? id : null;
+                    const sch = validUuid(membership?.school_id) ? membership.school_id : null;
+                    await supabase.rpc('audit_log_event', {
+                        p_entity_type: 'profile_cards',
+                        p_action: 'download',
+                        p_entity_id: null,
+                        p_school_id: sch,
+                        p_session_id: sid,
+                        p_details: { file: wbFile, count: list.length, format }
+                    });
+                } catch {}
+                return;
+            }
+
+            if (format === 'a4_sticker_105x74') {
+                const stDoc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+                const pageW = 210;
+                const pageH = 297;
+                const cols = 2;
+                const rows = 4;
+                const stickerW = 105;
+                const stickerH = 74;
+                const perPage = cols * rows; // 8
+                const safeInset = 5; // printer non-printable margin safety inside each sticker
+                const qrSize = 32;
+                const bcCanvas = document.createElement('canvas');
+                const titleLine = String(session?.title || "");
+                const schoolLine = String(schoolName || "");
+
+                const truncateToWidth = (text, maxW, fontSize) => {
+                    if (!text) return '';
+                    stDoc.setFontSize(fontSize);
+                    const ellipsis = '...';
+                    let t = String(text);
+                    if (stDoc.getTextWidth(t) <= maxW) return t;
+                    while (t.length > 0 && stDoc.getTextWidth(t + ellipsis) > maxW) t = t.slice(0, -1);
+                    return t.length ? (t + ellipsis) : ellipsis;
+                };
+                const wrapNameTwoLines = (text, maxW, fontSize) => {
+                    const raw = String(text || '').trim();
+                    if (!raw) return ['', ''];
+                    stDoc.setFontSize(fontSize);
+                    const words = raw.split(/\s+/).filter(Boolean);
+                    if (!words.length) return ['', ''];
+                    let line1 = '';
+                    let i = 0;
+                    for (; i < words.length; i++) {
+                        const candidate = line1 ? `${line1} ${words[i]}` : words[i];
+                        if (stDoc.getTextWidth(candidate) <= maxW) line1 = candidate;
+                        else break;
+                    }
+                    if (!line1) {
+                        line1 = truncateToWidth(words[0], maxW, fontSize);
+                        i = 1;
+                    }
+                    const rest = words.slice(i).join(' ');
+                    const line2 = rest ? truncateToWidth(rest, maxW, fontSize) : '';
+                    return [line1, line2];
+                };
+
+                const drawSheetGuides = () => {
+                    stDoc.setDrawColor(230);
+                    stDoc.setLineWidth(0.15);
+                    for (let c = 0; c <= cols; c++) {
+                        const x = c * stickerW;
+                        stDoc.line(x, 0, x, pageH);
+                    }
+                    for (let r = 0; r <= rows; r++) {
+                        const y = r * stickerH;
+                        stDoc.line(0, y, pageW, y);
+                    }
+                };
+
+                for (let i = 0; i < list.length; i++) {
+                    const idxInPage = i % perPage;
+                    if (i > 0 && idxInPage === 0) stDoc.addPage('a4', 'portrait');
+                    if (idxInPage === 0) drawSheetGuides();
+
+                    const s = list[i];
+                    const idNorm = normalizeStudentId(s.student_identifier);
+                    const col = idxInPage % cols;
+                    const row = Math.floor(idxInPage / cols);
+                    const x0 = col * stickerW;
+                    const y0 = row * stickerH;
+
+                    const innerX = x0 + safeInset;
+                    const innerY = y0 + safeInset;
+                    const innerW = stickerW - (safeInset * 2);
+                    const innerH = stickerH - (safeInset * 2);
+
+                    const qrX = innerX + innerW - qrSize;
+                    const qrY = innerY + 1;
+                    const textX = innerX + 2;
+                    const textMaxW = Math.max(24, (qrX - textX - 3));
+                    const idLabel = truncateToWidth(idNorm, textMaxW, 15);
+                    const [nameLine1, nameLine2] = wrapNameTwoLines(s.name || '', textMaxW, 12.5);
+                    const classLabel = truncateToWidth(s.class || '', textMaxW, 11.5);
+                    const schoolLabel = truncateToWidth(schoolLine, textMaxW, 8.5);
+                    const sessionLabel = truncateToWidth(titleLine, textMaxW, 8.5);
+                    const bcW = innerW - 4;
+                    const bcH = 17;
+                    const bcX = innerX + 2;
+                    const bcY = innerY + innerH - bcH - 6;
+
+                    // QR
+                    try {
+                        const qrUrl = await drawQrDataUrl(idNorm, 240, 'M', 1);
+                        stDoc.addImage(qrUrl, 'PNG', qrX, qrY, qrSize, qrSize);
+                    } catch {}
+
+                    // Text block
+                    stDoc.setFontSize(15);
+                    if (idLabel) stDoc.text(idLabel, textX, innerY + 9);
+                    stDoc.setFontSize(12.5);
+                    if (nameLine1) stDoc.text(nameLine1, textX, innerY + 17);
+                    if (nameLine2) stDoc.text(nameLine2, textX, innerY + 23);
+                    stDoc.setFontSize(11.5);
+                    if (classLabel) stDoc.text(classLabel, textX, innerY + (nameLine2 ? 29 : 25));
+                    stDoc.setFontSize(8.5);
+                    if (schoolLabel) stDoc.text(schoolLabel, textX, bcY - 4.5);
+                    if (sessionLabel) stDoc.text(sessionLabel, textX, bcY - 1.2);
+
+                    // Barcode + caption
+                    try {
+                        drawBarcode(bcCanvas, idNorm, { format: 'CODE128', width: 1.6, height: 46, margin: 10, displayValue: false });
+                        const bcUrl = bcCanvas.toDataURL('image/png');
+                        stDoc.addImage(bcUrl, 'PNG', bcX, bcY, bcW, bcH);
+                        stDoc.setFontSize(10.5);
+                        stDoc.text(truncateToWidth(idNorm, bcW, 10.5), bcX + (bcW / 2), bcY + bcH + 4, { align: 'center' });
+                    } catch {}
+                }
+
+                const d = new Date(session.session_date);
+                const dd = String(d.getDate()).padStart(2, '0');
+                const mm = String(d.getMonth() + 1).padStart(2, '0');
+                const yyyy = d.getFullYear();
+                const ddmmyyyy = `${dd}${mm}${yyyy}`;
+                const safeTitle = String(session?.title || 'session')
+                    .trim()
+                    .replace(/[\\/:*?"<>|]+/g, '')
+                    .replace(/\s+/g, '_');
+                const outFile = `${safeTitle}_${ddmmyyyy}_a4_sticker_105x74.pdf`;
+                stDoc.save(outFile);
+                try {
+                    const validUuid = (v) => typeof v === 'string' && /[0-9a-fA-F-]{36}/.test(v);
+                    const sid = validUuid(id) ? id : null;
+                    const sch = validUuid(membership?.school_id) ? membership.school_id : null;
+                    await supabase.rpc('audit_log_event', {
+                        p_entity_type: 'profile_cards',
+                        p_action: 'download',
+                        p_entity_id: null,
+                        p_school_id: sch,
+                        p_session_id: sid,
+                        p_details: { file: outFile, count: list.length, format: 'a4_sticker_105x74' }
+                    });
+                } catch {}
+                return;
+            }
 
             const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
             const pageW = 210, pageH = 297;
@@ -971,6 +1512,48 @@ export default function SessionDetail({ user }) {
                     t = t.slice(0, -1);
                 }
                 return t.length ? (t + ellipsis) : '';
+            };
+            const wrapToMaxLines = (text, maxW, fontSize, maxLines = 2) => {
+                const raw = String(text || '').trim();
+                if (!raw) return [];
+                const words = raw.split(/\s+/).filter(Boolean);
+                const lines = [];
+                let cur = '';
+                doc.setFontSize(fontSize);
+                for (const w of words) {
+                    if (!cur) {
+                        if (doc.getTextWidth(w) <= maxW) {
+                            cur = w;
+                        } else {
+                            lines.push(truncateToWidth(w, maxW, fontSize));
+                            cur = '';
+                        }
+                    } else {
+                        const candidate = `${cur} ${w}`;
+                        if (doc.getTextWidth(candidate) <= maxW) {
+                            cur = candidate;
+                        } else {
+                            lines.push(cur);
+                            cur = (doc.getTextWidth(w) <= maxW) ? w : truncateToWidth(w, maxW, fontSize);
+                        }
+                    }
+                    if (lines.length >= maxLines) break;
+                }
+                if (lines.length < maxLines && cur) lines.push(cur);
+                if (lines.length > maxLines) lines.length = maxLines;
+                if (words.length && lines.length === maxLines) {
+                    const consumed = lines.join(' ').split(/\s+/).filter(Boolean).length;
+                    if (consumed < words.length) {
+                        doc.setFontSize(fontSize);
+                        let last = String(lines[maxLines - 1] || '');
+                        const ellipsis = '...';
+                        while (last.length > 0 && doc.getTextWidth(last + ellipsis) > maxW) {
+                            last = last.slice(0, -1);
+                        }
+                        lines[maxLines - 1] = last ? (last + ellipsis) : ellipsis;
+                    }
+                }
+                return lines;
             };
 
             // Group by class so each class starts on a fresh page
@@ -1014,12 +1597,24 @@ export default function SessionDetail({ user }) {
                 doc.setLineWidth(0.3);
                 doc.rect(x0 + 2, y0 + 2, cellW - 4, cellH - 4);
 
-                // Text
+                // Text area is constrained to the left of the QR to prevent overflow into QR/next card
+                const cardPadX = 6;
+                const qrX = x0 + cellW - qrSize - cardPadX;
+                const textStartX = x0 + cardPadX;
+                const textMaxW = Math.max(20, qrX - textStartX - 4);
+                const idLabel = truncateToWidth(String(idNorm), textMaxW, 14);
+                const nameLines = wrapToMaxLines(s.name || '', textMaxW, 12, 2);
+                const classLabel = truncateToWidth((s.class || ''), textMaxW, 11);
+
                 doc.setFontSize(14);
-                doc.text(String(idNorm), x0 + 6, y0 + 12);
+                doc.text(idLabel, textStartX, y0 + 12);
                 doc.setFontSize(12);
-                doc.text(s.name || '', x0 + 6, y0 + 20);
-                doc.text((s.class || ''), x0 + 6, y0 + 26);
+                nameLines.forEach((line, i) => {
+                    doc.text(line, textStartX, y0 + 20 + (i * 4.5));
+                });
+                doc.setFontSize(11);
+                const classY = y0 + 20 + (Math.max(nameLines.length, 1) * 4.5) + 2;
+                doc.text(classLabel, textStartX, classY);
 
                 // Images
                 // QR on right
@@ -1034,8 +1629,8 @@ export default function SessionDetail({ user }) {
                 const bcY = y0 + cellH - bottomPad - bcH; // barcode sits above bottom padding
 
                 // Footer band (draw text, not a filled rect). Centered text, truncated to fit cell width - paddings
-                const textPadX = 6; // left/right text padding inside cell
-                const maxTextW = cellW - textPadX * 2;
+                const footerTextPadX = 6; // left/right text padding inside cell
+                const maxTextW = cellW - footerTextPadX * 2;
                 const line1 = truncateToWidth(schoolLine, maxTextW, 9);
                 const line2 = truncateToWidth(titleLine, maxTextW, 9);
                 const footerBottomY = bcY - gap; // band sits directly above barcode
@@ -1372,6 +1967,16 @@ export default function SessionDetail({ user }) {
                             Run Setup
                         </button>
                     )}
+                    <button
+                        role="tab"
+                        aria-selected={activeTab === 'groups'}
+                        className={(activeTab === 'groups'
+                            ? 'bg-white text-blue-700 shadow border border-gray-200'
+                            : 'text-gray-600 hover:text-gray-800') + ' px-3 py-1.5 rounded-md transition-colors'}
+                        onClick={() => setActiveTab('groups')}
+                    >
+                        Groups
+                    </button>
                 </div>
             </nav>
 
@@ -1387,6 +1992,12 @@ export default function SessionDetail({ user }) {
                 />
             ) : activeTab === 'houses' ? (
                 <SessionHouses
+                  session={session}
+                  membership={membership}
+                  canManage={rosterEditable}
+                />
+            ) : activeTab === 'groups' ? (
+                <SessionGroups
                   session={session}
                   membership={membership}
                   canManage={rosterEditable}
@@ -1735,6 +2346,31 @@ export default function SessionDetail({ user }) {
                             </div>
                             {canManage && (
                                 <div className="flex gap-2">
+                                    {!massEditMode ? (
+                                        <button
+                                            onClick={() => { setMassEditMode(true); setMassEditErr(''); setMassEditNotice(''); }}
+                                            className="text-xs px-3 py-1.5 border rounded bg-white hover:bg-gray-50"
+                                        >
+                                            Mass Edit
+                                        </button>
+                                    ) : (
+                                        <>
+                                            <button
+                                                onClick={() => setMassEditSaveOpen(true)}
+                                                disabled={massEditBusy}
+                                                className="text-xs px-3 py-1.5 border rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
+                                            >
+                                                {massEditBusy ? 'Saving...' : 'Save Mass Edit'}
+                                            </button>
+                                            <button
+                                                onClick={() => setMassEditCancelOpen(true)}
+                                                disabled={massEditBusy}
+                                                className="text-xs px-3 py-1.5 border rounded bg-white hover:bg-gray-50 disabled:opacity-60"
+                                            >
+                                                Cancel
+                                            </button>
+                                        </>
+                                    )}
                                     <button
                                         onClick={exportPftAllClasses}
                                         className="text-xs px-3 py-1.5 border rounded bg-white hover:bg-gray-50"
@@ -1750,6 +2386,12 @@ export default function SessionDetail({ user }) {
                                 </div>
                             )}
                         </div>
+                        {massEditMode && (
+                            <div className="px-3 py-2 border-b bg-blue-50 text-xs text-blue-800 flex items-center justify-between gap-2">
+                                <span>Mass edit is ON for the rows currently displayed in this table page.</span>
+                                {massEditErr ? <span className="text-red-700">{massEditErr}</span> : (massEditNotice ? <span className="text-green-700">{massEditNotice}</span> : null)}
+                            </div>
+                        )}
                         <table className="w-full">
                             <thead>
                             {((session?.assessment_type || 'NAPFA5') === 'IPPT3') ? (
@@ -1783,12 +2425,22 @@ export default function SessionDetail({ user }) {
                                 if (total === 0) return (
                                     <tr><td colSpan="10" className="px-3 py-4 text-center text-gray-500">No students in this session yet.</td></tr>
                                 );
-                                const totalPages = Math.max(1, Math.ceil(total / scoresPageSize));
-                                const cur = Math.min(scoresPage, totalPages);
-                                const start = (cur - 1) * scoresPageSize;
-                                const pageItems = filteredSortedRoster.slice(start, start + scoresPageSize);
+                                const pageItems = pagedScoresRoster;
                                     return pageItems.flatMap((s) => {
                                         const row = scoresByStudent.get(s.id) || {};
+                                        const meta = stationMetaByStudent.get(s.id) || {};
+                                        const napfaGrades = meta?.napfa || {};
+                                        const ippt3 = meta?.ippt3 || {};
+                                        const withGrade = (val, grade, formatter) => {
+                                            if (val == null) return '-';
+                                            const shown = formatter ? formatter(val) : String(val);
+                                            return `${shown} (${grade || '-'})`;
+                                        };
+                                        const withPoints = (val, pts, formatter) => {
+                                            if (val == null) return '-';
+                                            const shown = formatter ? formatter(val) : String(val);
+                                            return Number.isFinite(pts) ? `${shown} | ${pts} pts` : shown;
+                                        };
                                     const canRecord = true;
                                         const isCompleted = completedSet.has(s.id);
                                         const isInProgress = inProgressSet.has(s.id);
@@ -1801,11 +2453,44 @@ export default function SessionDetail({ user }) {
                                               <td className={`px-3 py-2 border align-top ${statusLeft}`}>{normalizeStudentId(s.student_identifier)}</td>
                                               <td className="px-3 py-2 border align-top">{s.name}</td>
                                               <td className="px-3 py-2 border align-top">{s.class || '-'}</td>
-                                              <td className="px-3 py-2 border align-top">{row.situps ?? '-'}</td>
-                                              <td className="px-3 py-2 border align-top">{row.pushups ?? '-'}</td>
-                                              <td className="px-3 py-2 border align-top">{fmtRun(row.run_2400) || '-'}</td>
                                               <td className="px-3 py-2 border align-top">
-                                                <ScoreRowActions student={s} canRecord={canRecord} onSaved={async () => { await loadScoresMap(); await loadScoresCount(); }} sessionId={id} isIppt3={isIppt3} />
+                                                {massEditMode && canManage ? (
+                                                    <input
+                                                        value={readMassEdit(s.id, 'situps', row.situps == null ? '' : String(row.situps))}
+                                                        onChange={(e) => setMassEditValue(s.id, 'situps', e.target.value)}
+                                                        className="w-24 border rounded px-2 py-1 text-sm"
+                                                        inputMode="numeric"
+                                                        placeholder="0-60"
+                                                    />
+                                                ) : withPoints(row.situps, ippt3.situpsPoints)}
+                                              </td>
+                                              <td className="px-3 py-2 border align-top">
+                                                {massEditMode && canManage ? (
+                                                    <input
+                                                        value={readMassEdit(s.id, 'pushups', row.pushups == null ? '' : String(row.pushups))}
+                                                        onChange={(e) => setMassEditValue(s.id, 'pushups', e.target.value)}
+                                                        className="w-24 border rounded px-2 py-1 text-sm"
+                                                        inputMode="numeric"
+                                                        placeholder="0-60"
+                                                    />
+                                                ) : withPoints(row.pushups, ippt3.pushupsPoints)}
+                                              </td>
+                                              <td className="px-3 py-2 border align-top">
+                                                {massEditMode && canManage ? (
+                                                    <input
+                                                        value={readMassEdit(s.id, 'run_2400', runToInput(row.run_2400))}
+                                                        onChange={(e) => setMassEditValue(s.id, 'run_2400', e.target.value)}
+                                                        className="w-28 border rounded px-2 py-1 text-sm"
+                                                        inputMode="numeric"
+                                                        placeholder="MSS/MMSS"
+                                                    />
+                                                ) : withPoints(row.run_2400, ippt3.runPoints, (v) => fmtRun(v) || '-')}
+                                              </td>
+                                              <td className="px-3 py-2 border align-top">
+                                                {massEditMode && canManage
+                                                    ? <span className="text-xs text-gray-400">-</span>
+                                                    : <ScoreRowActions student={s} canRecord={canRecord} onSaved={async () => { await loadScoresMap(); await loadScoresCount(); }} sessionId={id} isIppt3={isIppt3} />
+                                                }
                                               </td>
                                             </tr>
                                           ];
@@ -1815,14 +2500,77 @@ export default function SessionDetail({ user }) {
                                                 <td className={`px-3 py-2 border align-top ${statusLeft}`}>{normalizeStudentId(s.student_identifier)}</td>
                                                 <td className="px-3 py-2 border align-top">{s.name}</td>
                                                 <td className="px-3 py-2 border align-top">{s.class || '-'}</td>
-                                                <td className="px-3 py-2 border align-top">{row.situps ?? '-'}</td>
-                                                <td className="px-3 py-2 border align-top">{row.shuttle_run ?? '-'}</td>
-                                                <td className="px-3 py-2 border align-top">{row.sit_and_reach ?? '-'}</td>
-                                                <td className="px-3 py-2 border align-top">{row.pullups ?? '-'}</td>
-                                                <td className="px-3 py-2 border align-top">{row.broad_jump ?? '-'}</td>
-                                                <td className="px-3 py-2 border align-top">{fmtRun(row.run_2400) || '-'}</td>
                                                 <td className="px-3 py-2 border align-top">
-                                                    <ScoreRowActions student={s} canRecord={canRecord} onSaved={async () => { await loadScoresMap(); await loadScoresCount(); }} sessionId={id} isIppt3={isIppt3} />
+                                                    {massEditMode && canManage ? (
+                                                        <input
+                                                            value={readMassEdit(s.id, 'situps', row.situps == null ? '' : String(row.situps))}
+                                                            onChange={(e) => setMassEditValue(s.id, 'situps', e.target.value)}
+                                                            className="w-24 border rounded px-2 py-1 text-sm"
+                                                            inputMode="numeric"
+                                                            placeholder="0-60"
+                                                        />
+                                                    ) : withGrade(row.situps, napfaGrades.situps)}
+                                                </td>
+                                                <td className="px-3 py-2 border align-top">
+                                                    {massEditMode && canManage ? (
+                                                        <input
+                                                            value={readMassEdit(s.id, 'shuttle_run', row.shuttle_run == null ? '' : String(row.shuttle_run))}
+                                                            onChange={(e) => setMassEditValue(s.id, 'shuttle_run', e.target.value)}
+                                                            className="w-28 border rounded px-2 py-1 text-sm"
+                                                            inputMode="decimal"
+                                                            placeholder="0.0-20.0"
+                                                        />
+                                                    ) : withGrade(row.shuttle_run, napfaGrades.shuttle)}
+                                                </td>
+                                                <td className="px-3 py-2 border align-top">
+                                                    {massEditMode && canManage ? (
+                                                        <input
+                                                            value={readMassEdit(s.id, 'sit_and_reach', row.sit_and_reach == null ? '' : String(row.sit_and_reach))}
+                                                            onChange={(e) => setMassEditValue(s.id, 'sit_and_reach', e.target.value)}
+                                                            className="w-24 border rounded px-2 py-1 text-sm"
+                                                            inputMode="numeric"
+                                                            placeholder="0-80"
+                                                        />
+                                                    ) : withGrade(row.sit_and_reach, napfaGrades.reach)}
+                                                </td>
+                                                <td className="px-3 py-2 border align-top">
+                                                    {massEditMode && canManage ? (
+                                                        <input
+                                                            value={readMassEdit(s.id, 'pullups', row.pullups == null ? '' : String(row.pullups))}
+                                                            onChange={(e) => setMassEditValue(s.id, 'pullups', e.target.value)}
+                                                            className="w-24 border rounded px-2 py-1 text-sm"
+                                                            inputMode="numeric"
+                                                            placeholder="0-60"
+                                                        />
+                                                    ) : withGrade(row.pullups, napfaGrades.pullups)}
+                                                </td>
+                                                <td className="px-3 py-2 border align-top">
+                                                    {massEditMode && canManage ? (
+                                                        <input
+                                                            value={readMassEdit(s.id, 'broad_jump', row.broad_jump == null ? '' : String(row.broad_jump))}
+                                                            onChange={(e) => setMassEditValue(s.id, 'broad_jump', e.target.value)}
+                                                            className="w-24 border rounded px-2 py-1 text-sm"
+                                                            inputMode="numeric"
+                                                            placeholder="0-300"
+                                                        />
+                                                    ) : withGrade(row.broad_jump, napfaGrades.broad)}
+                                                </td>
+                                                <td className="px-3 py-2 border align-top">
+                                                    {massEditMode && canManage ? (
+                                                        <input
+                                                            value={readMassEdit(s.id, 'run_2400', runToInput(row.run_2400))}
+                                                            onChange={(e) => setMassEditValue(s.id, 'run_2400', e.target.value)}
+                                                            className="w-28 border rounded px-2 py-1 text-sm"
+                                                            inputMode="numeric"
+                                                            placeholder="MSS/MMSS"
+                                                        />
+                                                    ) : withGrade(row.run_2400, napfaGrades.run, (v) => fmtRun(v) || '-')}
+                                                </td>
+                                                <td className="px-3 py-2 border align-top">
+                                                    {massEditMode && canManage
+                                                        ? <span className="text-xs text-gray-400">-</span>
+                                                        : <ScoreRowActions student={s} canRecord={canRecord} onSaved={async () => { await loadScoresMap(); await loadScoresCount(); }} sessionId={id} isIppt3={isIppt3} />
+                                                    }
                                                 </td>
                                             </tr>
                                         ];
@@ -1832,7 +2580,7 @@ export default function SessionDetail({ user }) {
                         </table>
                         {/* Pagination footer */}
                         <ScoresPager
-                            total={roster.length}
+                            total={filteredSortedRoster.length}
                             page={scoresPage}
                             pageSize={scoresPageSize}
                             onPageChange={setScoresPage}
@@ -1840,6 +2588,33 @@ export default function SessionDetail({ user }) {
                     </div>
                 </section>
             )}
+            <ConfirmDialog
+                open={massEditSaveOpen}
+                title="Save Mass Edit?"
+                message="Apply all mass edits for the rows shown in this table page?"
+                confirmText="Save Changes"
+                tone="primary"
+                onCancel={() => setMassEditSaveOpen(false)}
+                onConfirm={async () => {
+                    setMassEditSaveOpen(false);
+                    await saveMassEditVisible();
+                }}
+            />
+            <ConfirmDialog
+                open={massEditCancelOpen}
+                title="Cancel Mass Edit?"
+                message="Discard all unsaved mass edits in this table page?"
+                confirmText="Discard Changes"
+                tone="danger"
+                onCancel={() => setMassEditCancelOpen(false)}
+                onConfirm={() => {
+                    setMassEditCancelOpen(false);
+                    setMassEditMode(false);
+                    setMassEdits(new Map());
+                    setMassEditErr('');
+                    setMassEditNotice('');
+                }}
+            />
         </div>
     );
 }
@@ -1886,6 +2661,30 @@ function ScoreRowActions({ student, sessionId, canRecord, onSaved, isIppt3 }) {
                 </div>
             )}
         </>
+    );
+}
+
+function ConfirmDialog({ open, title, message, confirmText, tone, onCancel, onConfirm }) {
+    if (!open) return null;
+    const confirmClass = tone === "danger"
+        ? "px-3 py-1.5 border rounded bg-red-600 text-white hover:bg-red-700"
+        : "px-3 py-1.5 border rounded bg-blue-600 text-white hover:bg-blue-700";
+    return (
+        <div className="fixed inset-0 z-50">
+            <div className="absolute inset-0 bg-black/35" onClick={onCancel} />
+            <div className="absolute inset-0 flex items-center justify-center p-4">
+                <div role="dialog" aria-modal="true" className="w-full max-w-md bg-white rounded-lg shadow-lg border">
+                    <div className="px-4 py-3 border-b">
+                        <div className="font-medium">{title}</div>
+                    </div>
+                    <div className="p-4 text-sm text-gray-700">{message}</div>
+                    <div className="px-4 py-3 border-t flex justify-end gap-2">
+                        <button type="button" onClick={onCancel} className="px-3 py-1.5 border rounded hover:bg-gray-50">Keep Editing</button>
+                        <button type="button" onClick={onConfirm} className={confirmClass}>{confirmText || "Confirm"}</button>
+                    </div>
+                </div>
+            </div>
+        </div>
     );
 }
 

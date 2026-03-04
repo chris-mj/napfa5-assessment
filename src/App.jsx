@@ -12,6 +12,7 @@ const ModifyUser = lazy(() => import("./pages/ModifyUser"));
 const CreateSchool = lazy(() => import("./pages/CreateSchool"));
 const Students = lazy(() => import("./pages/Students"));
 const AddAttempt = lazy(() => import("./pages/AddAttempt"));
+const ScoreEntryGroup = lazy(() => import("./pages/ScoreEntryGroup"));
 const AdminGlobal = lazy(() => import("./pages/AdminGlobal"));
 const ChangePassword = lazy(() => import("./pages/ChangePassword"));
 const Contact = lazy(() => import("./pages/Contact"));
@@ -313,6 +314,16 @@ function AnimatedRoutes({ user, setUser }) {
                         element={
                             user ? (
                                 <PageFade><AddAttempt user={user} /></PageFade>
+                            ) : (
+                                <Navigate to="/login" replace />
+                            )
+                        }
+                    />
+                    <Route
+                        path="/add-attempt-group"
+                        element={
+                            user ? (
+                                <PageFade><ScoreEntryGroup user={user} /></PageFade>
                             ) : (
                                 <Navigate to="/login" replace />
                             )

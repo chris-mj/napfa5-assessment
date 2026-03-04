@@ -172,7 +172,7 @@ export default function Dashboard({ user }) {
 
         {/* Header */}
         <div className="flex items-center gap-3">
-          <img src="/icon.png" alt="NAPFA 5" className="w-8 h-8" />
+          <img src="/iconsmall.png" alt="NAPFA 5" className="w-8 h-8" />
           <div>
             <h1 className="text-3xl font-semibold tracking-tight text-slate-900">Dashboard</h1>
             <div className="text-sm text-slate-600">Welcome back{user?.email ? `, ${user.email}` : ''}.</div>
@@ -368,12 +368,13 @@ export default function Dashboard({ user }) {
         <section>
           <h2 className="text-xl font-semibold text-slate-900 mb-3">What's new</h2>
           <div className="rounded-xl bg-white p-4 shadow-sm border border-gray-100">
+            <div className="text-sm font-semibold text-slate-900 mb-2">4 Mar 2026</div>
             <ul className="list-disc pl-5 text-sm text-slate-700 space-y-1">
-              <li>Challenge Hub with top scorers and gender-split leaderboards.</li>
-              <li>Session Houses tab with CSV import/export and bulk assignment.</li>
-              <li>Learning Hub with per-station guidance and drills.</li>
-              <li>Charts page added under Insights.</li>
-              <li>Improved PFT export (template headers, station scores, total points, awards).</li>
+              <li>Group score entry now supported with group QR code, and auto generated group list.</li>
+              <li>Scanner popups now include a camera switch button.</li>
+              <li>Profile outputs allow 25mm wristband / 19mm wristband / precut sticker label print format.</li>
+                <li>Session Detail score tab now shows grades.</li>
+                <li>Testing tools added to score entry page (Stopwatch, countdown timer, reps counter)</li>
             </ul>
           </div>
         </section>

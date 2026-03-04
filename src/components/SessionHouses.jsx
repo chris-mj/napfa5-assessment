@@ -27,6 +27,9 @@ export default function SessionHouses({ session, membership, canManage }) {
   const [sortBy2, setSortBy2] = useState("name");
   const [sortDir, setSortDir] = useState("asc");
   const houseFileRef = useRef(null);
+  const [houseModalOpen, setHouseModalOpen] = useState(false);
+  const [newHouseName, setNewHouseName] = useState("");
+  const [houseModalTarget, setHouseModalTarget] = useState({ mode: "bulk", studentId: null });
 
   const loadData = async () => {
     if (!sessionId || !schoolId) return;
@@ -221,18 +224,22 @@ export default function SessionHouses({ session, membership, canManage }) {
     }
   };
 
-  const promptNewHouse = () => {
-    const name = window.prompt("Enter new house name");
-    const trimmed = (name || "").trim();
-    if (!trimmed) return null;
-    setHouseOptions(prev => Array.from(new Set([...prev, trimmed])).sort((a,b)=>a.localeCompare(b)));
-    return trimmed;
+  const openNewHouseModal = (mode, studentId = null) => {
+    setHouseModalTarget({ mode, studentId });
+    setNewHouseName("");
+    setHouseModalOpen(true);
   };
 
-  const downloadHouseTemplate = () => {
-    const header = ["Student ID","Name","Class","Gender","House"].map(csvCell).join(",");
-    const content = header + "\n";
-    downloadCsv(content, `house_template_${sessionYear}.csv`);
+  const submitNewHouse = async () => {
+    const trimmed = String(newHouseName || "").trim();
+    if (!trimmed) return;
+    setHouseOptions(prev => Array.from(new Set([...prev, trimmed])).sort((a,b)=>a.localeCompare(b)));
+    if (houseModalTarget.mode === "row" && houseModalTarget.studentId) {
+      await updateHouse(houseModalTarget.studentId, trimmed);
+    } else {
+      setBulkHouse(trimmed);
+    }
+    setHouseModalOpen(false);
   };
 
   const downloadHouseRoster = () => {
@@ -292,30 +299,26 @@ export default function SessionHouses({ session, membership, canManage }) {
 
   return (
     <section className="space-y-3">
-      <div className="border rounded-lg bg-white p-3 flex flex-wrap items-center gap-3">
-        <div className="ml-auto flex items-center gap-2 flex-wrap">
-          <button onClick={downloadHouseTemplate} className="px-3 py-1.5 rounded border bg-white hover:bg-gray-50">Download House Template</button>
-          <button onClick={downloadHouseRoster} className="px-3 py-1.5 rounded border bg-white hover:bg-gray-50">Download House List</button>
-          {canManage && (
-            <>
-              <button onClick={() => houseFileRef.current?.click()} className="px-3 py-1.5 rounded border bg-white hover:bg-gray-50">Upload House CSV</button>
-              <input ref={houseFileRef} type="file" accept=".csv,text/csv" onChange={(e) => onHouseCsvUpload(e.target.files?.[0])} className="hidden" />
-            </>
-          )}
-        </div>
+      <div className="border border-sky-200 rounded-lg bg-sky-50/40 p-3 flex flex-wrap items-center gap-2">
+        <button onClick={downloadHouseRoster} className="px-3 py-1.5 rounded border bg-white hover:bg-gray-50">Download House List</button>
+        {canManage && (
+          <>
+            <button onClick={() => houseFileRef.current?.click()} className="px-3 py-1.5 rounded border bg-white hover:bg-gray-50">Upload House List</button>
+            <input ref={houseFileRef} type="file" accept=".csv,text/csv" onChange={(e) => onHouseCsvUpload(e.target.files?.[0])} className="hidden" />
+          </>
+        )}
       </div>
 
       {canManage && (
-        <div className="border rounded-lg bg-white p-3 flex items-center flex-wrap gap-2">
-          <label className="text-sm text-gray-600">Set house for selected</label>
+        <div className="border border-emerald-200 rounded-lg bg-emerald-50 p-3 flex items-center flex-wrap gap-2">
+          <label className="text-sm text-emerald-800 font-medium">Set house for selected</label>
           <select
             className="border rounded px-2 py-1 text-sm bg-white"
             value={bulkHouse}
             onChange={(e) => {
               const val = e.target.value;
               if (val === "__new__") {
-                const created = promptNewHouse();
-                setBulkHouse(created || "");
+                openNewHouseModal("bulk");
               } else {
                 setBulkHouse(val);
               }
@@ -332,22 +335,33 @@ export default function SessionHouses({ session, membership, canManage }) {
         </div>
       )}
 
-      {canManage && houseOptions.length > 0 && (
-        <div className="border rounded-lg bg-white p-3">
-          <div className="text-sm font-medium text-gray-700 mb-2">Houses</div>
-          <div className="flex flex-wrap gap-2">
-            {houseOptions.map(h => (
-              <div key={h} className="flex items-center gap-2 border rounded px-2 py-1 bg-white">
-                <span className="text-sm">{h}</span>
-                <button onClick={() => deleteHouse(h)} className="text-xs px-2 py-0.5 border rounded hover:bg-gray-50">Delete</button>
-              </div>
-            ))}
-          </div>
+      <div className="rounded-xl border border-sky-200 bg-sky-50/60 p-2 md:p-3 space-y-2">
+        <div className="px-1">
+          <div className="text-sm font-semibold text-sky-900">House Management Flow</div>
+          <div className="text-xs text-sky-800">Review houses first, then assign students in the table.</div>
         </div>
-      )}
 
-      <div className="border rounded-lg bg-white overflow-x-auto">
-        <div className="p-2 border-b bg-white grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-2 text-sm">
+        {canManage && houseOptions.length > 0 && (
+          <div className="space-y-1">
+            <div className="text-xs font-medium text-sky-800 px-1">Step 1 of 2: Houses List</div>
+            <div className="border border-sky-200 rounded-lg bg-white p-3">
+              <div className="text-sm font-medium text-gray-700 mb-2">Houses</div>
+              <div className="flex flex-wrap gap-2">
+                {houseOptions.map(h => (
+                  <div key={h} className="flex items-center gap-2 border rounded px-2 py-1 bg-white">
+                    <span className="text-sm">{h}</span>
+                    <button onClick={() => deleteHouse(h)} className="text-xs px-2 py-0.5 border rounded hover:bg-gray-50">Delete</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="space-y-1">
+          <div className="text-xs font-medium text-sky-800 px-1">Step 2 of 2: Assignments</div>
+          <div className="border border-sky-200 rounded-lg bg-white overflow-x-auto">
+            <div className="p-2 border-b bg-white grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-2 text-sm">
           <div className="flex items-center gap-2">
             <label className="text-gray-600">Search</label>
             <input
@@ -407,69 +421,111 @@ export default function SessionHouses({ session, membership, canManage }) {
               {sortDir === "asc" ? "A-Z" : "Z-A"}
             </button>
           </div>
+            </div>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gray-100 text-left">
+                  <th className="px-3 py-2 border w-8">
+                    <input
+                      type="checkbox"
+                      checked={filtered.length > 0 && filtered.every(r => selected.has(r.id))}
+                      onChange={(e) => toggleAllFiltered(e.target.checked)}
+                    />
+                  </th>
+                  <th className="px-3 py-2 border">ID</th>
+                  <th className="px-3 py-2 border">Name</th>
+                  <th className="px-3 py-2 border">Class</th>
+                  <th className="px-3 py-2 border">Gender</th>
+                  <th className="px-3 py-2 border">House</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sorted.length === 0 ? (
+                  <tr><td colSpan="6" className="px-3 py-4 text-center text-gray-500">No students in roster.</td></tr>
+                ) : sorted.map(s => (
+                  <tr key={s.id} className="hover:bg-gray-50">
+                    <td className="px-3 py-2 border">
+                      <input type="checkbox" checked={selected.has(s.id)} onChange={() => toggleSelected(s.id)} />
+                    </td>
+                    <td className="px-3 py-2 border whitespace-nowrap">{normalizeStudentId(s.student_identifier)}</td>
+                    <td className="px-3 py-2 border">{s.name}</td>
+                    <td className="px-3 py-2 border">{s.class || ""}</td>
+                    <td className="px-3 py-2 border">{s.gender || ""}</td>
+                    <td className="px-3 py-2 border">
+                      {canManage ? (
+                        <select
+                          className="border rounded px-2 py-1 text-sm bg-white"
+                          value={s.house || ""}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            if (val === "__new__") {
+                              openNewHouseModal("row", s.id);
+                            } else {
+                              updateHouse(s.id, val);
+                            }
+                          }}
+                        >
+                          <option value="">Unassigned</option>
+                          {houseOptions.map(h => (
+                            <option key={h} value={h}>{h}</option>
+                          ))}
+                          <option value="__new__">Add new...</option>
+                        </select>
+                      ) : (
+                        <span>{s.house || "-"}</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="bg-gray-100 text-left">
-              <th className="px-3 py-2 border w-8">
-                <input
-                  type="checkbox"
-                  checked={filtered.length > 0 && filtered.every(r => selected.has(r.id))}
-                  onChange={(e) => toggleAllFiltered(e.target.checked)}
-                />
-              </th>
-              <th className="px-3 py-2 border">ID</th>
-              <th className="px-3 py-2 border">Name</th>
-              <th className="px-3 py-2 border">Class</th>
-              <th className="px-3 py-2 border">Gender</th>
-              <th className="px-3 py-2 border">House</th>
-            </tr>
-          </thead>
-          <tbody>
-            {sorted.length === 0 ? (
-              <tr><td colSpan="6" className="px-3 py-4 text-center text-gray-500">No students in roster.</td></tr>
-            ) : sorted.map(s => (
-              <tr key={s.id} className="hover:bg-gray-50">
-                <td className="px-3 py-2 border">
-                  <input type="checkbox" checked={selected.has(s.id)} onChange={() => toggleSelected(s.id)} />
-                </td>
-                <td className="px-3 py-2 border whitespace-nowrap">{normalizeStudentId(s.student_identifier)}</td>
-                <td className="px-3 py-2 border">{s.name}</td>
-                <td className="px-3 py-2 border">{s.class || ""}</td>
-                <td className="px-3 py-2 border">{s.gender || ""}</td>
-                <td className="px-3 py-2 border">
-                  {canManage ? (
-                    <select
-                      className="border rounded px-2 py-1 text-sm bg-white"
-                      value={s.house || ""}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        if (val === "__new__") {
-                          const created = promptNewHouse();
-                          if (created) updateHouse(s.id, created);
-                        } else {
-                          updateHouse(s.id, val);
-                        }
-                      }}
-                    >
-                      <option value="">Unassigned</option>
-                      {houseOptions.map(h => (
-                        <option key={h} value={h}>{h}</option>
-                      ))}
-                      <option value="__new__">Add new...</option>
-                    </select>
-                  ) : (
-                    <span>{s.house || "-"}</span>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
       </div>
 
       {message && <div className="text-sm text-gray-700">{message}</div>}
+      <NamePromptModal
+        open={houseModalOpen}
+        title="Add New House"
+        label="House name"
+        value={newHouseName}
+        onChange={setNewHouseName}
+        onCancel={() => setHouseModalOpen(false)}
+        onConfirm={submitNewHouse}
+        confirmText="Add"
+      />
     </section>
+  );
+}
+
+function NamePromptModal({ open, title, label, value, onChange, onCancel, onConfirm, confirmText = "Save" }) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50">
+      <div className="absolute inset-0 bg-black/35" onClick={onCancel} />
+      <div className="absolute inset-0 flex items-center justify-center p-4">
+        <div role="dialog" aria-modal="true" className="w-full max-w-sm bg-white rounded-lg shadow-lg border">
+          <div className="px-4 py-3 border-b">
+            <div className="font-medium">{title}</div>
+          </div>
+          <div className="p-4 space-y-2">
+            <label className="text-sm text-gray-700">{label}</label>
+            <input
+              autoFocus
+              value={value}
+              onChange={(e) => onChange(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") onConfirm(); }}
+              className="w-full border rounded px-3 py-2"
+              placeholder={`Enter ${label.toLowerCase()}`}
+            />
+          </div>
+          <div className="px-4 py-3 border-t flex justify-end gap-2">
+            <button type="button" onClick={onCancel} className="px-3 py-1.5 border rounded hover:bg-gray-50">Cancel</button>
+            <button type="button" onClick={onConfirm} className="px-3 py-1.5 border rounded bg-blue-600 text-white hover:bg-blue-700">{confirmText}</button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 

@@ -52,15 +52,49 @@ export default function AddAttempt({ user }) {
   const [revealKey, setRevealKey] = useState(0)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [toolsOpen, setToolsOpen] = useState(false)
+  const [counterValue, setCounterValue] = useState(0)
+  const [countdownDefault, setCountdownDefault] = useState(60)
+  const [countdownLeft, setCountdownLeft] = useState(60)
+  const [countdownRunning, setCountdownRunning] = useState(false)
+  const [stopwatchMs, setStopwatchMs] = useState(0)
+  const [stopwatchRunning, setStopwatchRunning] = useState(false)
   const [scannerOpen, setScannerOpen] = useState(false)
   const [rosterOpen, setRosterOpen] = useState(false)
   const [roster, setRoster] = useState([])
   const [rosterLoading, setRosterLoading] = useState(false)
   const [rosterQuery, setRosterQuery] = useState('')
   const firstAttemptRef = useRef(null)
+  const stopwatchStartRef = useRef(0)
+  const stopwatchBaseMsRef = useRef(0)
   const navigate = useNavigate()
   const active = useMemo(() => stations.find(s => s.key === activeStation), [stations, activeStation])
+  const toolStationEnabled = activeStation === 'situps' || activeStation === 'pullups' || activeStation === 'shuttle_run'
   const { showToast } = useToast()
+
+  const playBeep = () => {
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext
+      if (!Ctx) return
+      const ctx = new Ctx()
+      const makeTone = (startOffset) => {
+        const osc = ctx.createOscillator()
+        const gain = ctx.createGain()
+        osc.type = 'sine'
+        osc.frequency.value = 920
+        gain.gain.setValueAtTime(0.0001, ctx.currentTime + startOffset)
+        gain.gain.exponentialRampToValueAtTime(0.2, ctx.currentTime + startOffset + 0.01)
+        gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + startOffset + 0.15)
+        osc.connect(gain)
+        gain.connect(ctx.destination)
+        osc.start(ctx.currentTime + startOffset)
+        osc.stop(ctx.currentTime + startOffset + 0.16)
+      }
+      makeTone(0)
+      makeTone(0.2)
+      setTimeout(() => { try { ctx.close() } catch {} }, 600)
+    } catch {}
+  }
 
 
   // Live validation for current station + inputs
@@ -150,6 +184,71 @@ export default function AddAttempt({ user }) {
     }
   }, [isIppt3])
 
+  useEffect(() => {
+    if (activeStation === 'situps') {
+      setCountdownDefault(60)
+      setCountdownLeft(60)
+      setCounterValue(0)
+      setStopwatchRunning(false)
+      setStopwatchMs(0)
+      stopwatchBaseMsRef.current = 0
+    } else if (activeStation === 'pullups') {
+      setCountdownDefault(30)
+      setCountdownLeft(30)
+      setCounterValue(0)
+      setStopwatchRunning(false)
+      setStopwatchMs(0)
+      stopwatchBaseMsRef.current = 0
+    } else if (activeStation === 'shuttle_run') {
+      setCountdownRunning(false)
+      setCountdownDefault(30)
+      setCountdownLeft(30)
+      setCounterValue(0)
+      setStopwatchRunning(false)
+      setStopwatchMs(0)
+      stopwatchBaseMsRef.current = 0
+    } else {
+      setToolsOpen(false)
+      setCountdownRunning(false)
+      setStopwatchRunning(false)
+    }
+  }, [activeStation])
+
+  useEffect(() => {
+    if (!countdownRunning) return
+    const id = setInterval(() => {
+      setCountdownLeft((prev) => {
+        if (prev <= 1) {
+          setCountdownRunning(false)
+          showToast('success', 'Countdown ended')
+          playBeep()
+          return 0
+        }
+        return prev - 1
+      })
+    }, 1000)
+    return () => clearInterval(id)
+  }, [countdownRunning, showToast])
+
+  useEffect(() => {
+    if (!stopwatchRunning) return
+    stopwatchStartRef.current = Date.now()
+    const id = setInterval(() => {
+      const delta = Date.now() - stopwatchStartRef.current
+      setStopwatchMs(stopwatchBaseMsRef.current + delta)
+    }, 100)
+    return () => clearInterval(id)
+  }, [stopwatchRunning])
+
+  useEffect(() => {
+    if (toolsOpen || !toolStationEnabled) return
+    setCountdownRunning(false)
+    if (stopwatchRunning) {
+      stopwatchBaseMsRef.current = stopwatchMs
+      setStopwatchRunning(false)
+    }
+  }, [toolsOpen, toolStationEnabled, stopwatchRunning, stopwatchMs])
+
   const doSearch = async (idValue) => {
     setError('')
     if (!sessionId) { setError('Please select a session.'); return }
@@ -198,6 +297,42 @@ export default function AddAttempt({ user }) {
 
   const openScanner = () => setScannerOpen(true)
   const openRoster = () => setRosterOpen(true)
+  const openTools = () => { if (toolStationEnabled) setToolsOpen(true) }
+  const clearStudentEntry = () => {
+    setStudentId('')
+    setStudent(null)
+    setExisting(null)
+    setAttempt1('')
+    setAttempt2('')
+    setError('')
+  }
+
+  const resetCountdown = () => {
+    setCountdownRunning(false)
+    setCountdownLeft(countdownDefault)
+  }
+
+  const applyCounterToScore = () => {
+    setAttempt1(String(Math.max(0, counterValue)))
+  }
+
+  const applyStopwatchToAttempt = (target) => {
+    const seconds = Math.max(0, Number((stopwatchMs / 1000).toFixed(1)))
+    if (target === 'attempt2') {
+      setAttempt2(String(seconds))
+      return
+    }
+    setAttempt1(String(seconds))
+  }
+
+  const formatClock = (totalSeconds) => {
+    const sec = Math.max(0, Math.floor(totalSeconds || 0))
+    const mm = String(Math.floor(sec / 60)).padStart(2, '0')
+    const ss = String(sec % 60).padStart(2, '0')
+    return `${mm}:${ss}`
+  }
+
+  const formatStopwatch = (ms) => (Math.max(0, ms) / 1000).toFixed(1)
 
   // Load roster when session changes
   useEffect(() => {
@@ -641,15 +776,32 @@ async function saveScore() {
               {/* Active Station Card */}
               <Card className="mt-4">
                 <CardHeader>
-            <CardTitle>
-              {active && <active.Icon className="h-5 w-5 text-blue-700" aria-hidden="true" />}
-              <span className="font-bold">{active?.name || 'Station'}</span>
-            </CardTitle>
+                  <div className="flex items-center justify-between gap-3">
+                    <CardTitle>
+                      {active && <active.Icon className="h-5 w-5 text-blue-700" aria-hidden="true" />}
+                      <span className="font-bold">{active?.name || 'Station'}</span>
+                    </CardTitle>
+                    {toolStationEnabled && (
+                      <Button type="button" variant="outline" size="sm" onClick={openTools}>
+                        Station Tools
+                      </Button>
+                    )}
+                  </div>
                 </CardHeader>
                 <CardContent>
                   <form onSubmit={onSubmit} className="grid gap-3">
                     <div className="grid gap-1.5">
-                <label htmlFor="studentId" className="text-gray-700 text-sm">Student ID</label>
+                <div className="flex items-center gap-2">
+                  <label htmlFor="studentId" className="text-gray-700 text-sm">Student ID</label>
+                  <button
+                    type="button"
+                    onClick={clearStudentEntry}
+                    disabled={!studentId && !student}
+                    className="text-xs border rounded px-2 py-1 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    Clear
+                  </button>
+                </div>
                 <div className="flex gap-2">
                   <input
                     id="studentId"
@@ -818,6 +970,43 @@ async function saveScore() {
           </div>
         </Tabs>
       </section>
+      <AnimatePresence>
+        {toolsOpen && toolStationEnabled && (
+          <StationToolsDrawer
+            open={toolsOpen && toolStationEnabled}
+            station={activeStation}
+            onClose={() => setToolsOpen(false)}
+            counterValue={counterValue}
+            setCounterValue={setCounterValue}
+            countdownDefault={countdownDefault}
+            setCountdownDefault={setCountdownDefault}
+            countdownLeft={countdownLeft}
+            countdownRunning={countdownRunning}
+            setCountdownRunning={setCountdownRunning}
+            onResetCountdown={resetCountdown}
+            stopwatchMs={stopwatchMs}
+            stopwatchRunning={stopwatchRunning}
+            setStopwatchRunning={(next) => {
+              if (!next) {
+                stopwatchBaseMsRef.current = stopwatchMs
+                setStopwatchRunning(false)
+                return
+              }
+              setStopwatchRunning(true)
+            }}
+            onResetStopwatch={() => {
+              setStopwatchRunning(false)
+              setStopwatchMs(0)
+              stopwatchBaseMsRef.current = 0
+            }}
+            formatClock={formatClock}
+            formatStopwatch={formatStopwatch}
+            onApplyCounter={applyCounterToScore}
+            onApplyStopwatchAttempt1={() => applyStopwatchToAttempt('attempt1')}
+            onApplyStopwatchAttempt2={() => applyStopwatchToAttempt('attempt2')}
+          />
+        )}
+      </AnimatePresence>
       {scannerOpen && (
         <ScannerModal
           onClose={() => setScannerOpen(false)}
@@ -852,18 +1041,203 @@ async function saveScore() {
   )
 }
 
+function StationToolsDrawer({
+  open,
+  station,
+  onClose,
+  counterValue,
+  setCounterValue,
+  countdownDefault,
+  setCountdownDefault,
+  countdownLeft,
+  countdownRunning,
+  setCountdownRunning,
+  onResetCountdown,
+  stopwatchMs,
+  stopwatchRunning,
+  setStopwatchRunning,
+  onResetStopwatch,
+  formatClock,
+  formatStopwatch,
+  onApplyCounter,
+  onApplyStopwatchAttempt1,
+  onApplyStopwatchAttempt2,
+}) {
+  const [filledNotice, setFilledNotice] = useState(false)
+  const [shuttleFilledNotice, setShuttleFilledNotice] = useState('')
+  const [endedNotice, setEndedNotice] = useState(false)
+
+  useEffect(() => {
+    if (countdownLeft === 0 && !countdownRunning) {
+      setEndedNotice(true)
+      return
+    }
+    setEndedNotice(false)
+  }, [countdownLeft, countdownRunning])
+
+  if (!open) return null
+  const isCountStation = station === 'situps' || station === 'pullups'
+  const isShuttleStation = station === 'shuttle_run'
+  const counterLabel = station === 'pullups' ? 'Pull-up Count' : 'Sit-up Count'
+  const counterCap = station === 'pullups' ? 30 : 60
+
+  return (
+    <div className="fixed inset-0 z-[60]" aria-hidden={!open}>
+      <motion.div
+        className="absolute inset-0 bg-black/40"
+        onClick={onClose}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+      />
+      <motion.aside
+        className="absolute top-0 right-0 h-full w-full max-w-sm bg-white shadow-xl border-l p-4 space-y-4 overflow-y-auto"
+        initial={{ x: 360 }}
+        animate={{ x: 0 }}
+        exit={{ x: 360 }}
+        transition={{ duration: 0.2, ease: 'easeOut' }}
+      >
+        <div className="flex items-center justify-between">
+          <h3 className="text-base font-semibold">Station Tools</h3>
+          <button type="button" onClick={onClose} className="px-3 py-1.5 rounded border border-slate-300 bg-slate-100 hover:bg-slate-200" aria-label="Close station tools">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        {isCountStation && (
+          <>
+            <div className="space-y-2">
+              <div className="text-sm font-medium">{station === 'situps' ? 'Countdown (60s default)' : 'Countdown (30s default)'}</div>
+              <div className="text-3xl font-mono tracking-wide">{formatClock(countdownLeft)}</div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={5}
+                  max={120}
+                  step={1}
+                  value={countdownDefault}
+                  onChange={(e) => {
+                    const next = Math.max(5, Math.min(120, parseInt(e.target.value || '0', 10) || 0))
+                    setCountdownDefault(next)
+                  }}
+                  className="border rounded px-2 py-1 w-24"
+                  aria-label="Countdown default seconds"
+                />
+                <span className="text-xs text-gray-600">seconds default</span>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCountdownRunning(!countdownRunning)}
+                  className={(countdownRunning
+                    ? 'bg-amber-500 hover:bg-amber-600 text-white border-amber-600'
+                    : 'bg-green-600 hover:bg-green-700 text-white border-green-700') + ' px-4 py-2 border rounded font-medium'}
+                >
+                  {countdownRunning ? 'Pause' : 'Start'}
+                </button>
+                <button type="button" onClick={onResetCountdown} className="px-4 py-2 border rounded border-red-300 text-red-700 hover:bg-red-50 font-medium">Reset</button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCountdownRunning(false)
+                    onResetCountdown()
+                  }}
+                  className="px-4 py-2 border rounded border-slate-300 text-slate-700 hover:bg-slate-100 font-medium"
+                >
+                  Set Default
+                </button>
+              </div>
+              {endedNotice && (
+                <div className="text-sm text-green-700 bg-green-50 border border-green-200 rounded px-2 py-1">
+                  Countdown complete.
+                </div>
+              )}
+            </div>
+
+            <div className="border-t pt-4 space-y-2">
+              <div className="text-sm font-medium">{counterLabel}</div>
+              <div className="text-3xl font-mono tracking-wide">{counterValue}</div>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setCounterValue((v) => Math.max(0, v - 1))} className="px-5 py-3 text-lg border rounded bg-orange-500 hover:bg-orange-600 text-white border-orange-600 font-semibold min-w-[92px]">-1</button>
+                <button type="button" onClick={() => setCounterValue((v) => Math.min(counterCap, v + 1))} className="px-5 py-3 text-lg border rounded bg-green-600 hover:bg-green-700 text-white border-green-700 font-semibold min-w-[92px]">+1</button>
+                <button type="button" onClick={() => setCounterValue(0)} className="px-4 py-2 border rounded border-red-300 text-red-700 hover:bg-red-50 font-medium">Reset</button>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  onApplyCounter()
+                  setFilledNotice(true)
+                  setTimeout(() => setFilledNotice(false), 1500)
+                }}
+                className="w-full px-4 py-2.5 bg-blue-600 text-white rounded hover:bg-blue-700 font-medium"
+              >
+                Fill Score Entry
+              </button>
+              {filledNotice && <div className="text-sm text-green-700">✓ Score entry filled</div>}
+            </div>
+          </>
+        )}
+        {isShuttleStation && (
+          <div className="space-y-2">
+            <div className="text-sm font-medium">Stopwatch</div>
+            <div className="text-3xl font-mono tracking-wide">{formatStopwatch(stopwatchMs)}s</div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setStopwatchRunning(!stopwatchRunning)}
+                className={(stopwatchRunning
+                  ? 'bg-amber-500 hover:bg-amber-600 text-white border-amber-600'
+                  : 'bg-green-600 hover:bg-green-700 text-white border-green-700') + ' px-4 py-2 border rounded font-medium'}
+              >
+                {stopwatchRunning ? 'Pause' : 'Start'}
+              </button>
+              <button type="button" onClick={onResetStopwatch} className="px-4 py-2 border rounded border-red-300 text-red-700 hover:bg-red-50 font-medium">Reset</button>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  onApplyStopwatchAttempt1()
+                  setShuttleFilledNotice('Attempt 1 filled')
+                  setTimeout(() => setShuttleFilledNotice(''), 1500)
+                }}
+                className="px-4 py-2.5 bg-blue-600 text-white rounded hover:bg-blue-700 font-medium"
+              >
+                Fill Attempt 1
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onApplyStopwatchAttempt2()
+                  setShuttleFilledNotice('Attempt 2 filled')
+                  setTimeout(() => setShuttleFilledNotice(''), 1500)
+                }}
+                className="px-4 py-2.5 border rounded bg-blue-600 text-white hover:bg-blue-700 font-medium"
+              >
+                Fill Attempt 2
+              </button>
+            </div>
+            {shuttleFilledNotice && <div className="text-sm text-green-700">✓ {shuttleFilledNotice}</div>}
+          </div>
+        )}
+      </motion.aside>
+    </div>
+  )
+}
+
 function ScannerModal({ onClose, onDetected }) {
   const videoRef = useRef(null)
   const streamRef = useRef(null)
   const controlsRef = useRef(null)
   const [supported, setSupported] = useState(true)
   const [err, setErr] = useState('')
+  const [facingMode, setFacingMode] = useState('environment')
   useEffect(() => {
     let cleanupFn = null
     const hasBarcode = 'BarcodeDetector' in window
     const start = async () => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+        setErr('')
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode } })
         streamRef.current = stream
         if (videoRef.current) {
           videoRef.current.srcObject = stream
@@ -924,7 +1298,7 @@ function ScannerModal({ onClose, onDetected }) {
       }
       if (typeof cleanupFn === 'function') cleanupFn()
     }
-  }, [onDetected])
+  }, [onDetected, facingMode])
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
@@ -944,7 +1318,14 @@ function ScannerModal({ onClose, onDetected }) {
           {err && <div className="text-sm text-red-600">{err}</div>}
           <div className="text-xs text-gray-500">Tip: Point the camera at the QR/Barcode on the student card.</div>
         </div>
-        <div className="px-3 py-2 border-t flex justify-end">
+        <div className="px-3 py-2 border-t flex items-center justify-between gap-2">
+          <button
+            type="button"
+            onClick={() => setFacingMode(prev => (prev === 'environment' ? 'user' : 'environment'))}
+            className="px-3 py-1.5 border rounded hover:bg-gray-50"
+          >
+            Switch Camera
+          </button>
           <button onClick={onClose} className="px-3 py-1.5 border rounded hover:bg-gray-50">Close</button>
         </div>
       </div>
