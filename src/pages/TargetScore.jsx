@@ -419,7 +419,7 @@ export default function TargetScore() {
                 <tbody>
                   <tr className="bg-yellow-50">
                     <td className="px-2 py-1 border font-medium text-yellow-800">Gold</td>
-                    <td className="px-2 py-1 border">Total >= 21 points and at least grade C in all stations.</td>
+                    <td className="px-2 py-1 border">Total &gt;= 21 points and at least grade C in all stations.</td>
                   </tr>
                   <tr className="bg-slate-50">
                     <td className="px-2 py-1 border font-medium text-slate-800">Silver</td>
