@@ -12,6 +12,7 @@ import { evaluateIppt3, awardForTotal } from "../utils/ippt3Standards";
 import { evaluateNapfa } from "../utils/napfaStandards";
 import RosterDualList from "../components/RosterDualList";
 import SessionHouses from "../components/SessionHouses";
+import SessionGroups from "../components/SessionGroups";
 
 const ROLE_CAN_MANAGE = ["superadmin", "admin"];
 
@@ -66,6 +67,13 @@ export default function SessionDetail({ user }) {
     const isIppt3 = (session?.assessment_type || 'NAPFA5') === 'IPPT3';
     const [scoresPage, setScoresPage] = useState(1);
     const [scoresPageSize, setScoresPageSize] = useState(100);
+    const [massEditMode, setMassEditMode] = useState(false);
+    const [massEditBusy, setMassEditBusy] = useState(false);
+    const [massEditErr, setMassEditErr] = useState("");
+    const [massEditNotice, setMassEditNotice] = useState("");
+    const [massEdits, setMassEdits] = useState(new Map()); // studentId -> partial score object
+    const [massEditCancelOpen, setMassEditCancelOpen] = useState(false);
+    const [massEditSaveOpen, setMassEditSaveOpen] = useState(false);
     const [filterClass, setFilterClass] = useState("");
     const [filterQuery, setFilterQuery] = useState("");
     const [showCompleted, setShowCompleted] = useState(true);
@@ -75,6 +83,7 @@ export default function SessionDetail({ user }) {
     const [activeTab, setActiveTab] = useState(() => {
         if (location.hash === '#scores') return 'scores';
         if (location.hash === '#houses') return 'houses';
+        if (location.hash === '#groups') return 'groups';
         return 'roster';
     });
 
@@ -186,17 +195,174 @@ export default function SessionDetail({ user }) {
 
     // Keep tab state in sync with URL hash
     useEffect(() => {
-        const fromHash = location.hash === '#scores' ? 'scores' : (location.hash === '#houses' ? 'houses' : 'roster');
+        const fromHash = location.hash === '#scores'
+            ? 'scores'
+            : (location.hash === '#houses'
+                ? 'houses'
+                : (location.hash === '#groups' ? 'groups' : 'roster'));
         if (fromHash !== activeTab) setActiveTab(fromHash);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [location.hash]);
 
     useEffect(() => {
-        const desiredHash = activeTab === 'scores' ? '#scores' : (activeTab === 'houses' ? '#houses' : '#roster');
+        const desiredHash = activeTab === 'scores'
+            ? '#scores'
+            : (activeTab === 'houses'
+                ? '#houses'
+                : (activeTab === 'groups' ? '#groups' : '#roster'));
         if (location.hash !== desiredHash) {
             navigate({ hash: desiredHash }, { replace: true });
         }
     }, [activeTab, location.hash, navigate]);
+
+    useEffect(() => {
+        if (activeTab !== 'scores') {
+            setMassEditMode(false);
+            setMassEdits(new Map());
+            setMassEditErr('');
+            setMassEditNotice('');
+            setMassEditCancelOpen(false);
+            setMassEditSaveOpen(false);
+        }
+    }, [activeTab]);
+
+    const runToInput = (runMin) => {
+        const n = Number(runMin);
+        if (!Number.isFinite(n)) return '';
+        const total = Math.round(n * 60);
+        const mm = Math.floor(total / 60);
+        const ss = total % 60;
+        return `${mm}${String(ss).padStart(2, '0')}`;
+    };
+
+    const parseRunInput = (raw) => {
+        const s = String(raw || '').trim();
+        if (!s) return { ok: true, value: null };
+        const digits = s.includes(':') ? s.replace(':', '') : s.replace(/[^0-9]/g, '');
+        if (!/^\d{3,4}$/.test(digits)) return { ok: false, error: 'Run must be MSS/MMSS digits (e.g. 930 or 1330).' };
+        const mm = digits.length === 3 ? parseInt(digits.slice(0, 1), 10) : parseInt(digits.slice(0, 2), 10);
+        const ss = parseInt(digits.slice(-2), 10);
+        if (!Number.isFinite(mm) || !Number.isFinite(ss) || ss >= 60) return { ok: false, error: 'Run seconds must be 00-59.' };
+        return { ok: true, value: Number.parseFloat((mm + ss / 60).toFixed(2)) };
+    };
+
+    const parseIntOrNull = (raw, min, max, label) => {
+        const s = String(raw ?? '').trim();
+        if (!s) return { ok: true, value: null };
+        const n = Number.parseInt(s, 10);
+        if (!Number.isFinite(n)) return { ok: false, error: `${label} must be a number.` };
+        if (n < min || n > max) return { ok: false, error: `${label} must be ${min}-${max}.` };
+        return { ok: true, value: n };
+    };
+
+    const parseFloatOrNull = (raw, min, max, label, dp = 1) => {
+        const s = String(raw ?? '').trim();
+        if (!s) return { ok: true, value: null };
+        const n = Number.parseFloat(s);
+        if (!Number.isFinite(n)) return { ok: false, error: `${label} must be a number.` };
+        if (n < min || n > max) return { ok: false, error: `${label} must be ${min}-${max}.` };
+        return { ok: true, value: Number.parseFloat(n.toFixed(dp)) };
+    };
+
+    const saveMassEditVisible = async () => {
+        const visible = pagedScoresRoster || [];
+        if (!visible.length) return;
+        setMassEditErr('');
+        setMassEditNotice('');
+
+        const payload = [];
+        const errors = [];
+
+        visible.forEach((s) => {
+            const edits = massEdits.get(s.id);
+            if (!edits) return;
+            const patch = { session_id: id, student_id: s.id };
+
+            if (isIppt3) {
+                if ('situps' in edits) {
+                    const r = parseIntOrNull(edits.situps, 0, 60, `${s.name} sit-ups`);
+                    if (!r.ok) { errors.push(r.error); return; }
+                    patch.situps = r.value;
+                }
+                if ('pushups' in edits) {
+                    const r = parseIntOrNull(edits.pushups, 0, 60, `${s.name} push-ups`);
+                    if (!r.ok) { errors.push(r.error); return; }
+                    patch.pushups = r.value;
+                }
+                if ('run_2400' in edits) {
+                    const r = parseRunInput(edits.run_2400);
+                    if (!r.ok) { errors.push(`${s.name} ${r.error}`); return; }
+                    patch.run_2400 = r.value;
+                }
+            } else {
+                if ('situps' in edits) {
+                    const r = parseIntOrNull(edits.situps, 0, 60, `${s.name} sit-ups`);
+                    if (!r.ok) { errors.push(r.error); return; }
+                    patch.situps = r.value;
+                }
+                if ('shuttle_run' in edits) {
+                    const r = parseFloatOrNull(edits.shuttle_run, 0, 20, `${s.name} shuttle run`);
+                    if (!r.ok) { errors.push(r.error); return; }
+                    patch.shuttle_run = r.value;
+                }
+                if ('sit_and_reach' in edits) {
+                    const r = parseIntOrNull(edits.sit_and_reach, 0, 80, `${s.name} sit & reach`);
+                    if (!r.ok) { errors.push(r.error); return; }
+                    patch.sit_and_reach = r.value;
+                }
+                if ('pullups' in edits) {
+                    const r = parseIntOrNull(edits.pullups, 0, 60, `${s.name} pull-ups`);
+                    if (!r.ok) { errors.push(r.error); return; }
+                    patch.pullups = r.value;
+                }
+                if ('broad_jump' in edits) {
+                    const r = parseIntOrNull(edits.broad_jump, 0, 300, `${s.name} broad jump`);
+                    if (!r.ok) { errors.push(r.error); return; }
+                    patch.broad_jump = r.value;
+                }
+                if ('run_2400' in edits) {
+                    const r = parseRunInput(edits.run_2400);
+                    if (!r.ok) { errors.push(`${s.name} ${r.error}`); return; }
+                    patch.run_2400 = r.value;
+                }
+            }
+
+            if (Object.keys(patch).length > 2) payload.push(patch);
+        });
+
+        if (errors.length) {
+            setMassEditErr(errors[0]);
+            return;
+        }
+        if (!payload.length) {
+            setMassEditErr('No visible edits to save.');
+            return;
+        }
+
+        setMassEditBusy(true);
+        try {
+            const table = isIppt3 ? 'ippt3_scores' : 'scores';
+            const { error: upErr } = await supabase.from(table).upsert(payload, { onConflict: 'session_id,student_id' });
+            if (upErr) throw upErr;
+
+            await loadScoresMap();
+            await loadScoresCount();
+
+            setMassEdits((prev) => {
+                const next = new Map(prev);
+                visible.forEach((s) => next.delete(s.id));
+                return next;
+            });
+            setMassEditNotice(`Saved ${payload.length} row(s) from the current table page.`);
+            setMassEditMode(false);
+            setMassEdits(new Map());
+            setMassEditErr('');
+        } catch (e) {
+            setMassEditErr(e.message || 'Failed to save visible score edits.');
+        } finally {
+            setMassEditBusy(false);
+        }
+    };
 
     const loadRoster = async () => {
         const { data, error: err } = await supabase
@@ -271,6 +437,31 @@ export default function SessionDetail({ user }) {
         });
         return list;
     }, [sortedRoster, filterClass, filterQuery, showCompleted, showIncomplete, completedSet]);
+
+    const pagedScoresRoster = useMemo(() => {
+        const total = filteredSortedRoster.length;
+        if (total === 0) return [];
+        const totalPages = Math.max(1, Math.ceil(total / scoresPageSize));
+        const cur = Math.min(scoresPage, totalPages);
+        const start = (cur - 1) * scoresPageSize;
+        return filteredSortedRoster.slice(start, start + scoresPageSize);
+    }, [filteredSortedRoster, scoresPage, scoresPageSize]);
+
+    const readMassEdit = (studentId, key, fallback = '') => {
+        const row = massEdits.get(studentId);
+        if (!row || !(key in row)) return fallback;
+        return row[key];
+    };
+
+    const setMassEditValue = (studentId, key, value) => {
+        setMassEdits((prev) => {
+            const next = new Map(prev);
+            const row = { ...(next.get(studentId) || {}) };
+            row[key] = value;
+            next.set(studentId, row);
+            return next;
+        });
+    };
 
     const stationMetaByStudent = useMemo(() => {
         const map = new Map();
@@ -1536,6 +1727,16 @@ export default function SessionDetail({ user }) {
                     >
                         Houses
                     </button>
+                    <button
+                        role="tab"
+                        aria-selected={activeTab === 'groups'}
+                        className={(activeTab === 'groups'
+                            ? 'bg-white text-blue-700 shadow border border-gray-200'
+                            : 'text-gray-600 hover:text-gray-800') + ' px-3 py-1.5 rounded-md transition-colors'}
+                        onClick={() => setActiveTab('groups')}
+                    >
+                        Groups
+                    </button>
                 </div>
             </nav>
 
@@ -1551,6 +1752,12 @@ export default function SessionDetail({ user }) {
                 />
             ) : activeTab === 'houses' ? (
                 <SessionHouses
+                  session={session}
+                  membership={membership}
+                  canManage={rosterEditable}
+                />
+            ) : activeTab === 'groups' ? (
+                <SessionGroups
                   session={session}
                   membership={membership}
                   canManage={rosterEditable}
@@ -1594,6 +1801,31 @@ export default function SessionDetail({ user }) {
                             </div>
                             {canManage && (
                                 <div className="flex gap-2">
+                                    {!massEditMode ? (
+                                        <button
+                                            onClick={() => { setMassEditMode(true); setMassEditErr(''); setMassEditNotice(''); }}
+                                            className="text-xs px-3 py-1.5 border rounded bg-white hover:bg-gray-50"
+                                        >
+                                            Mass Edit
+                                        </button>
+                                    ) : (
+                                        <>
+                                            <button
+                                                onClick={() => setMassEditSaveOpen(true)}
+                                                disabled={massEditBusy}
+                                                className="text-xs px-3 py-1.5 border rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
+                                            >
+                                                {massEditBusy ? 'Saving...' : 'Save Mass Edit'}
+                                            </button>
+                                            <button
+                                                onClick={() => setMassEditCancelOpen(true)}
+                                                disabled={massEditBusy}
+                                                className="text-xs px-3 py-1.5 border rounded bg-white hover:bg-gray-50 disabled:opacity-60"
+                                            >
+                                                Cancel
+                                            </button>
+                                        </>
+                                    )}
                                     <button
                                         onClick={exportPftAllClasses}
                                         className="text-xs px-3 py-1.5 border rounded bg-white hover:bg-gray-50"
@@ -1609,6 +1841,12 @@ export default function SessionDetail({ user }) {
                                 </div>
                             )}
                         </div>
+                        {massEditMode && (
+                            <div className="px-3 py-2 border-b bg-blue-50 text-xs text-blue-800 flex items-center justify-between gap-2">
+                                <span>Mass edit is ON for the rows currently displayed in this table page.</span>
+                                {massEditErr ? <span className="text-red-700">{massEditErr}</span> : (massEditNotice ? <span className="text-green-700">{massEditNotice}</span> : null)}
+                            </div>
+                        )}
                         <table className="w-full">
                             <thead>
                                 {((session?.assessment_type || 'NAPFA5') === 'IPPT3') ? (
@@ -1642,10 +1880,7 @@ export default function SessionDetail({ user }) {
                                 if (total === 0) return (
                                     <tr><td colSpan="10" className="px-3 py-4 text-center text-gray-500">No students in this session yet.</td></tr>
                                 );
-                                const totalPages = Math.max(1, Math.ceil(total / scoresPageSize));
-                                const cur = Math.min(scoresPage, totalPages);
-                                const start = (cur - 1) * scoresPageSize;
-                                const pageItems = filteredSortedRoster.slice(start, start + scoresPageSize);
+                                const pageItems = pagedScoresRoster;
                                     return pageItems.flatMap((s) => {
                                         const row = scoresByStudent.get(s.id) || {};
                                         const meta = stationMetaByStudent.get(s.id) || {};
@@ -1673,11 +1908,44 @@ export default function SessionDetail({ user }) {
                                               <td className={`px-3 py-2 border align-top ${statusLeft}`}>{normalizeStudentId(s.student_identifier)}</td>
                                               <td className="px-3 py-2 border align-top">{s.name}</td>
                                               <td className="px-3 py-2 border align-top">{s.class || '-'}</td>
-                                              <td className="px-3 py-2 border align-top">{withPoints(row.situps, ippt3.situpsPoints)}</td>
-                                              <td className="px-3 py-2 border align-top">{withPoints(row.pushups, ippt3.pushupsPoints)}</td>
-                                              <td className="px-3 py-2 border align-top">{withPoints(row.run_2400, ippt3.runPoints, (v) => fmtRun(v) || '-')}</td>
                                               <td className="px-3 py-2 border align-top">
-                                                <ScoreRowActions student={s} canRecord={canRecord} onSaved={async () => { await loadScoresMap(); await loadScoresCount(); }} sessionId={id} isIppt3={isIppt3} />
+                                                {massEditMode && canManage ? (
+                                                    <input
+                                                        value={readMassEdit(s.id, 'situps', row.situps == null ? '' : String(row.situps))}
+                                                        onChange={(e) => setMassEditValue(s.id, 'situps', e.target.value)}
+                                                        className="w-24 border rounded px-2 py-1 text-sm"
+                                                        inputMode="numeric"
+                                                        placeholder="0-60"
+                                                    />
+                                                ) : withPoints(row.situps, ippt3.situpsPoints)}
+                                              </td>
+                                              <td className="px-3 py-2 border align-top">
+                                                {massEditMode && canManage ? (
+                                                    <input
+                                                        value={readMassEdit(s.id, 'pushups', row.pushups == null ? '' : String(row.pushups))}
+                                                        onChange={(e) => setMassEditValue(s.id, 'pushups', e.target.value)}
+                                                        className="w-24 border rounded px-2 py-1 text-sm"
+                                                        inputMode="numeric"
+                                                        placeholder="0-60"
+                                                    />
+                                                ) : withPoints(row.pushups, ippt3.pushupsPoints)}
+                                              </td>
+                                              <td className="px-3 py-2 border align-top">
+                                                {massEditMode && canManage ? (
+                                                    <input
+                                                        value={readMassEdit(s.id, 'run_2400', runToInput(row.run_2400))}
+                                                        onChange={(e) => setMassEditValue(s.id, 'run_2400', e.target.value)}
+                                                        className="w-28 border rounded px-2 py-1 text-sm"
+                                                        inputMode="numeric"
+                                                        placeholder="MSS/MMSS"
+                                                    />
+                                                ) : withPoints(row.run_2400, ippt3.runPoints, (v) => fmtRun(v) || '-')}
+                                              </td>
+                                              <td className="px-3 py-2 border align-top">
+                                                {massEditMode && canManage
+                                                    ? <span className="text-xs text-gray-400">-</span>
+                                                    : <ScoreRowActions student={s} canRecord={canRecord} onSaved={async () => { await loadScoresMap(); await loadScoresCount(); }} sessionId={id} isIppt3={isIppt3} />
+                                                }
                                               </td>
                                             </tr>
                                           ];
@@ -1687,14 +1955,77 @@ export default function SessionDetail({ user }) {
                                                 <td className={`px-3 py-2 border align-top ${statusLeft}`}>{normalizeStudentId(s.student_identifier)}</td>
                                                 <td className="px-3 py-2 border align-top">{s.name}</td>
                                                 <td className="px-3 py-2 border align-top">{s.class || '-'}</td>
-                                                <td className="px-3 py-2 border align-top">{withGrade(row.situps, napfaGrades.situps)}</td>
-                                                <td className="px-3 py-2 border align-top">{withGrade(row.shuttle_run, napfaGrades.shuttle)}</td>
-                                                <td className="px-3 py-2 border align-top">{withGrade(row.sit_and_reach, napfaGrades.reach)}</td>
-                                                <td className="px-3 py-2 border align-top">{withGrade(row.pullups, napfaGrades.pullups)}</td>
-                                                <td className="px-3 py-2 border align-top">{withGrade(row.broad_jump, napfaGrades.broad)}</td>
-                                                <td className="px-3 py-2 border align-top">{withGrade(row.run_2400, napfaGrades.run, (v) => fmtRun(v) || '-')}</td>
                                                 <td className="px-3 py-2 border align-top">
-                                                    <ScoreRowActions student={s} canRecord={canRecord} onSaved={async () => { await loadScoresMap(); await loadScoresCount(); }} sessionId={id} isIppt3={isIppt3} />
+                                                    {massEditMode && canManage ? (
+                                                        <input
+                                                            value={readMassEdit(s.id, 'situps', row.situps == null ? '' : String(row.situps))}
+                                                            onChange={(e) => setMassEditValue(s.id, 'situps', e.target.value)}
+                                                            className="w-24 border rounded px-2 py-1 text-sm"
+                                                            inputMode="numeric"
+                                                            placeholder="0-60"
+                                                        />
+                                                    ) : withGrade(row.situps, napfaGrades.situps)}
+                                                </td>
+                                                <td className="px-3 py-2 border align-top">
+                                                    {massEditMode && canManage ? (
+                                                        <input
+                                                            value={readMassEdit(s.id, 'shuttle_run', row.shuttle_run == null ? '' : String(row.shuttle_run))}
+                                                            onChange={(e) => setMassEditValue(s.id, 'shuttle_run', e.target.value)}
+                                                            className="w-28 border rounded px-2 py-1 text-sm"
+                                                            inputMode="decimal"
+                                                            placeholder="0.0-20.0"
+                                                        />
+                                                    ) : withGrade(row.shuttle_run, napfaGrades.shuttle)}
+                                                </td>
+                                                <td className="px-3 py-2 border align-top">
+                                                    {massEditMode && canManage ? (
+                                                        <input
+                                                            value={readMassEdit(s.id, 'sit_and_reach', row.sit_and_reach == null ? '' : String(row.sit_and_reach))}
+                                                            onChange={(e) => setMassEditValue(s.id, 'sit_and_reach', e.target.value)}
+                                                            className="w-24 border rounded px-2 py-1 text-sm"
+                                                            inputMode="numeric"
+                                                            placeholder="0-80"
+                                                        />
+                                                    ) : withGrade(row.sit_and_reach, napfaGrades.reach)}
+                                                </td>
+                                                <td className="px-3 py-2 border align-top">
+                                                    {massEditMode && canManage ? (
+                                                        <input
+                                                            value={readMassEdit(s.id, 'pullups', row.pullups == null ? '' : String(row.pullups))}
+                                                            onChange={(e) => setMassEditValue(s.id, 'pullups', e.target.value)}
+                                                            className="w-24 border rounded px-2 py-1 text-sm"
+                                                            inputMode="numeric"
+                                                            placeholder="0-60"
+                                                        />
+                                                    ) : withGrade(row.pullups, napfaGrades.pullups)}
+                                                </td>
+                                                <td className="px-3 py-2 border align-top">
+                                                    {massEditMode && canManage ? (
+                                                        <input
+                                                            value={readMassEdit(s.id, 'broad_jump', row.broad_jump == null ? '' : String(row.broad_jump))}
+                                                            onChange={(e) => setMassEditValue(s.id, 'broad_jump', e.target.value)}
+                                                            className="w-24 border rounded px-2 py-1 text-sm"
+                                                            inputMode="numeric"
+                                                            placeholder="0-300"
+                                                        />
+                                                    ) : withGrade(row.broad_jump, napfaGrades.broad)}
+                                                </td>
+                                                <td className="px-3 py-2 border align-top">
+                                                    {massEditMode && canManage ? (
+                                                        <input
+                                                            value={readMassEdit(s.id, 'run_2400', runToInput(row.run_2400))}
+                                                            onChange={(e) => setMassEditValue(s.id, 'run_2400', e.target.value)}
+                                                            className="w-28 border rounded px-2 py-1 text-sm"
+                                                            inputMode="numeric"
+                                                            placeholder="MSS/MMSS"
+                                                        />
+                                                    ) : withGrade(row.run_2400, napfaGrades.run, (v) => fmtRun(v) || '-')}
+                                                </td>
+                                                <td className="px-3 py-2 border align-top">
+                                                    {massEditMode && canManage
+                                                        ? <span className="text-xs text-gray-400">-</span>
+                                                        : <ScoreRowActions student={s} canRecord={canRecord} onSaved={async () => { await loadScoresMap(); await loadScoresCount(); }} sessionId={id} isIppt3={isIppt3} />
+                                                    }
                                                 </td>
                                             </tr>
                                         ];
@@ -1704,7 +2035,7 @@ export default function SessionDetail({ user }) {
                         </table>
                         {/* Pagination footer */}
                         <ScoresPager
-                            total={roster.length}
+                            total={filteredSortedRoster.length}
                             page={scoresPage}
                             pageSize={scoresPageSize}
                             onPageChange={setScoresPage}
@@ -1712,6 +2043,33 @@ export default function SessionDetail({ user }) {
                     </div>
                 </section>
             )}
+            <ConfirmDialog
+                open={massEditSaveOpen}
+                title="Save Mass Edit?"
+                message="Apply all mass edits for the rows shown in this table page?"
+                confirmText="Save Changes"
+                tone="primary"
+                onCancel={() => setMassEditSaveOpen(false)}
+                onConfirm={async () => {
+                    setMassEditSaveOpen(false);
+                    await saveMassEditVisible();
+                }}
+            />
+            <ConfirmDialog
+                open={massEditCancelOpen}
+                title="Cancel Mass Edit?"
+                message="Discard all unsaved mass edits in this table page?"
+                confirmText="Discard Changes"
+                tone="danger"
+                onCancel={() => setMassEditCancelOpen(false)}
+                onConfirm={() => {
+                    setMassEditCancelOpen(false);
+                    setMassEditMode(false);
+                    setMassEdits(new Map());
+                    setMassEditErr('');
+                    setMassEditNotice('');
+                }}
+            />
         </div>
     );
 }
@@ -1758,6 +2116,30 @@ function ScoreRowActions({ student, sessionId, canRecord, onSaved, isIppt3 }) {
                 </div>
             )}
         </>
+    );
+}
+
+function ConfirmDialog({ open, title, message, confirmText, tone, onCancel, onConfirm }) {
+    if (!open) return null;
+    const confirmClass = tone === "danger"
+        ? "px-3 py-1.5 border rounded bg-red-600 text-white hover:bg-red-700"
+        : "px-3 py-1.5 border rounded bg-blue-600 text-white hover:bg-blue-700";
+    return (
+        <div className="fixed inset-0 z-50">
+            <div className="absolute inset-0 bg-black/35" onClick={onCancel} />
+            <div className="absolute inset-0 flex items-center justify-center p-4">
+                <div role="dialog" aria-modal="true" className="w-full max-w-md bg-white rounded-lg shadow-lg border">
+                    <div className="px-4 py-3 border-b">
+                        <div className="font-medium">{title}</div>
+                    </div>
+                    <div className="p-4 text-sm text-gray-700">{message}</div>
+                    <div className="px-4 py-3 border-t flex justify-end gap-2">
+                        <button type="button" onClick={onCancel} className="px-3 py-1.5 border rounded hover:bg-gray-50">Keep Editing</button>
+                        <button type="button" onClick={onConfirm} className={confirmClass}>{confirmText || "Confirm"}</button>
+                    </div>
+                </div>
+            </div>
+        </div>
     );
 }
 

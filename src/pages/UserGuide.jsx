@@ -225,12 +225,29 @@ export default function UserGuide({ user }) {
                 title="Score Entry"
                 desc="Record students' attempts during an active session."
                 to="/add-attempt"
-                tips={["Session must be Active.", "Select the correct class and verify student identifiers before recording."]}
+                tips={["Session must be Active.", "Use Station Tools for timer/counter support and quick fill.", "Scanner now supports camera switching on supported devices."]}
                 onHowTo={(t, s) => { setHowToTitle(t); setHowToSteps(s); setHowToOpen(true); }}
                 howToSteps={[
                   "Go to Score Entry and choose the Active session.",
+                  "Choose the correct station before entering values.",
                   "Select the student and test item.",
+                  "Optional: open Station Tools to use countdown/counter/stopwatch and fill the field.",
                   "Enter result and save; repeat for each student.",
+                ]}
+              />
+            )}
+            {canRecord && (
+              <Card
+                title="Score Entry (Group)"
+                desc="Load a group and enter scores for multiple students in one screen."
+                to="/add-attempt-group"
+                tips={["Session must be Active.", "Double-check both Session and Station before entering scores.", "You can load a group by list selection, manual code, or scanner."]}
+                onHowTo={(t, s) => { setHowToTitle(t); setHowToSteps(s); setHowToOpen(true); }}
+                howToSteps={[
+                  "Open Score Entry (Group) and confirm the correct active session.",
+                  "Confirm the correct station from the station selector.",
+                  "Load a group using the group dropdown, manual code, or camera scan.",
+                  "Enter scores row by row and click Save for each row, or use Save All Changes when done.",
                 ]}
               />
             )}
@@ -312,14 +329,14 @@ export default function UserGuide({ user }) {
             {canManage && (
               <Card
                 title="Session Cards"
-                desc="Generate profile cards from a specific session page."
+                desc="Generate profile cards and wristband formats from a specific session page."
                 to="/sessions"
                 cta="Open Sessions"
-                tips={["Open a session then choose Cards to generate PDFs."]}
+                tips={["Open a session then choose Cards to generate PDFs.", "Use the format menu to select the most suitable print layout (including 25mm wristband)."]}
                 onHowTo={(t, s) => { setHowToTitle(t); setHowToSteps(s); setHowToOpen(true); }}
                 howToSteps={[
                   "Open Sessions and select a session.",
-                  "Click Cards to generate profile PDFs.",
+                  "Click Cards and choose the required format.",
                   "Download/print as needed for distribution.",
                 ]}
               />
