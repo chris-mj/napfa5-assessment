@@ -22,7 +22,7 @@ export default function Navbar({ user, onLogout }) {
   const showManage = canManageUsers || isOwner;
   const showInsights = canManageUsers || isOwner;
   const pathname = location?.pathname || "";
-  const isAssessActive = ["/sessions", "/add-attempt", "/pft-calculator", "/view-score"].some(p => pathname.startsWith(p));
+  const isAssessActive = ["/sessions", "/add-attempt", "/add-attempt-group", "/pft-calculator", "/view-score"].some(p => pathname.startsWith(p));
   const isManageActive = ["/manage-students", "/modify-user"].some(p => pathname.startsWith(p));
   const isLearnActive = ["/target-score", "/learning-hub"].some(p => pathname.startsWith(p));
   const isInsightsActive = ["/charts", "/audit", "/gamification"].some(p => pathname.startsWith(p));
@@ -125,6 +125,9 @@ export default function Navbar({ user, onLogout }) {
                           )}
                           {canScoreEntry && (
                             <NavLink to="/add-attempt" onClick={() => setAssessOpen(false)} className={({ isActive }) => `block px-3 py-2 text-slate-700 hover:bg-blue-50 ${isActive ? 'bg-blue-100/70 text-blue-900' : ''}`} role="menuitem">Score Entry</NavLink>
+                          )}
+                          {canScoreEntry && (
+                            <NavLink to="/add-attempt-group" onClick={() => setAssessOpen(false)} className={({ isActive }) => `block px-3 py-2 text-slate-700 hover:bg-blue-50 ${isActive ? 'bg-blue-100/70 text-blue-900' : ''}`} role="menuitem">Score Entry (Group)</NavLink>
                           )}
                           {canViewScore && (
                             <NavLink to="/view-score" onClick={() => setAssessOpen(false)} className={({ isActive }) => `block px-3 py-2 text-slate-700 hover:bg-blue-50 ${isActive ? 'bg-blue-100/70 text-blue-900' : ''}`} role="menuitem">View Score</NavLink>
@@ -311,6 +314,9 @@ export default function Navbar({ user, onLogout }) {
                           )}
                           {canScoreEntry && (
                             <NavLink to="/add-attempt" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Score Entry</NavLink>
+                          )}
+                          {canScoreEntry && (
+                            <NavLink to="/add-attempt-group" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Score Entry (Group)</NavLink>
                           )}
                           {canViewScore && (
                             <NavLink to="/view-score" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>View Score</NavLink>
