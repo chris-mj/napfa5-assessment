@@ -37,9 +37,6 @@ function validateEndpoint() {
 }
 
 function shouldTryApiFirst() {
-  if (import.meta.env.DEV) {
-    return (import.meta.env.VITE_RUN_USE_API_VALIDATE as string | undefined) === '1';
-  }
   return true;
 }
 
