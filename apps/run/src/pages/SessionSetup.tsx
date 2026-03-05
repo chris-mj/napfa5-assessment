@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { createSession, deleteSession, listSessions, upsertTokenSession } from '../db/repo';
+import { postValidateToken } from '../lib/runApi';
 
 const TEMPLATE_OPTIONS = ['A', 'B', 'C', 'D', 'E'] as const;
 
@@ -17,10 +18,6 @@ type TokenResponse = {
   scanGapMs?: number;
   name?: string;
 };
-
-const VALIDATE_ENDPOINT = import.meta.env.DEV
-  ? 'http://localhost:3000/api/run/validateToken'
-  : 'https://napfa5.sg/api/run/validateToken';
 
 function defaultEnforcement(templateKey: TemplateKey): Enforcement {
   if (templateKey === 'B' || templateKey === 'C') return 'SOFT';
@@ -114,12 +111,7 @@ export default function SessionSetup() {
     setTokenLoading(true);
     setTokenError('');
     try {
-      const response = await fetch(VALIDATE_ENDPOINT, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: tokenValue })
-      });
-      const body = await response.json().catch(() => null);
+      const { response, body } = await postValidateToken(tokenValue);
       if (!response.ok) {
         throw new Error(body?.error || 'Token validation failed.');
       }

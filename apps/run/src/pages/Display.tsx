@@ -3,13 +3,11 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { applyEvent, createInitialRunnerState, getTemplateConfig, type RunEvent, Flag } from '@napfa5/run-core';
 import { getSession, listEventsForSession } from '../db/repo';
 import type { EventRow, SessionRow } from '../db/db';
+import { fetchRunEvents } from '../lib/runApi';
 
 const REFRESH_MS = 1000;
 const TOP_FINISHERS = 10;
 const REMOTE_POLL_MS = 5000;
-const EVENTS_ENDPOINT = import.meta.env.DEV
-  ? 'http://localhost:3000/api/run/events'
-  : 'https://napfa5.sg/api/run/events';
 
 type RunnerSummary = {
   runnerId: string;
@@ -82,18 +80,11 @@ export default function DisplayPage() {
     let active = true;
     const poll = async () => {
       try {
-        const url = new URL(EVENTS_ENDPOINT);
-        if (remoteSinceRef.current) {
-          url.searchParams.set('since', String(remoteSinceRef.current));
-        }
-        const response = await fetch(url.toString(), {
-          headers: { Authorization: `Bearer ${session.pairingToken}` }
+        const pulled = await fetchRunEvents({
+          pairingToken: session.pairingToken,
+          sinceMs: remoteSinceRef.current || undefined
         });
-        const body = await response.json().catch(() => null);
-        if (!response.ok) {
-          throw new Error(body?.error || 'Failed to fetch events.');
-        }
-        const events = Array.isArray(body?.events) ? body.events : [];
+        const events = pulled.events || [];
         for (const event of events) {
           remoteMapRef.current.set(event.id, {
             id: event.id,

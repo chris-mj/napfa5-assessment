@@ -1,9 +1,6 @@
 import { getSession, listUnsyncedEvents, markEventsSynced } from '../db/repo';
 import type { EventRow } from '../db/db';
-
-const ENDPOINT = import.meta.env.DEV
-  ? 'http://localhost:3000/api/run/ingestEvents'
-  : 'https://napfa5.sg/api/run/ingestEvents';
+import { ingestRunEvents } from './runApi';
 
 type SyncResult = {
   synced: number;
@@ -33,53 +30,32 @@ export async function syncEvents(sessionId: string): Promise<SyncResult> {
   const events = await listUnsyncedEvents(sessionId);
   if (!events.length) return { synced: 0, failed: 0 };
 
-  const response = await fetch(ENDPOINT, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${session.pairingToken}`
-    },
-    body: JSON.stringify({
+  try {
+    const result = await ingestRunEvents({
+      pairingToken: session.pairingToken,
       sessionId: session.remoteSessionId,
       runConfigId: session.runConfigId ?? session.id,
       events: events.map(toPayload)
-    })
-  });
+    });
+    const acceptedIds = result.acceptedIds;
+    const failedIds = result.failedIds;
 
-  let body: any = null;
-  try {
-    body = await response.json();
-  } catch {
-    body = null;
-  }
+    if (acceptedIds.length) {
+      await markEventsSynced(acceptedIds, Date.now());
+    }
 
-  if (!response.ok) {
+    return {
+      synced: acceptedIds.length,
+      failed: failedIds.length,
+      acceptedIds,
+      failedIds,
+      error: failedIds.length ? 'Some events failed to sync.' : undefined
+    };
+  } catch (err: any) {
     return {
       synced: 0,
       failed: events.length,
-      error: body?.error ?? `Sync failed (${response.status}).`
+      error: err?.message || 'Sync failed.'
     };
   }
-
-  const acceptedIds: string[] = Array.isArray(body?.acceptedIds) ? body.acceptedIds : [];
-  const failedIds: string[] = Array.isArray(body?.failedIds) ? body.failedIds : [];
-
-  if (!acceptedIds.length && !failedIds.length) {
-    // If API doesn't return per-item status, assume all accepted.
-    const syncedAtMs = Date.now();
-    await markEventsSynced(events.map((event) => event.id), syncedAtMs);
-    return { synced: events.length, failed: 0, acceptedIds: events.map((event) => event.id) };
-  }
-
-  if (acceptedIds.length) {
-    await markEventsSynced(acceptedIds, Date.now());
-  }
-
-  return {
-    synced: acceptedIds.length,
-    failed: failedIds.length,
-    acceptedIds,
-    failedIds,
-    error: failedIds.length ? 'Some events failed to sync.' : undefined
-  };
 }

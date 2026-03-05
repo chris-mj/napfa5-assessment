@@ -12,14 +12,11 @@ import {
 } from '../db/repo';
 import type { EventRow, SessionRow } from '../db/db';
 import { syncEvents } from '../lib/sync';
+import { postValidateToken } from '../lib/runApi';
+import { fetchRunEvents } from '../lib/runApi';
+import { runApiUrl } from '../lib/runApi';
 
 const GLOBAL_START_TEMPLATES = new Set(['A', 'B', 'C', 'D', 'E']);
-const VALIDATE_ENDPOINT = import.meta.env.DEV
-  ? 'http://localhost:3000/api/run/validateToken'
-  : 'https://napfa5.sg/api/run/validateToken';
-const EVENTS_ENDPOINT = import.meta.env.DEV
-  ? 'http://localhost:3000/api/run/events'
-  : 'https://napfa5.sg/api/run/events';
 const SYNC_INTERVAL_MS = 5000;
 
 type Enforcement = 'OFF' | 'SOFT' | 'STRICT';
@@ -103,6 +100,8 @@ export default function CaptureScreen() {
   const [tokenError, setTokenError] = useState('');
   const [lastPullAtMs, setLastPullAtMs] = useState<number | null>(null);
   const [lastPushAtMs, setLastPushAtMs] = useState<number | null>(null);
+  const [lastPullError, setLastPullError] = useState('');
+  const [lastPushError, setLastPushError] = useState('');
   const [projectorOpen, setProjectorOpen] = useState(false);
   const [inputFocused, setInputFocused] = useState(true);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
@@ -230,13 +229,8 @@ export default function CaptureScreen() {
       setTokenStatus('checking');
       setTokenError('');
       try {
-        const response = await fetch(VALIDATE_ENDPOINT, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ token: session.pairingToken })
-        });
+        const { response, body } = await postValidateToken(session.pairingToken);
         if (!response.ok) {
-          const body = await response.json().catch(() => null);
           throw new Error(body?.error || 'Token validation failed.');
         }
         if (active) setTokenStatus('valid');
@@ -258,18 +252,11 @@ export default function CaptureScreen() {
     const poll = async () => {
       if (!active) return;
       try {
-        const url = new URL(EVENTS_ENDPOINT);
-        if (remoteSinceRef.current) {
-          url.searchParams.set('since', String(remoteSinceRef.current));
-        }
-        const response = await fetch(url.toString(), {
-          headers: { Authorization: `Bearer ${session.pairingToken}` }
+        const pulled = await fetchRunEvents({
+          pairingToken: session.pairingToken,
+          sinceMs: remoteSinceRef.current || undefined
         });
-        const body = await response.json().catch(() => null);
-        if (!response.ok) {
-          throw new Error(body?.error || 'Failed to fetch events.');
-        }
-        const events = Array.isArray(body?.events) ? body.events : [];
+        const events = pulled.events || [];
         if (events.length) {
           let latestClearAll = 0;
           for (const event of events) {
@@ -304,8 +291,9 @@ export default function CaptureScreen() {
           await refreshEvents();
         }
         if (active) setLastPullAtMs(Date.now());
-      } catch {
-        // Silent: capture screen should continue offline.
+        if (active) setLastPullError('');
+      } catch (err: any) {
+        if (active) setLastPullError(err?.message || 'Failed to pull remote events.');
       }
     };
     poll();
@@ -326,6 +314,9 @@ export default function CaptureScreen() {
         const result = await syncEvents(sessionId);
         if (!result.error && result.synced >= 0) {
           setLastPushAtMs(Date.now());
+          setLastPushError('');
+        } else if (result.error) {
+          setLastPushError(result.error);
         }
       } finally {
         syncInFlightRef.current = false;
@@ -738,6 +729,13 @@ export default function CaptureScreen() {
                   })()}
             </div>
           )}
+          {!!lastPullError && <div className="error">Pull error: {lastPullError}</div>}
+          {!!lastPushError && <div className="error">Push error: {lastPushError}</div>}
+          <div className="note">
+            Linked: {session?.pairingToken ? 'token ok' : 'missing token'} |{' '}
+            {session?.remoteSessionId ? `remote ${session.remoteSessionId}` : 'missing remote session'}
+          </div>
+          <div className="note">API: {runApiUrl('/api/run/events')}</div>
           <div className="capture-inline-note">
             <div className="tag">
               ID format: {runnerFormat === 'classIndex' ? 'A04, B10' : 'Numbers only'}

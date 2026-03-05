@@ -6,6 +6,15 @@ import path from 'node:path';
 export default defineConfig({
   root: __dirname,
   publicDir: 'public',
+  server: {
+    proxy: {
+      '/api': {
+        target: process.env.VITE_RUN_API_PROXY_TARGET || 'https://napfa5-assessment.vercel.app',
+        changeOrigin: true,
+        secure: false
+      }
+    }
+  },
   plugins: [
     react(),
     VitePWA({

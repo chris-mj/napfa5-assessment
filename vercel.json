@@ -4,8 +4,9 @@
   "framework": "vite",
   "installCommand": "npm ci",
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/$1" },
-    { "source": "/assets/(.*)", "destination": "/assets/$1" },
-    { "source": "/(.*)", "destination": "/index.html" }
+    {
+      "source": "/((?!api/|assets/|favicon.ico|favicon.svg|manifest.webmanifest|sw.js|workbox-).*)",
+      "destination": "/index.html"
+    }
   ]
 }
