@@ -312,7 +312,7 @@ export default function CaptureScreen() {
       syncInFlightRef.current = true;
       try {
         const result = await syncEvents(sessionId);
-        if (!result.error && result.synced >= 0) {
+        if (!result.error && result.synced > 0) {
           setLastPushAtMs(Date.now());
           setLastPushError('');
         } else if (result.error) {

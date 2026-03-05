@@ -114,9 +114,11 @@ export async function upsertRemoteEvents(
 }
 
 export async function listUnsyncedEvents(sessionId: string): Promise<EventRow[]> {
+  // Unsynced rows may not be present in the [sessionId+syncedAtMs] index when syncedAtMs is undefined.
+  // Query by sessionId first, then filter in-memory for null/undefined syncedAtMs.
   return db.events
-    .where('[sessionId+syncedAtMs]')
-    .between([sessionId, Dexie.minKey], [sessionId, Dexie.maxKey])
+    .where('sessionId')
+    .equals(sessionId)
     .filter((event) => event.syncedAtMs == null)
     .toArray();
 }
