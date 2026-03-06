@@ -32,6 +32,7 @@ const ChartsPage = lazy(() => import("./pages/Charts"));
 const Gamification = lazy(() => import("./pages/Gamification"));
 const SummaryData = lazy(() => import("./pages/SummaryData"));
 const PlatformOwner = lazy(() => import("./pages/PlatformOwner"));
+const RunOps = lazy(() => import("./pages/RunOps"));
 
 export default function App() {
     const [user, setUser] = useState(null);
@@ -233,6 +234,18 @@ function AnimatedRoutes({ user, setUser }) {
                             user ? (
                                 <PageFade>
                                   <AdminGuard user={user}><Gamification user={user} /></AdminGuard>
+                                </PageFade>
+                            ) : (
+                                <Navigate to="/login" replace />
+                            )
+                        }
+                    />
+                    <Route
+                        path="/run-ops"
+                        element={
+                            user ? (
+                                <PageFade>
+                                  <AdminGuard user={user}><RunOps user={user} /></AdminGuard>
                                 </PageFade>
                             ) : (
                                 <Navigate to="/login" replace />

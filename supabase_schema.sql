@@ -197,11 +197,35 @@ create table if not exists run_configs (
   laps_required integer not null,
   enforcement text,
   scan_gap_ms integer,
+  runner_id_format text default 'numeric',
+  runner_id_min integer,
+  runner_id_max integer,
+  class_prefixes text[],
+  class_index_min integer,
+  class_index_max integer,
+  structured_level_min integer,
+  structured_level_max integer,
+  structured_class_min integer,
+  structured_class_max integer,
+  structured_index_min integer,
+  structured_index_max integer,
   pairing_token text,
   pairing_qr_data_url text,
   pairing_barcode_data_url text,
   created_at timestamptz default now()
 );
+alter table if exists run_configs add column if not exists runner_id_format text default 'numeric';
+alter table if exists run_configs add column if not exists runner_id_min integer;
+alter table if exists run_configs add column if not exists runner_id_max integer;
+alter table if exists run_configs add column if not exists class_prefixes text[];
+alter table if exists run_configs add column if not exists class_index_min integer;
+alter table if exists run_configs add column if not exists class_index_max integer;
+alter table if exists run_configs add column if not exists structured_level_min integer;
+alter table if exists run_configs add column if not exists structured_level_max integer;
+alter table if exists run_configs add column if not exists structured_class_min integer;
+alter table if exists run_configs add column if not exists structured_class_max integer;
+alter table if exists run_configs add column if not exists structured_index_min integer;
+alter table if exists run_configs add column if not exists structured_index_max integer;
 create index if not exists idx_run_configs_session on run_configs (session_id);
 create unique index if not exists idx_run_configs_pairing_token on run_configs (pairing_token);
 
@@ -338,6 +362,7 @@ alter table if exists students enable row level security;
 alter table if exists enrollments enable row level security;
 alter table if exists sessions enable row level security;
 alter table if exists run_configs enable row level security;
+alter table if exists run_events enable row level security;
 alter table if exists session_roster enable row level security;
 alter table if exists scores enable row level security;
 alter table if exists memberships enable row level security;
@@ -457,6 +482,16 @@ do $$ begin
   );
 exception when duplicate_object then null; end $$;
 
+-- Sessions: platform owner (single global owner email) can read across all schools.
+-- Required for global school selector in Run Ops and other cross-school operational views.
+do $$ begin
+  create policy sessions_select_platform_owner
+  on sessions for select
+  using (
+    lower(coalesce(auth.jwt() ->> 'email', '')) = lower('christopher_teo_ming_jian@moe.edu.sg')
+  );
+exception when duplicate_object then null; end $$;
+
 do $$ begin
   create policy sessions_admin_cud
   on sessions for all
@@ -477,6 +512,32 @@ do $$ begin
   );
 exception when duplicate_object then null; end $$;
 
+-- Run events: admins/superadmins can read events for sessions in their own school(s).
+-- This powers school-scoped operational monitoring while preserving tenancy boundaries.
+do $$ begin
+  create policy run_events_select_by_membership
+  on run_events for select
+  using (
+    exists (
+      select 1 from sessions s
+      join memberships m on m.school_id = s.school_id
+      where s.id = run_events.session_id
+        and m.user_id = auth.uid()
+        and m.role in ('admin','superadmin')
+    )
+  );
+exception when duplicate_object then null; end $$;
+
+-- Run events: platform owner can read all run events across schools.
+-- This enables global run operations oversight and troubleshooting.
+do $$ begin
+  create policy run_events_select_platform_owner
+  on run_events for select
+  using (
+    lower(coalesce(auth.jwt() ->> 'email', '')) = lower('christopher_teo_ming_jian@moe.edu.sg')
+  );
+exception when duplicate_object then null; end $$;
+
 -- Run configs: select by membership; CUD by admin/superadmin
 do $$ begin
   create policy run_configs_select_by_membership
@@ -488,6 +549,16 @@ do $$ begin
       where s.id = run_configs.session_id
         and m.user_id = auth.uid()
     )
+  );
+exception when duplicate_object then null; end $$;
+
+-- Run configs: platform owner can read all run configurations across schools.
+-- Needed for cross-school diagnostics of run setup and token/config issues.
+do $$ begin
+  create policy run_configs_select_platform_owner
+  on run_configs for select
+  using (
+    lower(coalesce(auth.jwt() ->> 'email', '')) = lower('christopher_teo_ming_jian@moe.edu.sg')
   );
 exception when duplicate_object then null; end $$;
 

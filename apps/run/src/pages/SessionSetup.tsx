@@ -17,6 +17,18 @@ type TokenResponse = {
   enforcement?: Enforcement;
   scanGapMs?: number;
   name?: string;
+  runnerIdFormat?: 'numeric' | 'classIndex' | 'structured4';
+  runnerIdMin?: number;
+  runnerIdMax?: number;
+  classPrefixes?: string[];
+  classIndexMin?: number;
+  classIndexMax?: number;
+  structuredLevelMin?: number;
+  structuredLevelMax?: number;
+  structuredClassMin?: number;
+  structuredClassMax?: number;
+  structuredIndexMin?: number;
+  structuredIndexMax?: number;
 };
 
 function defaultEnforcement(templateKey: TemplateKey): Enforcement {
@@ -43,11 +55,13 @@ export default function SessionSetup() {
   const [lapsRequired, setLapsRequired] = useState(3);
   const [enforcement, setEnforcement] = useState<Enforcement>(() => defaultEnforcement('A'));
   const [scanGapMs, setScanGapMs] = useState(10000);
-  const [runnerIdFormat, setRunnerIdFormat] = useState<'numeric' | 'classIndex'>('numeric');
+  const [runnerIdFormat, setRunnerIdFormat] = useState<'numeric' | 'classIndex' | 'structured4'>('numeric');
   const runnerFormatNote =
     runnerIdFormat === 'classIndex'
       ? 'Accepted format: letter + digits (A04, b10).'
-      : 'Accepted format: digits only.';
+      : runnerIdFormat === 'structured4'
+        ? 'Accepted format: 4 digits (LCII), e.g., 1101.'
+        : 'Accepted format: digits only.';
   const [sessions, setSessions] = useState<
     { id: string; createdAt: number; templateKey: string; name?: string }[]
   >([]);
@@ -124,7 +138,19 @@ export default function SessionSetup() {
         enforcement: data.enforcement,
         scanGapMs: data.scanGapMs,
         pairingToken: tokenValue,
-        name: data.name
+        name: data.name,
+        runnerIdFormat: data.runnerIdFormat,
+        runnerIdMin: data.runnerIdMin,
+        runnerIdMax: data.runnerIdMax,
+        classPrefixes: data.classPrefixes,
+        classIndexMin: data.classIndexMin,
+        classIndexMax: data.classIndexMax,
+        structuredLevelMin: data.structuredLevelMin,
+        structuredLevelMax: data.structuredLevelMax,
+        structuredClassMin: data.structuredClassMin,
+        structuredClassMax: data.structuredClassMax,
+        structuredIndexMin: data.structuredIndexMin,
+        structuredIndexMax: data.structuredIndexMax
       });
       setShowTokenModal(false);
       setTokenInput('');
@@ -246,11 +272,12 @@ export default function SessionSetup() {
               <select
                 id="runnerFormat"
                 value={runnerIdFormat}
-                onChange={(event) => setRunnerIdFormat(event.target.value as 'numeric' | 'classIndex')}
+                onChange={(event) => setRunnerIdFormat(event.target.value as 'numeric' | 'classIndex' | 'structured4')}
                 className="input-lg"
               >
                 <option value="numeric">Numbers only (e.g., 1023)</option>
                 <option value="classIndex">Class + index (e.g., A04, B10)</option>
+                <option value="structured4">4-digit code (LCII, e.g., 1101)</option>
               </select>
               <div className="note">{runnerFormatNote}</div>
             </div>

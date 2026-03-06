@@ -17,7 +17,7 @@ import SessionGroups from "../components/SessionGroups";
 const ROLE_CAN_MANAGE = ["superadmin", "admin"];
 const RESET_RUN_ENDPOINT = import.meta.env.DEV
     ? 'http://localhost:3000/api/run/resetConfig'
-    : 'https://napfa5.sg/api/run/resetConfig';
+    : 'https://napfa5-assessment.vercel.app/api/run/resetConfig';
 
 function RosterRow({ s, sessionId, canRecord, onSaved }) {
     const [open, setOpen] = useState(false);
@@ -90,7 +90,19 @@ export default function SessionDetail({ user }) {
         template_key: "A",
         laps_required: 3,
         enforcement: "OFF",
-        scan_gap_ms: 10000
+        scan_gap_ms: 10000,
+        runner_id_format: "numeric",
+        runner_id_min: 1,
+        runner_id_max: 120,
+        class_prefixes_text: "A",
+        class_index_min: 1,
+        class_index_max: 40,
+        structured_level_min: 1,
+        structured_level_max: 6,
+        structured_class_min: 1,
+        structured_class_max: 9,
+        structured_index_min: 1,
+        structured_index_max: 40
     });
     const [runConfigSaving, setRunConfigSaving] = useState(false);
     const [runConfigFlash, setRunConfigFlash] = useState("");
@@ -424,7 +436,10 @@ export default function SessionDetail({ user }) {
             .eq('session_id', id)
             .order('created_at', { ascending: false });
         if (err) return;
-        setRunConfigs(data || []);
+        setRunConfigs((data || []).map((cfg) => ({
+            ...cfg,
+            class_prefixes_text: Array.isArray(cfg.class_prefixes) ? cfg.class_prefixes.join(',') : ''
+        })));
     };
 
     // Reload roster when session year becomes available to compute class column
@@ -702,12 +717,72 @@ export default function SessionDetail({ user }) {
         link.download = fileName;
         link.click();
     };
+
+    const parseClassPrefixes = (text) => {
+        return String(text || '')
+            .split(',')
+            .map((v) => v.trim().toUpperCase())
+            .filter(Boolean)
+            .filter((v, i, arr) => arr.indexOf(v) === i);
+    };
+
+    const parseRunIdRules = (source) => {
+        const format = source.runner_id_format || 'numeric';
+        const toOptInt = (value) => {
+            if (value === '' || value == null) return null;
+            const n = Number(value);
+            return Number.isFinite(n) ? Math.trunc(n) : null;
+        };
+        const rules = { runner_id_format: format };
+        if (format === 'numeric') {
+            rules.runner_id_min = toOptInt(source.runner_id_min);
+            rules.runner_id_max = toOptInt(source.runner_id_max);
+            rules.class_prefixes = null;
+            rules.class_index_min = null;
+            rules.class_index_max = null;
+            rules.structured_level_min = null;
+            rules.structured_level_max = null;
+            rules.structured_class_min = null;
+            rules.structured_class_max = null;
+            rules.structured_index_min = null;
+            rules.structured_index_max = null;
+            return rules;
+        }
+        if (format === 'classIndex') {
+            rules.runner_id_min = null;
+            rules.runner_id_max = null;
+            rules.class_prefixes = parseClassPrefixes(source.class_prefixes_text || source.class_prefixes || '');
+            rules.class_index_min = toOptInt(source.class_index_min);
+            rules.class_index_max = toOptInt(source.class_index_max);
+            rules.structured_level_min = null;
+            rules.structured_level_max = null;
+            rules.structured_class_min = null;
+            rules.structured_class_max = null;
+            rules.structured_index_min = null;
+            rules.structured_index_max = null;
+            return rules;
+        }
+        rules.runner_id_min = null;
+        rules.runner_id_max = null;
+        rules.class_prefixes = null;
+        rules.class_index_min = null;
+        rules.class_index_max = null;
+        rules.structured_level_min = toOptInt(source.structured_level_min);
+        rules.structured_level_max = toOptInt(source.structured_level_max);
+        rules.structured_class_min = toOptInt(source.structured_class_min);
+        rules.structured_class_max = toOptInt(source.structured_class_max);
+        rules.structured_index_min = toOptInt(source.structured_index_min);
+        rules.structured_index_max = toOptInt(source.structured_index_max);
+        return rules;
+    };
+
     const handleCreateRunConfig = async () => {
         if (!session) return;
         setRunConfigSaving(true);
         setRunConfigFlash("");
         try {
             const token = crypto.randomUUID();
+            const idRules = parseRunIdRules(runConfigForm);
             const payload = {
                 session_id: session.id,
                 name: runConfigForm.name || null,
@@ -715,6 +790,7 @@ export default function SessionDetail({ user }) {
                 laps_required: Number(runConfigForm.laps_required) || 1,
                 enforcement: runConfigForm.enforcement,
                 scan_gap_ms: Number(runConfigForm.scan_gap_ms) || 10000,
+                ...idRules,
                 pairing_token: token
             };
             const { data, error: err } = await supabase
@@ -728,7 +804,19 @@ export default function SessionDetail({ user }) {
                 template_key: "A",
                 laps_required: 3,
                 enforcement: "OFF",
-                scan_gap_ms: 10000
+                scan_gap_ms: 10000,
+                runner_id_format: "numeric",
+                runner_id_min: 1,
+                runner_id_max: 120,
+                class_prefixes_text: "A",
+                class_index_min: 1,
+                class_index_max: 40,
+                structured_level_min: 1,
+                structured_level_max: 6,
+                structured_class_min: 1,
+                structured_class_max: 9,
+                structured_index_min: 1,
+                structured_index_max: 40
             });
             setRunConfigFlash("Run config created. Generate QR/barcode if needed.");
             await loadRunConfigs();
@@ -756,6 +844,7 @@ export default function SessionDetail({ user }) {
         setRunConfigSaving(true);
         setRunConfigFlash("");
         try {
+            const idRules = parseRunIdRules(config);
             const { error: err } = await supabase
                 .from('run_configs')
                 .update({
@@ -763,7 +852,8 @@ export default function SessionDetail({ user }) {
                     template_key: config.template_key,
                     laps_required: Number(config.laps_required) || 1,
                     enforcement: config.enforcement,
-                    scan_gap_ms: Number(config.scan_gap_ms) || 10000
+                    scan_gap_ms: Number(config.scan_gap_ms) || 10000,
+                    ...idRules
                 })
                 .eq('id', config.id);
             if (err) throw err;
@@ -1955,6 +2045,16 @@ export default function SessionDetail({ user }) {
                     >
                         Houses
                     </button>
+                    <button
+                        role="tab"
+                        aria-selected={activeTab === 'groups'}
+                        className={(activeTab === 'groups'
+                            ? 'bg-white text-blue-700 shadow border border-gray-200'
+                            : 'text-gray-600 hover:text-gray-800') + ' px-3 py-1.5 rounded-md transition-colors'}
+                        onClick={() => setActiveTab('groups')}
+                    >
+                        Groups
+                    </button>
                     {canManage && (
                         <button
                             role="tab"
@@ -1967,16 +2067,6 @@ export default function SessionDetail({ user }) {
                             Run Setup
                         </button>
                     )}
-                    <button
-                        role="tab"
-                        aria-selected={activeTab === 'groups'}
-                        className={(activeTab === 'groups'
-                            ? 'bg-white text-blue-700 shadow border border-gray-200'
-                            : 'text-gray-600 hover:text-gray-800') + ' px-3 py-1.5 rounded-md transition-colors'}
-                        onClick={() => setActiveTab('groups')}
-                    >
-                        Groups
-                    </button>
                 </div>
             </nav>
 
@@ -2029,7 +2119,7 @@ export default function SessionDetail({ user }) {
                                         className={`border rounded-lg p-0 text-left hover:border-blue-300 ${runConfigForm.template_key === k ? 'border-blue-500 bg-blue-50/40' : 'border-gray-200'}`}
                                     >
                                         <div className="flex items-center gap-3">
-                                            <img src={`/setup${k}.svg`} alt={`Setup ${k}`} className="w-64 h-64 object-contain" />
+                                            <img src={`/setup${k}.svg`} alt={`Setup ${k}`} className="w-64 h-auto object-contain" />
                                             <div className="max-w-[160px]">
                                                 <div className="text-sm font-semibold">Setup {k}</div>
                                                 <div className="text-xs text-gray-600">
@@ -2098,6 +2188,101 @@ export default function SessionDetail({ user }) {
                                     </select>
                                     <div className="text-xs text-gray-500 mt-1">Debounce window per runner.</div>
                                 </div>
+                                <div>
+                                    <label className="block text-sm mb-1">Runner ID Format</label>
+                                    <select
+                                        value={runConfigForm.runner_id_format}
+                                        onChange={(e) => setRunConfigForm((prev) => ({ ...prev, runner_id_format: e.target.value }))}
+                                        className="border rounded p-2 w-full"
+                                    >
+                                        <option value="numeric">Numeric</option>
+                                        <option value="classIndex">Class + Index (A01)</option>
+                                        <option value="structured4">4-digit LCII (1101)</option>
+                                    </select>
+                                    <div className="text-xs text-gray-500 mt-1">Applied by run devices during capture.</div>
+                                </div>
+                                {runConfigForm.runner_id_format === 'numeric' && (
+                                    <>
+                                        <div>
+                                            <label className="block text-sm mb-1">Min ID</label>
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                value={runConfigForm.runner_id_min}
+                                                onChange={(e) => setRunConfigForm((prev) => ({ ...prev, runner_id_min: e.target.value }))}
+                                                className="border rounded p-2 w-full"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm mb-1">Max ID</label>
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                value={runConfigForm.runner_id_max}
+                                                onChange={(e) => setRunConfigForm((prev) => ({ ...prev, runner_id_max: e.target.value }))}
+                                                className="border rounded p-2 w-full"
+                                            />
+                                        </div>
+                                    </>
+                                )}
+                                {runConfigForm.runner_id_format === 'classIndex' && (
+                                    <>
+                                        <div>
+                                            <label className="block text-sm mb-1">Class Prefixes (comma-separated)</label>
+                                            <input
+                                                value={runConfigForm.class_prefixes_text}
+                                                onChange={(e) => setRunConfigForm((prev) => ({ ...prev, class_prefixes_text: e.target.value }))}
+                                                className="border rounded p-2 w-full"
+                                                placeholder="A,B,C"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm mb-1">Min Index</label>
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                value={runConfigForm.class_index_min}
+                                                onChange={(e) => setRunConfigForm((prev) => ({ ...prev, class_index_min: e.target.value }))}
+                                                className="border rounded p-2 w-full"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm mb-1">Max Index</label>
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                value={runConfigForm.class_index_max}
+                                                onChange={(e) => setRunConfigForm((prev) => ({ ...prev, class_index_max: e.target.value }))}
+                                                className="border rounded p-2 w-full"
+                                            />
+                                        </div>
+                                    </>
+                                )}
+                                {runConfigForm.runner_id_format === 'structured4' && (
+                                    <>
+                                        <div>
+                                            <label className="block text-sm mb-1">Level Range (L)</label>
+                                            <div className="grid grid-cols-2 gap-2">
+                                                <input type="number" min="0" max="9" value={runConfigForm.structured_level_min} onChange={(e) => setRunConfigForm((prev) => ({ ...prev, structured_level_min: e.target.value }))} className="border rounded p-2 w-full" placeholder="Min" />
+                                                <input type="number" min="0" max="9" value={runConfigForm.structured_level_max} onChange={(e) => setRunConfigForm((prev) => ({ ...prev, structured_level_max: e.target.value }))} className="border rounded p-2 w-full" placeholder="Max" />
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm mb-1">Class Range (C)</label>
+                                            <div className="grid grid-cols-2 gap-2">
+                                                <input type="number" min="0" max="9" value={runConfigForm.structured_class_min} onChange={(e) => setRunConfigForm((prev) => ({ ...prev, structured_class_min: e.target.value }))} className="border rounded p-2 w-full" placeholder="Min" />
+                                                <input type="number" min="0" max="9" value={runConfigForm.structured_class_max} onChange={(e) => setRunConfigForm((prev) => ({ ...prev, structured_class_max: e.target.value }))} className="border rounded p-2 w-full" placeholder="Max" />
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm mb-1">Index Range (II)</label>
+                                            <div className="grid grid-cols-2 gap-2">
+                                                <input type="number" min="0" max="99" value={runConfigForm.structured_index_min} onChange={(e) => setRunConfigForm((prev) => ({ ...prev, structured_index_min: e.target.value }))} className="border rounded p-2 w-full" placeholder="Min" />
+                                                <input type="number" min="0" max="99" value={runConfigForm.structured_index_max} onChange={(e) => setRunConfigForm((prev) => ({ ...prev, structured_index_max: e.target.value }))} className="border rounded p-2 w-full" placeholder="Max" />
+                                            </div>
+                                        </div>
+                                    </>
+                                )}
                             </div>
                             <div className="pt-3 flex flex-wrap gap-2">
                                 <button
@@ -2129,7 +2314,7 @@ export default function SessionDetail({ user }) {
                                                         {config.name || `Run Config ${config.id?.slice(0, 6)}`}
                                                     </div>
                                                     <div className="text-xs text-gray-600">
-                                                        Setup {config.template_key} - Laps {config.laps_required} - Enforcement {config.enforcement || 'OFF'}
+                                                        Setup {config.template_key} - Laps {config.laps_required} - Enforcement {config.enforcement || 'OFF'} - ID {config.runner_id_format || 'numeric'}
                                                     </div>
                                                 </div>
                                             </div>
@@ -2212,6 +2397,76 @@ export default function SessionDetail({ user }) {
                                                         </select>
                                                         <div className="text-xs text-gray-500 mt-1">Debounce window per runner.</div>
                                                     </div>
+                                                    <div>
+                                                        <label className="block text-xs mb-1">Runner ID Format</label>
+                                                        <select
+                                                            value={config.runner_id_format || 'numeric'}
+                                                            onChange={(e) => updateRunConfigLocal(config.id, { runner_id_format: e.target.value })}
+                                                            className="border rounded p-2 w-full"
+                                                        >
+                                                            <option value="numeric">Numeric</option>
+                                                            <option value="classIndex">Class + Index (A01)</option>
+                                                            <option value="structured4">4-digit LCII (1101)</option>
+                                                        </select>
+                                                    </div>
+                                                    {(config.runner_id_format || 'numeric') === 'numeric' && (
+                                                        <>
+                                                            <div>
+                                                                <label className="block text-xs mb-1">Min ID</label>
+                                                                <input type="number" min="0" value={config.runner_id_min ?? ''} onChange={(e) => updateRunConfigLocal(config.id, { runner_id_min: e.target.value })} className="border rounded p-2 w-full" />
+                                                            </div>
+                                                            <div>
+                                                                <label className="block text-xs mb-1">Max ID</label>
+                                                                <input type="number" min="0" value={config.runner_id_max ?? ''} onChange={(e) => updateRunConfigLocal(config.id, { runner_id_max: e.target.value })} className="border rounded p-2 w-full" />
+                                                            </div>
+                                                        </>
+                                                    )}
+                                                    {(config.runner_id_format || 'numeric') === 'classIndex' && (
+                                                        <>
+                                                            <div>
+                                                                <label className="block text-xs mb-1">Class Prefixes</label>
+                                                                <input
+                                                                    value={config.class_prefixes_text || ''}
+                                                                    onChange={(e) => updateRunConfigLocal(config.id, { class_prefixes_text: e.target.value })}
+                                                                    className="border rounded p-2 w-full"
+                                                                    placeholder="A,B,C"
+                                                                />
+                                                            </div>
+                                                            <div>
+                                                                <label className="block text-xs mb-1">Min Index</label>
+                                                                <input type="number" min="0" value={config.class_index_min ?? ''} onChange={(e) => updateRunConfigLocal(config.id, { class_index_min: e.target.value })} className="border rounded p-2 w-full" />
+                                                            </div>
+                                                            <div>
+                                                                <label className="block text-xs mb-1">Max Index</label>
+                                                                <input type="number" min="0" value={config.class_index_max ?? ''} onChange={(e) => updateRunConfigLocal(config.id, { class_index_max: e.target.value })} className="border rounded p-2 w-full" />
+                                                            </div>
+                                                        </>
+                                                    )}
+                                                    {(config.runner_id_format || 'numeric') === 'structured4' && (
+                                                        <>
+                                                            <div>
+                                                                <label className="block text-xs mb-1">Level Range (L)</label>
+                                                                <div className="grid grid-cols-2 gap-2">
+                                                                    <input type="number" min="0" max="9" value={config.structured_level_min ?? ''} onChange={(e) => updateRunConfigLocal(config.id, { structured_level_min: e.target.value })} className="border rounded p-2 w-full" placeholder="Min" />
+                                                                    <input type="number" min="0" max="9" value={config.structured_level_max ?? ''} onChange={(e) => updateRunConfigLocal(config.id, { structured_level_max: e.target.value })} className="border rounded p-2 w-full" placeholder="Max" />
+                                                                </div>
+                                                            </div>
+                                                            <div>
+                                                                <label className="block text-xs mb-1">Class Range (C)</label>
+                                                                <div className="grid grid-cols-2 gap-2">
+                                                                    <input type="number" min="0" max="9" value={config.structured_class_min ?? ''} onChange={(e) => updateRunConfigLocal(config.id, { structured_class_min: e.target.value })} className="border rounded p-2 w-full" placeholder="Min" />
+                                                                    <input type="number" min="0" max="9" value={config.structured_class_max ?? ''} onChange={(e) => updateRunConfigLocal(config.id, { structured_class_max: e.target.value })} className="border rounded p-2 w-full" placeholder="Max" />
+                                                                </div>
+                                                            </div>
+                                                            <div>
+                                                                <label className="block text-xs mb-1">Index Range (II)</label>
+                                                                <div className="grid grid-cols-2 gap-2">
+                                                                    <input type="number" min="0" max="99" value={config.structured_index_min ?? ''} onChange={(e) => updateRunConfigLocal(config.id, { structured_index_min: e.target.value })} className="border rounded p-2 w-full" placeholder="Min" />
+                                                                    <input type="number" min="0" max="99" value={config.structured_index_max ?? ''} onChange={(e) => updateRunConfigLocal(config.id, { structured_index_max: e.target.value })} className="border rounded p-2 w-full" placeholder="Max" />
+                                                                </div>
+                                                            </div>
+                                                        </>
+                                                    )}
                                                     <div>
                                                         <label className="block text-xs mb-1">Pairing Token</label>
                                                         <input

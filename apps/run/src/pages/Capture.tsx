@@ -8,13 +8,15 @@ import {
   getSession,
   listEventsForSession,
   upsertRemoteEvents,
+  updateSessionLocalIdRules,
   updateSessionGlobalStart
 } from '../db/repo';
-import type { EventRow, SessionRow } from '../db/db';
+import type { EventRow, RunnerIdRules, SessionRow } from '../db/db';
 import { syncEvents } from '../lib/sync';
 import { postValidateToken } from '../lib/runApi';
 import { fetchRunEvents } from '../lib/runApi';
 import { runApiUrl } from '../lib/runApi';
+import { fetchRunHealth } from '../lib/runApi';
 
 const GLOBAL_START_TEMPLATES = new Set(['A', 'B', 'C', 'D', 'E']);
 const SYNC_INTERVAL_MS = 5000;
@@ -28,6 +30,30 @@ type RunnerSummary = {
   flags: Flag[];
   finishedAtMs?: number;
   lastSeenAtMs?: number;
+};
+
+type SyncLogItem = {
+  atMs: number;
+  attempted: number;
+  synced: number;
+  failed: number;
+  pending: number;
+  error?: string;
+};
+
+type OverrideForm = {
+  runnerIdFormat: 'numeric' | 'classIndex' | 'structured4';
+  runnerIdMin: string;
+  runnerIdMax: string;
+  classPrefixes: string;
+  classIndexMin: string;
+  classIndexMax: string;
+  structuredLevelMin: string;
+  structuredLevelMax: string;
+  structuredClassMin: string;
+  structuredClassMax: string;
+  structuredIndexMin: string;
+  structuredIndexMax: string;
 };
 
 function stationStorageKey(sessionId: string) {
@@ -87,6 +113,137 @@ function sortSummaries(items: RunnerSummary[]) {
   });
 }
 
+function normalizeRunnerIdWithRules(value: string, session: SessionRow | null) {
+  const trimmed = String(value || '').trim();
+  if (!trimmed) return { normalized: '', error: '' };
+
+  const format = session?.runnerIdFormat || 'numeric';
+  if (format === 'numeric') {
+    if (!/^\d+$/.test(trimmed)) return { normalized: '', error: 'Invalid ID. Numbers only.' };
+    const numeric = Number.parseInt(trimmed, 10);
+    if (!Number.isFinite(numeric)) return { normalized: '', error: 'Invalid ID.' };
+    const min = Number.isFinite(session?.runnerIdMin as number) ? Number(session?.runnerIdMin) : null;
+    const max = Number.isFinite(session?.runnerIdMax as number) ? Number(session?.runnerIdMax) : null;
+    if (min != null && numeric < min) return { normalized: '', error: `ID must be at least ${min}.` };
+    if (max != null && numeric > max) return { normalized: '', error: `ID must be ${max} or below.` };
+    return { normalized: String(numeric), error: '' };
+  }
+
+  if (format === 'classIndex') {
+    const m = trimmed.match(/^([a-zA-Z])(\d{1,3})$/);
+    if (!m) return { normalized: '', error: 'Invalid ID. Use class format like A01.' };
+    const prefix = m[1].toUpperCase();
+    const index = Number.parseInt(m[2], 10);
+    if (!Number.isFinite(index)) return { normalized: '', error: 'Invalid class index.' };
+    const allowedPrefixes = Array.isArray(session?.classPrefixes) && session?.classPrefixes.length
+      ? session.classPrefixes.map((p) => String(p || '').trim().toUpperCase()).filter(Boolean)
+      : null;
+    if (allowedPrefixes && !allowedPrefixes.includes(prefix)) {
+      return { normalized: '', error: `Class must be one of: ${allowedPrefixes.join(', ')}.` };
+    }
+    const min = Number.isFinite(session?.classIndexMin as number) ? Number(session?.classIndexMin) : null;
+    const max = Number.isFinite(session?.classIndexMax as number) ? Number(session?.classIndexMax) : null;
+    if (min != null && index < min) return { normalized: '', error: `Index must be at least ${String(min).padStart(2, '0')}.` };
+    if (max != null && index > max) return { normalized: '', error: `Index must be ${String(max).padStart(2, '0')} or below.` };
+    const width = Math.max(2, String(max ?? index).length);
+    return { normalized: `${prefix}${String(index).padStart(width, '0')}`, error: '' };
+  }
+
+  if (format === 'structured4') {
+    if (!/^\d{4}$/.test(trimmed)) return { normalized: '', error: 'Invalid ID. Use 4 digits (LCII), e.g. 1101.' };
+    const level = Number.parseInt(trimmed.slice(0, 1), 10);
+    const cls = Number.parseInt(trimmed.slice(1, 2), 10);
+    const index = Number.parseInt(trimmed.slice(2, 4), 10);
+    const levelMin = Number.isFinite(session?.structuredLevelMin as number) ? Number(session?.structuredLevelMin) : 0;
+    const levelMax = Number.isFinite(session?.structuredLevelMax as number) ? Number(session?.structuredLevelMax) : 9;
+    const classMin = Number.isFinite(session?.structuredClassMin as number) ? Number(session?.structuredClassMin) : 0;
+    const classMax = Number.isFinite(session?.structuredClassMax as number) ? Number(session?.structuredClassMax) : 9;
+    const indexMin = Number.isFinite(session?.structuredIndexMin as number) ? Number(session?.structuredIndexMin) : 1;
+    const indexMax = Number.isFinite(session?.structuredIndexMax as number) ? Number(session?.structuredIndexMax) : 99;
+    if (level < levelMin || level > levelMax) return { normalized: '', error: `Level must be ${levelMin}-${levelMax}.` };
+    if (cls < classMin || cls > classMax) return { normalized: '', error: `Class must be ${classMin}-${classMax}.` };
+    if (index < indexMin || index > indexMax) return { normalized: '', error: `Index must be ${String(indexMin).padStart(2, '0')}-${String(indexMax).padStart(2, '0')}.` };
+    return { normalized: `${level}${cls}${String(index).padStart(2, '0')}`, error: '' };
+  }
+
+  return { normalized: '', error: 'Unsupported runner ID format.' };
+}
+
+function resolveRunnerRuleSession(session: SessionRow | null): SessionRow | null {
+  if (!session?.localIdRulesOverride) return session;
+  return {
+    ...session,
+    runnerIdFormat: session.localIdRulesOverride.runnerIdFormat || session.runnerIdFormat,
+    runnerIdMin: session.localIdRulesOverride.runnerIdMin,
+    runnerIdMax: session.localIdRulesOverride.runnerIdMax,
+    classPrefixes: session.localIdRulesOverride.classPrefixes,
+    classIndexMin: session.localIdRulesOverride.classIndexMin,
+    classIndexMax: session.localIdRulesOverride.classIndexMax,
+    structuredLevelMin: session.localIdRulesOverride.structuredLevelMin,
+    structuredLevelMax: session.localIdRulesOverride.structuredLevelMax,
+    structuredClassMin: session.localIdRulesOverride.structuredClassMin,
+    structuredClassMax: session.localIdRulesOverride.structuredClassMax,
+    structuredIndexMin: session.localIdRulesOverride.structuredIndexMin,
+    structuredIndexMax: session.localIdRulesOverride.structuredIndexMax
+  };
+}
+
+function toOverrideForm(session: SessionRow | null): OverrideForm {
+  const base = resolveRunnerRuleSession(session);
+  return {
+    runnerIdFormat: (base?.runnerIdFormat || 'numeric') as OverrideForm['runnerIdFormat'],
+    runnerIdMin: base?.runnerIdMin == null ? '' : String(base.runnerIdMin),
+    runnerIdMax: base?.runnerIdMax == null ? '' : String(base.runnerIdMax),
+    classPrefixes: Array.isArray(base?.classPrefixes) ? base.classPrefixes.join(',') : '',
+    classIndexMin: base?.classIndexMin == null ? '' : String(base.classIndexMin),
+    classIndexMax: base?.classIndexMax == null ? '' : String(base.classIndexMax),
+    structuredLevelMin: base?.structuredLevelMin == null ? '' : String(base.structuredLevelMin),
+    structuredLevelMax: base?.structuredLevelMax == null ? '' : String(base.structuredLevelMax),
+    structuredClassMin: base?.structuredClassMin == null ? '' : String(base.structuredClassMin),
+    structuredClassMax: base?.structuredClassMax == null ? '' : String(base.structuredClassMax),
+    structuredIndexMin: base?.structuredIndexMin == null ? '' : String(base.structuredIndexMin),
+    structuredIndexMax: base?.structuredIndexMax == null ? '' : String(base.structuredIndexMax)
+  };
+}
+
+function parseOptInt(value: string) {
+  const v = String(value || '').trim();
+  if (!v) return undefined;
+  const n = Number.parseInt(v, 10);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+function formToOverrideRules(form: OverrideForm): RunnerIdRules {
+  const format = form.runnerIdFormat;
+  if (format === 'numeric') {
+    return {
+      runnerIdFormat: 'numeric',
+      runnerIdMin: parseOptInt(form.runnerIdMin),
+      runnerIdMax: parseOptInt(form.runnerIdMax)
+    };
+  }
+  if (format === 'classIndex') {
+    return {
+      runnerIdFormat: 'classIndex',
+      classPrefixes: String(form.classPrefixes || '')
+        .split(',')
+        .map((x) => x.trim().toUpperCase())
+        .filter(Boolean),
+      classIndexMin: parseOptInt(form.classIndexMin),
+      classIndexMax: parseOptInt(form.classIndexMax)
+    };
+  }
+  return {
+    runnerIdFormat: 'structured4',
+    structuredLevelMin: parseOptInt(form.structuredLevelMin),
+    structuredLevelMax: parseOptInt(form.structuredLevelMax),
+    structuredClassMin: parseOptInt(form.structuredClassMin),
+    structuredClassMax: parseOptInt(form.structuredClassMax),
+    structuredIndexMin: parseOptInt(form.structuredIndexMin),
+    structuredIndexMax: parseOptInt(form.structuredIndexMax)
+  };
+}
+
 export default function CaptureScreen() {
   const [params] = useSearchParams();
   const sessionId = params.get('sessionId') ?? '';
@@ -102,6 +259,16 @@ export default function CaptureScreen() {
   const [lastPushAtMs, setLastPushAtMs] = useState<number | null>(null);
   const [lastPullError, setLastPullError] = useState('');
   const [lastPushError, setLastPushError] = useState('');
+  const [syncPending, setSyncPending] = useState(0);
+  const [lastSyncStats, setLastSyncStats] = useState<{ attempted: number; synced: number; failed: number } | null>(null);
+  const [syncLog, setSyncLog] = useState<SyncLogItem[]>([]);
+  const [healthStatus, setHealthStatus] = useState<'idle' | 'checking' | 'ok' | 'warn' | 'error'>('idle');
+  const [healthError, setHealthError] = useState('');
+  const [healthCheckedAtMs, setHealthCheckedAtMs] = useState<number | null>(null);
+  const [healthSummary, setHealthSummary] = useState('');
+  const [showTechDetails, setShowTechDetails] = useState(false);
+  const [showOverrideModal, setShowOverrideModal] = useState(false);
+  const [overrideForm, setOverrideForm] = useState<OverrideForm>(() => toOverrideForm(null));
   const [projectorOpen, setProjectorOpen] = useState(false);
   const [inputFocused, setInputFocused] = useState(true);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
@@ -140,25 +307,55 @@ export default function CaptureScreen() {
     return withEnforcement;
   }, [session]);
 
-  const runnerFormat = session?.runnerIdFormat ?? 'numeric';
-  const normalizeRunnerId = (value: string) => {
-    const trimmed = value.trim();
-    if (!trimmed) return '';
+  const effectiveRuleSession = useMemo(() => resolveRunnerRuleSession(session), [session]);
+
+  const runnerFormat = effectiveRuleSession?.runnerIdFormat ?? 'numeric';
+  const runnerFormatNote = useMemo(() => {
     if (runnerFormat === 'numeric') {
-      if (!/^\d+$/.test(trimmed)) return '';
-      const normalized = trimmed.replace(/^0+/, '');
-      return normalized === '' ? '0' : normalized;
+      const min = effectiveRuleSession?.runnerIdMin;
+      const max = effectiveRuleSession?.runnerIdMax;
+      if (Number.isFinite(min as number) || Number.isFinite(max as number)) {
+        return `Numbers only (${min ?? '-'}-${max ?? '-'})`;
+      }
+      return 'Numbers only';
     }
-    if (/^[a-zA-Z][0-9]+$/.test(trimmed)) {
-      const letter = trimmed[0].toUpperCase();
-      const digits = trimmed.slice(1);
-      return `${letter}${digits}`;
+    if (runnerFormat === 'classIndex') {
+      const prefixes = Array.isArray(effectiveRuleSession?.classPrefixes) && effectiveRuleSession.classPrefixes.length
+        ? effectiveRuleSession.classPrefixes.join('/')
+        : 'A-Z';
+      const min = effectiveRuleSession?.classIndexMin;
+      const max = effectiveRuleSession?.classIndexMax;
+      return `Class + index (${prefixes}${Number.isFinite(min as number) || Number.isFinite(max as number) ? ` ${String(min ?? 1).padStart(2, '0')}-${String(max ?? 99).padStart(2, '0')}` : ''})`;
     }
-    return '';
-  };
+    return `4-digit LCII (L ${effectiveRuleSession?.structuredLevelMin ?? 0}-${effectiveRuleSession?.structuredLevelMax ?? 9}, C ${effectiveRuleSession?.structuredClassMin ?? 0}-${effectiveRuleSession?.structuredClassMax ?? 9}, II ${String(effectiveRuleSession?.structuredIndexMin ?? 1).padStart(2, '0')}-${String(effectiveRuleSession?.structuredIndexMax ?? 99).padStart(2, '0')})`;
+  }, [
+    runnerFormat,
+    effectiveRuleSession?.runnerIdMin,
+    effectiveRuleSession?.runnerIdMax,
+    effectiveRuleSession?.classPrefixes,
+    effectiveRuleSession?.classIndexMin,
+    effectiveRuleSession?.classIndexMax,
+    effectiveRuleSession?.structuredLevelMin,
+    effectiveRuleSession?.structuredLevelMax,
+    effectiveRuleSession?.structuredClassMin,
+    effectiveRuleSession?.structuredClassMax,
+    effectiveRuleSession?.structuredIndexMin,
+    effectiveRuleSession?.structuredIndexMax
+  ]);
 
   const showGlobalStart = session && GLOBAL_START_TEMPLATES.has(session.templateKey);
   const hasStartStation = session && ['D'].includes(session.templateKey);
+  const syncIsStale = session?.pairingToken && session?.remoteSessionId
+    ? (!lastPullAtMs || !lastPushAtMs || Date.now() - lastPullAtMs > 15000 || Date.now() - lastPushAtMs > 15000)
+    : false;
+  const hasSyncIssue = Boolean(lastPullError || lastPushError || tokenStatus === 'invalid' || healthStatus === 'error');
+  const connectionLabel = !session?.pairingToken || !session?.remoteSessionId
+    ? 'Offline (not linked)'
+    : hasSyncIssue
+      ? 'Needs attention'
+      : syncIsStale
+        ? 'Delayed'
+        : 'Connected';
 
 
   const buildSummaries = (events: EventRow[]) => {
@@ -221,6 +418,10 @@ export default function CaptureScreen() {
   }, [sessionId]);
 
   useEffect(() => {
+    setOverrideForm(toOverrideForm(session));
+  }, [session]);
+
+  useEffect(() => {
     if (!sessionId || !session?.pairingToken || !session?.remoteSessionId) return;
     let active = true;
     const verify = async () => {
@@ -245,6 +446,43 @@ export default function CaptureScreen() {
       active = false;
     };
   }, [sessionId, session?.pairingToken, session?.remoteSessionId]);
+
+  useEffect(() => {
+    if (!session?.pairingToken) return;
+    let active = true;
+    const check = async () => {
+      if (!active) return;
+      setHealthStatus('checking');
+      try {
+        const result = await fetchRunHealth({
+          pairingToken: session.pairingToken,
+          sessionId: session.remoteSessionId,
+          runConfigId: session.runConfigId ?? session.id
+        });
+        if (!active) return;
+        const warn = !result.matchesSession || !result.matchesRunConfig;
+        setHealthStatus(warn ? 'warn' : 'ok');
+        setHealthError('');
+        setHealthCheckedAtMs(Date.now());
+        setHealthSummary(
+          `${result.name || 'run-config'} (${result.runConfigId.slice(0, 8)})` +
+          `${warn ? ' - linked ID mismatch' : ''}`
+        );
+      } catch (err: any) {
+        if (!active) return;
+        setHealthStatus('error');
+        setHealthError(err?.message || 'Heartbeat failed.');
+        setHealthCheckedAtMs(Date.now());
+        setHealthSummary('');
+      }
+    };
+    check();
+    const timer = setInterval(check, 15000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [session?.pairingToken, session?.remoteSessionId, session?.runConfigId, session?.id]);
 
   useEffect(() => {
     if (!sessionId || !session?.pairingToken || !session?.remoteSessionId) return;
@@ -312,6 +550,19 @@ export default function CaptureScreen() {
       syncInFlightRef.current = true;
       try {
         const result = await syncEvents(sessionId);
+        setSyncPending(result.pending);
+        setLastSyncStats({ attempted: result.attempted, synced: result.synced, failed: result.failed });
+        setSyncLog((prev) => [
+          {
+            atMs: Date.now(),
+            attempted: result.attempted,
+            synced: result.synced,
+            failed: result.failed,
+            pending: result.pending,
+            error: result.error
+          },
+          ...prev
+        ].slice(0, 5));
         if (!result.error && result.synced > 0) {
           setLastPushAtMs(Date.now());
           setLastPushError('');
@@ -450,16 +701,13 @@ export default function CaptureScreen() {
     const trimmed = runnerId.trim();
     if (trimmed.startsWith('-c')) {
       const target = trimmed.slice(2).trim();
-      const normalizedTarget = normalizeRunnerId(target);
+      const normalizedTarget = normalizeRunnerIdWithRules(target, effectiveRuleSession).normalized;
       setRunnerId('');
       setOverridePending(false);
       inputRef.current?.focus();
       if (!normalizedTarget) {
-        const msg =
-          runnerFormat === 'classIndex'
-            ? 'Invalid ID. Use A04, B10 format.'
-            : 'Invalid ID. Numbers only.';
-        setToast(msg);
+        const validation = normalizeRunnerIdWithRules(target, effectiveRuleSession);
+        setToast(validation.error || 'Invalid ID.');
         setTimeout(() => setToast(''), 1500);
         return;
       }
@@ -470,32 +718,26 @@ export default function CaptureScreen() {
     }
     if (trimmed.startsWith('--')) {
       const target = trimmed.slice(2).trim();
-      const normalizedTarget = normalizeRunnerId(target);
+      const normalizedTarget = normalizeRunnerIdWithRules(target, effectiveRuleSession).normalized;
       setRunnerId('');
       setOverridePending(false);
       inputRef.current?.focus();
       if (!normalizedTarget) {
-        const msg =
-          runnerFormat === 'classIndex'
-            ? 'Invalid ID. Use A04, B10 format.'
-            : 'Invalid ID. Numbers only.';
-        setToast(msg);
+        const validation = normalizeRunnerIdWithRules(target, effectiveRuleSession);
+        setToast(validation.error || 'Invalid ID.');
         setTimeout(() => setToast(''), 1500);
         return;
       }
       await handleUndoRunnerById(normalizedTarget);
       return;
     }
-    const normalizedId = normalizeRunnerId(trimmed);
+    const idValidation = normalizeRunnerIdWithRules(trimmed, effectiveRuleSession);
+    const normalizedId = idValidation.normalized;
     if (!normalizedId) {
       setRunnerId('');
       setOverridePending(false);
       inputRef.current?.focus();
-      const msg =
-        runnerFormat === 'classIndex'
-          ? 'Invalid ID. Use A04, B10 format.'
-          : 'Invalid ID. Numbers only.';
-      setToast(msg);
+      setToast(idValidation.error || 'Invalid ID.');
       setTimeout(() => setToast(''), 1500);
       return;
     }
@@ -597,6 +839,27 @@ export default function CaptureScreen() {
     link.download = `session-${sessionId}.csv`;
     link.click();
     URL.revokeObjectURL(url);
+  }
+
+  async function handleSaveLocalOverride() {
+    if (!sessionId) return;
+    const rules = formToOverrideRules(overrideForm);
+    await updateSessionLocalIdRules(sessionId, rules);
+    const updated = await getSession(sessionId);
+    setSession(updated || null);
+    setShowOverrideModal(false);
+    setToast('Local run config override saved.');
+    setTimeout(() => setToast(''), 1400);
+  }
+
+  async function handleClearLocalOverride() {
+    if (!sessionId) return;
+    await updateSessionLocalIdRules(sessionId, null);
+    const updated = await getSession(sessionId);
+    setSession(updated || null);
+    setShowOverrideModal(false);
+    setToast('Local override cleared. Using original run config.');
+    setTimeout(() => setToast(''), 1600);
   }
 
   async function handleGlobalStart() {
@@ -713,32 +976,103 @@ export default function CaptureScreen() {
           )}
           {tokenStatus === 'checking' && <div className="note">Validating pairing token...</div>}
           {tokenStatus === 'invalid' && <div className="error">Token invalid: {tokenError}</div>}
-          {(lastPullAtMs || lastPushAtMs || (!session?.pairingToken || !session?.remoteSessionId)) && (
-            <div className="note">
-              Sync:{' '}
-              {!session?.pairingToken || !session?.remoteSessionId
-                ? 'offline'
-                : (() => {
-                    const now = Date.now();
-                    const pullText = lastPullAtMs ? new Date(lastPullAtMs).toLocaleTimeString() : 'never';
-                    const pushText = lastPushAtMs ? new Date(lastPushAtMs).toLocaleTimeString() : 'never';
-                    const stalePull = lastPullAtMs ? now - lastPullAtMs > 15000 : true;
-                    const stalePush = lastPushAtMs ? now - lastPushAtMs > 15000 : true;
-                    const stale = stalePull || stalePush;
-                    return `pull ${pullText} | push ${pushText}${stale ? ' (stale)' : ''}`;
-                  })()}
+          <div className="note">Connection: {connectionLabel}</div>
+          <div className="note">
+            Last received: {lastPullAtMs ? new Date(lastPullAtMs).toLocaleTimeString() : 'never'} | Last sent: {lastPushAtMs ? new Date(lastPushAtMs).toLocaleTimeString() : 'never'}
+          </div>
+          {syncPending > 0 && <div className="note">Pending upload: {syncPending}</div>}
+          {hasSyncIssue && (
+            <div className="error">
+              Sync needs attention. Open technical details for error info.
             </div>
           )}
-          {!!lastPullError && <div className="error">Pull error: {lastPullError}</div>}
-          {!!lastPushError && <div className="error">Push error: {lastPushError}</div>}
-          <div className="note">
-            Linked: {session?.pairingToken ? 'token ok' : 'missing token'} |{' '}
-            {session?.remoteSessionId ? `remote ${session.remoteSessionId}` : 'missing remote session'}
-          </div>
-          <div className="note">API: {runApiUrl('/api/run/events')}</div>
+          {stationId === 'LAP_END' && (
+            <>
+              <div className="note">
+                {session?.localIdRulesOverride
+                  ? 'Local override active for this run only.'
+                  : 'Using original run config.'}
+              </div>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => setShowOverrideModal(true)}
+              >
+                Change runner ID format
+              </button>
+              <div className="note">This will not change the original run config.</div>
+            </>
+          )}
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => setShowTechDetails((value) => !value)}
+          >
+            {showTechDetails ? 'Hide technical details' : 'Show technical details'}
+          </button>
+          {showTechDetails && (
+            <>
+              {!!lastPullError && <div className="error">Pull error: {lastPullError}</div>}
+              {!!lastPushError && <div className="error">Push error: {lastPushError}</div>}
+              <div className="note">
+                Heartbeat:{' '}
+                {healthStatus === 'checking' ? 'checking'
+                  : healthStatus === 'ok' ? 'ok'
+                  : healthStatus === 'warn' ? 'warn'
+                  : healthStatus === 'error' ? 'error'
+                  : 'idle'} (token/config link check)
+                {healthCheckedAtMs ? ` @ ${new Date(healthCheckedAtMs).toLocaleTimeString()}` : ''}
+              </div>
+              {!!healthSummary && <div className="note">Health: {healthSummary}</div>}
+              {!!healthError && <div className="error">Health error: {healthError}</div>}
+              <div className="note">
+                Sync stats: attempted {lastSyncStats?.attempted ?? 0} | accepted {lastSyncStats?.synced ?? 0} | failed {lastSyncStats?.failed ?? 0} | pending {syncPending}
+              </div>
+              {session?.localIdRulesOverride && (
+                <div className="note">
+                  Local override active
+                  {session?.localIdRulesOverrideUpdatedAt
+                    ? ` (updated ${new Date(session.localIdRulesOverrideUpdatedAt).toLocaleTimeString()})`
+                    : ''}
+                </div>
+              )}
+              <div className="note">API: {runApiUrl('/api/run/events')}</div>
+              <div className="capture-table-wrap">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Sync Time</th>
+                      <th>Attempted</th>
+                      <th>Accepted</th>
+                      <th>Failed</th>
+                      <th>Pending</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {syncLog.map((item, idx) => (
+                      <tr key={`${item.atMs}-${idx}`}>
+                        <td>{new Date(item.atMs).toLocaleTimeString()}</td>
+                        <td>{item.attempted}</td>
+                        <td>{item.synced}</td>
+                        <td>{item.failed}</td>
+                        <td>{item.pending}</td>
+                        <td>{item.error ? item.error : 'ok'}</td>
+                      </tr>
+                    ))}
+                    {syncLog.length === 0 && (
+                      <tr>
+                        <td colSpan={6}>No sync attempts yet.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
           <div className="capture-inline-note">
             <div className="tag">
-              ID format: {runnerFormat === 'classIndex' ? 'A04, B10' : 'Numbers only'}
+              ID format: {runnerFormatNote}
             </div>
           </div>
           <div className="capture-inline-note">
@@ -746,7 +1080,10 @@ export default function CaptureScreen() {
             <div className="tag">--ID undo last local scan</div>
           </div>
 
-          <div className="capture-section-title">Recent Scans (this device)</div>
+        </section>
+
+        <section className="capture-middle card">
+          <div className="capture-section-title">Recent Scans (this station)</div>
           <div className="capture-table-wrap">
             <table className="table">
               <thead>
@@ -828,12 +1165,16 @@ export default function CaptureScreen() {
 
       <div className="capture-footer card">
         <div className="capture-footer-actions">
-          <button type="button" className="secondary" onClick={() => setShowResetConfirm(true)}>
-            Reset Session Data
-          </button>
-          <button type="button" className="secondary" onClick={handleExport}>
-            Export CSV
-          </button>
+          {stationId === 'LAP_END' && (
+            <>
+              <button type="button" className="secondary" onClick={() => setShowResetConfirm(true)}>
+                Reset Session Data
+              </button>
+              <button type="button" className="secondary" onClick={handleExport}>
+                Export CSV
+              </button>
+            </>
+          )}
           <button
             type="button"
             className="secondary"
@@ -843,8 +1184,112 @@ export default function CaptureScreen() {
             {projectorOpen ? 'Close Projector View' : 'Projector View'}
           </button>
         </div>
-        <div className="note">Warning: reset clears local history and broadcasts a reset to all stations.</div>
+        <div className="note">
+          {stationId === 'LAP_END'
+            ? 'Warning: reset clears local history and broadcasts a reset to all stations.'
+            : 'Reset and export are available only at the Lap Start / End station.'}
+        </div>
       </div>
+      {showOverrideModal && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true">
+          <div className="modal-card" style={{ width: 'min(560px, 100%)' }}>
+            <div className="modal-header">
+              <div className="text-base font-semibold">Change config for this run only</div>
+              <button type="button" className="btn-link" onClick={() => setShowOverrideModal(false)}>
+                Close
+              </button>
+            </div>
+            <div className="grid">
+              <div className="note">This will not change the original run config.</div>
+              <div>
+                <label htmlFor="overrideFormat">Runner ID Format</label>
+                <select
+                  id="overrideFormat"
+                  value={overrideForm.runnerIdFormat}
+                  onChange={(event) => setOverrideForm((prev) => ({ ...prev, runnerIdFormat: event.target.value as OverrideForm['runnerIdFormat'] }))}
+                  className="input-lg"
+                >
+                  <option value="numeric">Numeric</option>
+                  <option value="classIndex">Class + Index (A01)</option>
+                  <option value="structured4">4-digit LCII (1101)</option>
+                </select>
+              </div>
+              {overrideForm.runnerIdFormat === 'numeric' && (
+                <div className="inline-row">
+                  <div>
+                    <label htmlFor="overrideMin">Min ID</label>
+                    <input id="overrideMin" value={overrideForm.runnerIdMin} onChange={(event) => setOverrideForm((prev) => ({ ...prev, runnerIdMin: event.target.value }))} className="input-lg" />
+                  </div>
+                  <div>
+                    <label htmlFor="overrideMax">Max ID</label>
+                    <input id="overrideMax" value={overrideForm.runnerIdMax} onChange={(event) => setOverrideForm((prev) => ({ ...prev, runnerIdMax: event.target.value }))} className="input-lg" />
+                  </div>
+                </div>
+              )}
+              {overrideForm.runnerIdFormat === 'classIndex' && (
+                <div className="grid">
+                  <div>
+                    <label htmlFor="overridePrefixes">Class Prefixes (comma-separated)</label>
+                    <input id="overridePrefixes" value={overrideForm.classPrefixes} onChange={(event) => setOverrideForm((prev) => ({ ...prev, classPrefixes: event.target.value }))} className="input-lg" placeholder="A,B,C" />
+                  </div>
+                  <div className="inline-row">
+                    <div>
+                      <label htmlFor="overrideClassMin">Min Index</label>
+                      <input id="overrideClassMin" value={overrideForm.classIndexMin} onChange={(event) => setOverrideForm((prev) => ({ ...prev, classIndexMin: event.target.value }))} className="input-lg" />
+                    </div>
+                    <div>
+                      <label htmlFor="overrideClassMax">Max Index</label>
+                      <input id="overrideClassMax" value={overrideForm.classIndexMax} onChange={(event) => setOverrideForm((prev) => ({ ...prev, classIndexMax: event.target.value }))} className="input-lg" />
+                    </div>
+                  </div>
+                </div>
+              )}
+              {overrideForm.runnerIdFormat === 'structured4' && (
+                <div className="grid">
+                  <div className="inline-row">
+                    <div>
+                      <label htmlFor="overrideLvlMin">Level Min (L)</label>
+                      <input id="overrideLvlMin" value={overrideForm.structuredLevelMin} onChange={(event) => setOverrideForm((prev) => ({ ...prev, structuredLevelMin: event.target.value }))} className="input-lg" />
+                    </div>
+                    <div>
+                      <label htmlFor="overrideLvlMax">Level Max (L)</label>
+                      <input id="overrideLvlMax" value={overrideForm.structuredLevelMax} onChange={(event) => setOverrideForm((prev) => ({ ...prev, structuredLevelMax: event.target.value }))} className="input-lg" />
+                    </div>
+                  </div>
+                  <div className="inline-row">
+                    <div>
+                      <label htmlFor="overrideClsMin">Class Min (C)</label>
+                      <input id="overrideClsMin" value={overrideForm.structuredClassMin} onChange={(event) => setOverrideForm((prev) => ({ ...prev, structuredClassMin: event.target.value }))} className="input-lg" />
+                    </div>
+                    <div>
+                      <label htmlFor="overrideClsMax">Class Max (C)</label>
+                      <input id="overrideClsMax" value={overrideForm.structuredClassMax} onChange={(event) => setOverrideForm((prev) => ({ ...prev, structuredClassMax: event.target.value }))} className="input-lg" />
+                    </div>
+                  </div>
+                  <div className="inline-row">
+                    <div>
+                      <label htmlFor="overrideIdxMin">Index Min (II)</label>
+                      <input id="overrideIdxMin" value={overrideForm.structuredIndexMin} onChange={(event) => setOverrideForm((prev) => ({ ...prev, structuredIndexMin: event.target.value }))} className="input-lg" />
+                    </div>
+                    <div>
+                      <label htmlFor="overrideIdxMax">Index Max (II)</label>
+                      <input id="overrideIdxMax" value={overrideForm.structuredIndexMax} onChange={(event) => setOverrideForm((prev) => ({ ...prev, structuredIndexMax: event.target.value }))} className="input-lg" />
+                    </div>
+                  </div>
+                </div>
+              )}
+              <div className="reset-actions">
+                <button type="button" className="secondary" onClick={handleClearLocalOverride}>
+                  Reset to original
+                </button>
+                <button type="button" onClick={handleSaveLocalOverride}>
+                  Save local override
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       {showResetConfirm && (
         <div className="modal-backdrop" role="dialog" aria-modal="true">
           <div className="modal-card">

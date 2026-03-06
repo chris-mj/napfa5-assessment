@@ -5,6 +5,8 @@ import { ingestRunEvents } from './runApi';
 type SyncResult = {
   synced: number;
   failed: number;
+  attempted: number;
+  pending: number;
   error?: string;
   acceptedIds?: string[];
   failedIds?: string[];
@@ -24,11 +26,12 @@ function toPayload(event: EventRow) {
 export async function syncEvents(sessionId: string): Promise<SyncResult> {
   const session = await getSession(sessionId);
   if (!session?.pairingToken || !session?.remoteSessionId) {
-    return { synced: 0, failed: 0, error: 'Missing pairing token.' };
+    return { synced: 0, failed: 0, attempted: 0, pending: 0, error: 'Missing pairing token.' };
   }
 
   const events = await listUnsyncedEvents(sessionId);
-  if (!events.length) return { synced: 0, failed: 0 };
+  if (!events.length) return { synced: 0, failed: 0, attempted: 0, pending: 0 };
+  const attempted = events.length;
 
   try {
     const result = await ingestRunEvents({
@@ -43,10 +46,13 @@ export async function syncEvents(sessionId: string): Promise<SyncResult> {
     if (acceptedIds.length) {
       await markEventsSynced(acceptedIds, Date.now());
     }
+    const pending = (await listUnsyncedEvents(sessionId)).length;
 
     return {
       synced: acceptedIds.length,
       failed: failedIds.length,
+      attempted,
+      pending,
       acceptedIds,
       failedIds,
       error: failedIds.length ? 'Some events failed to sync.' : undefined
@@ -54,7 +60,9 @@ export async function syncEvents(sessionId: string): Promise<SyncResult> {
   } catch (err: any) {
     return {
       synced: 0,
-      failed: events.length,
+      failed: attempted,
+      attempted,
+      pending: attempted,
       error: err?.message || 'Sync failed.'
     };
   }

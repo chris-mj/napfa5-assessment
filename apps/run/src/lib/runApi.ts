@@ -68,7 +68,7 @@ export async function postValidateToken(token: string) {
 
   const { data, error } = await supabase
     .from('run_configs')
-    .select('id, session_id, name, template_key, laps_required, enforcement, scan_gap_ms')
+    .select('id, session_id, name, template_key, laps_required, enforcement, scan_gap_ms, runner_id_format, runner_id_min, runner_id_max, class_prefixes, class_index_min, class_index_max, structured_level_min, structured_level_max, structured_class_min, structured_class_max, structured_index_min, structured_index_max')
     .eq('pairing_token', token)
     .maybeSingle();
 
@@ -88,7 +88,19 @@ export async function postValidateToken(token: string) {
     templateKey: data.template_key,
     lapsRequired: data.laps_required,
     enforcement: data.enforcement || undefined,
-    scanGapMs: data.scan_gap_ms || undefined
+    scanGapMs: data.scan_gap_ms || undefined,
+    runnerIdFormat: data.runner_id_format || 'numeric',
+    runnerIdMin: data.runner_id_min ?? undefined,
+    runnerIdMax: data.runner_id_max ?? undefined,
+    classPrefixes: Array.isArray(data.class_prefixes) ? data.class_prefixes : undefined,
+    classIndexMin: data.class_index_min ?? undefined,
+    classIndexMax: data.class_index_max ?? undefined,
+    structuredLevelMin: data.structured_level_min ?? undefined,
+    structuredLevelMax: data.structured_level_max ?? undefined,
+    structuredClassMin: data.structured_class_min ?? undefined,
+    structuredClassMax: data.structured_class_max ?? undefined,
+    structuredIndexMin: data.structured_index_min ?? undefined,
+    structuredIndexMax: data.structured_index_max ?? undefined
   };
 
   return {
@@ -159,5 +171,85 @@ export async function ingestRunEvents(input: {
     acceptedIds: body.acceptedIds as string[],
     failedIds: body.failedIds as string[],
     status: response.status
+  };
+}
+
+export async function fetchRunHealth(input: {
+  pairingToken: string;
+  sessionId?: string;
+  runConfigId?: string;
+}) {
+  const fallbackFromValidate = async () => {
+    const { response, body } = await postValidateToken(input.pairingToken);
+    if (!response.ok) {
+      throw new Error(body?.error || `health fallback failed (${response.status})`);
+    }
+    const resolvedRunConfigId = body.runConfigId as string;
+    const resolvedSessionId = body.sessionId as string;
+    return {
+      ok: true,
+      runConfigId: resolvedRunConfigId,
+      sessionId: resolvedSessionId,
+      name: body.name as string | undefined,
+      templateKey: body.templateKey as string | undefined,
+      lapsRequired: body.lapsRequired as number | undefined,
+      enforcement: body.enforcement as string | undefined,
+      scanGapMs: body.scanGapMs as number | undefined,
+      runnerIdFormat: body.runnerIdFormat as string | undefined,
+      runnerIdMin: body.runnerIdMin as number | undefined,
+      runnerIdMax: body.runnerIdMax as number | undefined,
+      classPrefixes: body.classPrefixes as string[] | undefined,
+      classIndexMin: body.classIndexMin as number | undefined,
+      classIndexMax: body.classIndexMax as number | undefined,
+      structuredLevelMin: body.structuredLevelMin as number | undefined,
+      structuredLevelMax: body.structuredLevelMax as number | undefined,
+      structuredClassMin: body.structuredClassMin as number | undefined,
+      structuredClassMax: body.structuredClassMax as number | undefined,
+      structuredIndexMin: body.structuredIndexMin as number | undefined,
+      structuredIndexMax: body.structuredIndexMax as number | undefined,
+      matchesSession: input.sessionId ? String(input.sessionId) === String(resolvedSessionId) : true,
+      matchesRunConfig: input.runConfigId ? String(input.runConfigId) === String(resolvedRunConfigId) : true
+    };
+  };
+
+  const url = new URL(runApiUrl('/api/run/health'), window.location.origin);
+  if (input.sessionId) url.searchParams.set('sessionId', input.sessionId);
+  if (input.runConfigId) url.searchParams.set('runConfigId', input.runConfigId);
+
+  const response = await fetch(url.toString(), {
+    headers: { Authorization: `Bearer ${input.pairingToken}` },
+    cache: 'no-store'
+  });
+  const contentType = response.headers.get('content-type') || '';
+  if (response.status === 404 || response.status === 405 || !contentType.toLowerCase().includes('application/json')) {
+    return fallbackFromValidate();
+  }
+  const body = await parseJsonOrThrow(response, 'health');
+  if (!response.ok) {
+    throw new Error(body.error || `health failed (${response.status})`);
+  }
+  return {
+    ok: Boolean(body.ok),
+    runConfigId: body.runConfigId as string,
+    sessionId: body.sessionId as string,
+    name: body.name as string | undefined,
+    templateKey: body.templateKey as string | undefined,
+    lapsRequired: body.lapsRequired as number | undefined,
+    enforcement: body.enforcement as string | undefined,
+    scanGapMs: body.scanGapMs as number | undefined,
+    runnerIdFormat: body.runnerIdFormat as string | undefined,
+    runnerIdMin: body.runnerIdMin as number | undefined,
+    runnerIdMax: body.runnerIdMax as number | undefined,
+    classPrefixes: body.classPrefixes as string[] | undefined,
+    classIndexMin: body.classIndexMin as number | undefined,
+    classIndexMax: body.classIndexMax as number | undefined,
+    structuredLevelMin: body.structuredLevelMin as number | undefined,
+    structuredLevelMax: body.structuredLevelMax as number | undefined,
+    structuredClassMin: body.structuredClassMin as number | undefined,
+    structuredClassMax: body.structuredClassMax as number | undefined,
+    structuredIndexMin: body.structuredIndexMin as number | undefined,
+    structuredIndexMax: body.structuredIndexMax as number | undefined,
+    matchesSession: Boolean(body.matchesSession),
+    matchesRunConfig: Boolean(body.matchesRunConfig)
   };
 }

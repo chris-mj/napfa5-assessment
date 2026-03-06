@@ -32,7 +32,7 @@ export default async function handler(req, res) {
   const supabase = createClient(SUPABASE_URL, SERVICE_ROLE);
   const { data, error } = await supabase
     .from('run_configs')
-    .select('id, session_id, name, template_key, laps_required, enforcement, scan_gap_ms, pairing_token')
+    .select('id, session_id, name, template_key, laps_required, enforcement, scan_gap_ms, runner_id_format, runner_id_min, runner_id_max, class_prefixes, class_index_min, class_index_max, structured_level_min, structured_level_max, structured_class_min, structured_class_max, structured_index_min, structured_index_max, pairing_token')
     .eq('pairing_token', token)
     .maybeSingle();
 
@@ -48,6 +48,18 @@ export default async function handler(req, res) {
     templateKey: data.template_key,
     lapsRequired: data.laps_required,
     enforcement: data.enforcement || undefined,
-    scanGapMs: data.scan_gap_ms || undefined
+    scanGapMs: data.scan_gap_ms || undefined,
+    runnerIdFormat: data.runner_id_format || 'numeric',
+    runnerIdMin: data.runner_id_min ?? undefined,
+    runnerIdMax: data.runner_id_max ?? undefined,
+    classPrefixes: Array.isArray(data.class_prefixes) ? data.class_prefixes : undefined,
+    classIndexMin: data.class_index_min ?? undefined,
+    classIndexMax: data.class_index_max ?? undefined,
+    structuredLevelMin: data.structured_level_min ?? undefined,
+    structuredLevelMax: data.structured_level_max ?? undefined,
+    structuredClassMin: data.structured_class_min ?? undefined,
+    structuredClassMax: data.structured_class_max ?? undefined,
+    structuredIndexMin: data.structured_index_min ?? undefined,
+    structuredIndexMax: data.structured_index_max ?? undefined
   });
 }
