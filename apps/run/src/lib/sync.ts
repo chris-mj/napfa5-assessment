@@ -1,6 +1,6 @@
-import { getSession, listUnsyncedEvents, markEventsSynced } from '../db/repo';
+import { getSession, listUnsyncedEvents, markEventsSynced, upsertRemoteEvents } from '../db/repo';
 import type { EventRow } from '../db/db';
-import { ingestRunEvents } from './runApi';
+import { fetchRunEvents, ingestRunEvents } from './runApi';
 
 type SyncResult = {
   synced: number;
@@ -65,6 +65,52 @@ export async function syncEvents(sessionId: string): Promise<SyncResult> {
       attempted,
       pending: attempted,
       error: err?.message || 'Sync failed.'
+    };
+  }
+}
+
+type ResumeResult = {
+  pushed: SyncResult;
+  pulled: number;
+  error?: string;
+};
+
+export async function reconcileSessionWithCloud(sessionId: string): Promise<ResumeResult> {
+  const pushed = await syncEvents(sessionId);
+  const session = await getSession(sessionId);
+  if (!session?.pairingToken || !session?.remoteSessionId) {
+    return { pushed, pulled: 0, error: pushed.error };
+  }
+
+  try {
+    const pulled = await fetchRunEvents({
+      pairingToken: session.pairingToken
+    });
+    const events = Array.isArray(pulled.events) ? pulled.events : [];
+    if (events.length) {
+      const mapped = events.map((event: any) => ({
+        id: event.id,
+        runnerId: event.runnerId || '',
+        stationId: event.stationId || '',
+        type: event.type || 'PASS',
+        capturedAtMs: event.capturedAtMs || Date.now(),
+        refEventId: event.refEventId || undefined,
+        payload: event.payload || undefined,
+        syncedAtMs: Date.now()
+      }));
+      await upsertRemoteEvents(sessionId, mapped);
+    }
+
+    return {
+      pushed,
+      pulled: events.length,
+      error: pushed.error
+    };
+  } catch (err: any) {
+    return {
+      pushed,
+      pulled: 0,
+      error: err?.message || pushed.error || 'Failed to reconcile with cloud.'
     };
   }
 }

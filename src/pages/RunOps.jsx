@@ -253,7 +253,7 @@ export default function RunOps({ user }) {
               <tr className="bg-gray-100 text-left">
                 <th className="px-3 py-2 border">Occurred</th>
                 <th className="px-3 py-2 border">Session</th>
-                <th className="px-3 py-2 border">Run Config</th>
+                <th className="px-3 py-2 border">Run Session Config</th>
                 <th className="px-3 py-2 border">Station</th>
                 <th className="px-3 py-2 border">Type</th>
                 <th className="px-3 py-2 border">Runner</th>

@@ -184,6 +184,29 @@ export default function UserGuide({ user }) {
                 ]}
               />
             )}
+            {canManage && (
+              <Card
+                title="StepWise2"
+                desc="Create Run Setup tab in Session Detail StepWise2 for station flow, enforcement, and scan timing."
+                to="/sessions"
+                cta="Open Sessions"
+                tips={[
+                  "Run Setup is where you create and manage run session configurations for station-based running assessments.",
+                  "It defines how stations operate together, including setup flow, laps required, checkpoint rules, and scan timing.",
+                  "It also generates the token used by RUN stations to pair and sync for that configured run."
+                ]}
+                onHowTo={(t, s) => { setHowToTitle(t); setHowToSteps(s); setHowToOpen(true); }}
+                howToSteps={[
+                  "Open Sessions, choose the session, and open Run Setup in Session Detail.",
+                  "Create the run session configuration: set Config Name, Setup Type, Laps Required, Checkpoint Enforcement, and Time Between Scans.",
+                  "Generate token and pair all run stations in the RUN app.",
+                  "SECTION: Recommended run session configuration model",
+                  "Use 1 run session configuration for each conducted run (for example one class per token).",
+                  "For the next class or a new run, create another run session configuration/token even if setup values are the same.",
+                  "Use Reset Session Data only to restart the same run; do not use one active run session configuration across different runs."
+                ]}
+              />
+            )}
           </div>
         </section>
 
@@ -427,9 +450,24 @@ export default function UserGuide({ user }) {
               </div>
               <button className="text-sm px-2 py-1 border rounded hover:bg-gray-50" onClick={closeHowTo}>Close</button>
             </div>
-            <ol className="mt-3 space-y-2 list-decimal pl-5 text-sm text-gray-800">
-              {howToSteps.map((s, i) => (<li key={i}>{s}</li>))}
-            </ol>
+            <div className="mt-3 space-y-2 text-sm text-gray-800">
+              {(() => {
+                let stepNo = 0;
+                return howToSteps.map((s, i) => {
+                  if (String(s).startsWith("SECTION:")) {
+                    const heading = String(s).replace("SECTION:", "").trim();
+                    return <div key={i} className="pt-1 font-semibold text-gray-900">{heading}</div>;
+                  }
+                  stepNo += 1;
+                  return (
+                    <div key={i} className="pl-1">
+                      <span className="font-medium">{stepNo}. </span>
+                      <span>{s}</span>
+                    </div>
+                  );
+                });
+              })()}
+            </div>
           </div>
         </div>
       )}
