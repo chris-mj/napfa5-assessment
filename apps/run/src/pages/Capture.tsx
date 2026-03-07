@@ -11,7 +11,8 @@ import {
   updateSessionGlobalEnd,
   updateSessionGlobalPaused,
   updateSessionLocalIdRules,
-  updateSessionGlobalStart
+  updateSessionGlobalStart,
+  updateSessionRemoteConfig
 } from '../db/repo';
 import type { EventRow, RunnerIdRules, SessionRow } from '../db/db';
 import { syncEvents } from '../lib/sync';
@@ -21,6 +22,7 @@ import { runApiUrl } from '../lib/runApi';
 import { fetchRunHealth } from '../lib/runApi';
 
 const GLOBAL_START_TEMPLATES = new Set(['A', 'B', 'C', 'D', 'E']);
+const CHECKPOINT_TEMPLATES = new Set(['B', 'C']);
 const SYNC_INTERVAL_MS = 5000;
 const STATIONS_BY_TEMPLATE: Record<string, string[]> = {
   A: ['LAP_END'],
@@ -63,6 +65,14 @@ type OverrideForm = {
   structuredClassMax: string;
   structuredIndexMin: string;
   structuredIndexMax: string;
+};
+
+type RunConfigForm = {
+  name: string;
+  templateKey: 'A' | 'B' | 'C' | 'D' | 'E';
+  lapsRequired: string;
+  enforcement: Enforcement;
+  scanGapMs: string;
 };
 
 function stationStorageKey(sessionId: string) {
@@ -222,6 +232,17 @@ function parseOptInt(value: string) {
   return Number.isFinite(n) ? n : undefined;
 }
 
+function toRunConfigForm(session: SessionRow | null): RunConfigForm {
+  const template = (String(session?.templateKey || 'A').toUpperCase() as RunConfigForm['templateKey']);
+  return {
+    name: String(session?.name || ''),
+    templateKey: ['A', 'B', 'C', 'D', 'E'].includes(template) ? template : 'A',
+    lapsRequired: String(Number.isFinite(session?.lapsRequired as number) ? session?.lapsRequired : 3),
+    enforcement: ((session?.enforcement as Enforcement) || 'OFF'),
+    scanGapMs: String(Number.isFinite(session?.scanGapMs as number) ? session?.scanGapMs : 10000)
+  };
+}
+
 function formToOverrideRules(form: OverrideForm): RunnerIdRules {
   const format = form.runnerIdFormat;
   if (format === 'numeric') {
@@ -259,8 +280,103 @@ function displayEventType(type: string) {
   if (type === 'RESUME_SET') return 'RESUME';
   if (type === 'PAUSE_SET') return 'PAUSE';
   if (type === 'END_SET') return 'END';
+  if (type === 'RUNCFG_SET') return 'CONFIG';
+  if (type === 'RUNIDCFG_SET') return 'ID CONFIG';
   if (type === 'CLEAR_ALL') return 'RESET';
   return type;
+}
+
+function buildRunnerFormatNote(session: SessionRow | null) {
+  const runnerFormat = session?.runnerIdFormat ?? 'numeric';
+  if (runnerFormat === 'numeric') {
+    const min = session?.runnerIdMin;
+    const max = session?.runnerIdMax;
+    if (Number.isFinite(min as number) || Number.isFinite(max as number)) {
+      return `Numbers only (${min ?? '-'}-${max ?? '-'})`;
+    }
+    return 'Numbers only';
+  }
+  if (runnerFormat === 'classIndex') {
+    const prefixes = Array.isArray(session?.classPrefixes) && session.classPrefixes.length
+      ? session.classPrefixes.join('/')
+      : 'A-Z';
+    const min = session?.classIndexMin;
+    const max = session?.classIndexMax;
+    return `Class + index (${prefixes}${Number.isFinite(min as number) || Number.isFinite(max as number) ? ` ${String(min ?? 1).padStart(2, '0')}-${String(max ?? 99).padStart(2, '0')}` : ''})`;
+  }
+  return `4-digit LCII (L ${session?.structuredLevelMin ?? 0}-${session?.structuredLevelMax ?? 9}, C ${session?.structuredClassMin ?? 0}-${session?.structuredClassMax ?? 9}, II ${String(session?.structuredIndexMin ?? 1).padStart(2, '0')}-${String(session?.structuredIndexMax ?? 99).padStart(2, '0')})`;
+}
+
+function buildRunnerFormatConfigNote(session: SessionRow | null) {
+  const runnerFormat = session?.runnerIdFormat ?? 'numeric';
+  if (runnerFormat === 'numeric') {
+    const min = Number.isFinite(session?.runnerIdMin as number)
+      ? String(session?.runnerIdMin)
+      : 'any';
+    const max = Number.isFinite(session?.runnerIdMax as number)
+      ? String(session?.runnerIdMax)
+      : 'any';
+    return `Config: min ${min} | max ${max}`;
+  }
+  if (runnerFormat === 'classIndex') {
+    const prefixes =
+      Array.isArray(session?.classPrefixes) && session.classPrefixes.length
+        ? session.classPrefixes.join(', ')
+        : 'any letter';
+    const min = Number.isFinite(session?.classIndexMin as number)
+      ? String(session?.classIndexMin)
+      : 'any';
+    const max = Number.isFinite(session?.classIndexMax as number)
+      ? String(session?.classIndexMax)
+      : 'any';
+    return `Config: prefixes ${prefixes} | index ${min}-${max}`;
+  }
+  const lMin = Number.isFinite(session?.structuredLevelMin as number)
+    ? String(session?.structuredLevelMin)
+    : '0';
+  const lMax = Number.isFinite(session?.structuredLevelMax as number)
+    ? String(session?.structuredLevelMax)
+    : '9';
+  const cMin = Number.isFinite(session?.structuredClassMin as number)
+    ? String(session?.structuredClassMin)
+    : '0';
+  const cMax = Number.isFinite(session?.structuredClassMax as number)
+    ? String(session?.structuredClassMax)
+    : '9';
+  const iMin = Number.isFinite(session?.structuredIndexMin as number)
+    ? String(session?.structuredIndexMin).padStart(2, '0')
+    : '01';
+  const iMax = Number.isFinite(session?.structuredIndexMax as number)
+    ? String(session?.structuredIndexMax).padStart(2, '0')
+    : '99';
+  return `Config: L ${lMin}-${lMax} | C ${cMin}-${cMax} | II ${iMin}-${iMax}`;
+}
+
+function hasRunnerDataSinceLastReset(events: EventRow[]) {
+  const latestClearAll = events
+    .filter((event) => event.type === 'CLEAR_ALL')
+    .reduce((max, event) => Math.max(max, event.capturedAtMs || 0), 0);
+  return events.some(
+    (event) => event.type === 'PASS' && (event.capturedAtMs || 0) > latestClearAll
+  );
+}
+
+function encodeConfigRef(payload: Record<string, any>) {
+  try {
+    return `CFG:${encodeURIComponent(JSON.stringify(payload))}`;
+  } catch {
+    return undefined;
+  }
+}
+
+function decodeConfigRef(ref?: string | null) {
+  const text = String(ref || '');
+  if (!text.startsWith('CFG:')) return null;
+  try {
+    return JSON.parse(decodeURIComponent(text.slice(4)));
+  } catch {
+    return null;
+  }
 }
 
 export default function CaptureScreen() {
@@ -289,11 +405,14 @@ export default function CaptureScreen() {
   const [showTechDetails, setShowTechDetails] = useState(false);
   const [showOverrideModal, setShowOverrideModal] = useState(false);
   const [overrideForm, setOverrideForm] = useState<OverrideForm>(() => toOverrideForm(null));
+  const [showRunConfigModal, setShowRunConfigModal] = useState(false);
+  const [runConfigForm, setRunConfigForm] = useState<RunConfigForm>(() => toRunConfigForm(null));
   const [clockMs, setClockMs] = useState(Date.now());
   const [projectorOpen, setProjectorOpen] = useState(false);
   const [inputFocused, setInputFocused] = useState(true);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showEndConfirm, setShowEndConfirm] = useState(false);
+  const [hasRunnerData, setHasRunnerData] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const lastClearAllRef = useRef<number>(0);
   const remoteSinceRef = useRef<number>(0);
@@ -332,44 +451,22 @@ export default function CaptureScreen() {
   const effectiveRuleSession = useMemo(() => resolveRunnerRuleSession(session), [session]);
 
   const runnerFormat = effectiveRuleSession?.runnerIdFormat ?? 'numeric';
-  const runnerFormatNote = useMemo(() => {
-    if (runnerFormat === 'numeric') {
-      const min = effectiveRuleSession?.runnerIdMin;
-      const max = effectiveRuleSession?.runnerIdMax;
-      if (Number.isFinite(min as number) || Number.isFinite(max as number)) {
-        return `Numbers only (${min ?? '-'}-${max ?? '-'})`;
-      }
-      return 'Numbers only';
-    }
-    if (runnerFormat === 'classIndex') {
-      const prefixes = Array.isArray(effectiveRuleSession?.classPrefixes) && effectiveRuleSession.classPrefixes.length
-        ? effectiveRuleSession.classPrefixes.join('/')
-        : 'A-Z';
-      const min = effectiveRuleSession?.classIndexMin;
-      const max = effectiveRuleSession?.classIndexMax;
-      return `Class + index (${prefixes}${Number.isFinite(min as number) || Number.isFinite(max as number) ? ` ${String(min ?? 1).padStart(2, '0')}-${String(max ?? 99).padStart(2, '0')}` : ''})`;
-    }
-    return `4-digit LCII (L ${effectiveRuleSession?.structuredLevelMin ?? 0}-${effectiveRuleSession?.structuredLevelMax ?? 9}, C ${effectiveRuleSession?.structuredClassMin ?? 0}-${effectiveRuleSession?.structuredClassMax ?? 9}, II ${String(effectiveRuleSession?.structuredIndexMin ?? 1).padStart(2, '0')}-${String(effectiveRuleSession?.structuredIndexMax ?? 99).padStart(2, '0')})`;
-  }, [
-    runnerFormat,
-    effectiveRuleSession?.runnerIdMin,
-    effectiveRuleSession?.runnerIdMax,
-    effectiveRuleSession?.classPrefixes,
-    effectiveRuleSession?.classIndexMin,
-    effectiveRuleSession?.classIndexMax,
-    effectiveRuleSession?.structuredLevelMin,
-    effectiveRuleSession?.structuredLevelMax,
-    effectiveRuleSession?.structuredClassMin,
-    effectiveRuleSession?.structuredClassMax,
-    effectiveRuleSession?.structuredIndexMin,
-    effectiveRuleSession?.structuredIndexMax
-  ]);
+  const runnerFormatNote = useMemo(() => buildRunnerFormatNote(effectiveRuleSession), [effectiveRuleSession]);
+  const runnerFormatConfigNote = useMemo(() => buildRunnerFormatConfigNote(effectiveRuleSession), [effectiveRuleSession]);
+  const originalRuleSession = useMemo(() => {
+    if (!session) return null;
+    return { ...session, localIdRulesOverride: undefined };
+  }, [session]);
+  const originalRunnerFormatNote = useMemo(() => buildRunnerFormatNote(originalRuleSession), [originalRuleSession]);
+  const originalRunnerFormatConfigNote = useMemo(() => buildRunnerFormatConfigNote(originalRuleSession), [originalRuleSession]);
 
   const normalizedTemplateKey = String(session?.templateKey || '').toUpperCase();
   const templateStations = STATIONS_BY_TEMPLATE[normalizedTemplateKey] || ['LAP_END'];
   const showGlobalStart = Boolean(session) && GLOBAL_START_TEMPLATES.has(normalizedTemplateKey);
   const startStationId = templateStations.includes('START') ? 'START' : 'LAP_END';
   const hasStartStation = Boolean(showGlobalStart);
+  const canEditRunConfig = stationId === startStationId;
+  const canChangeSharedConfig = canEditRunConfig && !hasRunnerData;
   const isControlStation = stationId === 'START' || stationId === 'LAP_END' || stationId === 'FINISH';
   const runStarted = Boolean(session?.globalStartMs);
   const runPaused = Boolean(session?.globalPaused);
@@ -390,6 +487,11 @@ export default function CaptureScreen() {
     : (!session?.pairingToken || !session?.remoteSessionId || syncIsStale)
       ? 'warn'
       : 'ok';
+
+  const runConfigSummary = useMemo(() => {
+    const name = session?.name ? `"${session.name}"` : '(unnamed)';
+    return `${name} | Setup ${session?.templateKey ?? '-'} | Laps ${session?.lapsRequired ?? '-'} | Enforcement ${session?.enforcement || 'OFF'} | Scan gap ${Math.round((session?.scanGapMs || 10000) / 1000)}s`;
+  }, [session?.name, session?.templateKey, session?.lapsRequired, session?.enforcement, session?.scanGapMs]);
 
 
   const buildSummaries = (events: EventRow[]) => {
@@ -491,6 +593,10 @@ export default function CaptureScreen() {
   }, [session]);
 
   useEffect(() => {
+    setRunConfigForm(toRunConfigForm(session));
+  }, [session]);
+
+  useEffect(() => {
     if (!sessionId || !session?.pairingToken || !session?.remoteSessionId) return;
     let active = true;
     const verify = async () => {
@@ -570,6 +676,10 @@ export default function CaptureScreen() {
           let latestPauseSet = 0;
           let latestEndSet = 0;
           let latestClearAll = 0;
+          let latestRunConfigSet = 0;
+          let latestRunConfigPayload: any = null;
+          let latestRunIdConfigSet = 0;
+          let latestRunIdConfigPayload: any = null;
           for (const event of events) {
             if (event.type === 'START_SET' && event.capturedAtMs) {
               latestStartSet = Math.max(latestStartSet, event.capturedAtMs);
@@ -586,8 +696,22 @@ export default function CaptureScreen() {
             if (event.type === 'CLEAR_ALL' && event.capturedAtMs) {
               latestClearAll = Math.max(latestClearAll, event.capturedAtMs);
             }
-            if (event.capturedAtMs && event.capturedAtMs > remoteSinceRef.current) {
-              remoteSinceRef.current = event.capturedAtMs;
+            if (event.type === 'RUNCFG_SET' && event.capturedAtMs) {
+              if (event.capturedAtMs >= latestRunConfigSet) {
+                latestRunConfigSet = event.capturedAtMs;
+                latestRunConfigPayload = event.payload || decodeConfigRef(event.refEventId) || null;
+              }
+            }
+            if (event.type === 'RUNIDCFG_SET' && event.capturedAtMs) {
+              if (event.capturedAtMs >= latestRunIdConfigSet) {
+                latestRunIdConfigSet = event.capturedAtMs;
+                latestRunIdConfigPayload = event.payload || decodeConfigRef(event.refEventId) || null;
+              }
+            }
+            const serverCursorMs = Number((event as any).serverCreatedAtMs || 0);
+            const nextCursor = serverCursorMs || Number(event.capturedAtMs || 0);
+            if (nextCursor > remoteSinceRef.current) {
+              remoteSinceRef.current = nextCursor;
             }
           }
 
@@ -620,6 +744,72 @@ export default function CaptureScreen() {
             }
           }
 
+          if (latestRunConfigSet > 0 && latestRunConfigPayload && sessionId) {
+            const patch: Partial<SessionRow> = {
+              name: typeof latestRunConfigPayload.name === 'string' ? latestRunConfigPayload.name : session?.name,
+              templateKey: typeof latestRunConfigPayload.templateKey === 'string'
+                ? String(latestRunConfigPayload.templateKey).toUpperCase()
+                : session?.templateKey,
+              lapsRequired: Number.isFinite(Number(latestRunConfigPayload.lapsRequired))
+                ? Number(latestRunConfigPayload.lapsRequired)
+                : session?.lapsRequired,
+              enforcement: ['OFF', 'SOFT', 'STRICT'].includes(String(latestRunConfigPayload.enforcement || ''))
+                ? String(latestRunConfigPayload.enforcement)
+                : session?.enforcement,
+              scanGapMs: Number.isFinite(Number(latestRunConfigPayload.scanGapMs))
+                ? Number(latestRunConfigPayload.scanGapMs)
+                : session?.scanGapMs
+            };
+            await updateSessionRemoteConfig(sessionId, patch);
+            const updated = await getSession(sessionId);
+            if (active && updated) setSession(updated);
+          }
+
+          if (latestRunIdConfigSet > 0 && latestRunIdConfigPayload && sessionId) {
+            const idPatch: Partial<SessionRow> = {
+              runnerIdFormat: ['numeric', 'classIndex', 'structured4'].includes(String(latestRunIdConfigPayload.runnerIdFormat || ''))
+                ? latestRunIdConfigPayload.runnerIdFormat
+                : 'numeric',
+              runnerIdMin: Number.isFinite(Number(latestRunIdConfigPayload.runnerIdMin))
+                ? Number(latestRunIdConfigPayload.runnerIdMin)
+                : undefined,
+              runnerIdMax: Number.isFinite(Number(latestRunIdConfigPayload.runnerIdMax))
+                ? Number(latestRunIdConfigPayload.runnerIdMax)
+                : undefined,
+              classPrefixes: Array.isArray(latestRunIdConfigPayload.classPrefixes)
+                ? latestRunIdConfigPayload.classPrefixes.map((x: any) => String(x || '').trim().toUpperCase()).filter(Boolean)
+                : undefined,
+              classIndexMin: Number.isFinite(Number(latestRunIdConfigPayload.classIndexMin))
+                ? Number(latestRunIdConfigPayload.classIndexMin)
+                : undefined,
+              classIndexMax: Number.isFinite(Number(latestRunIdConfigPayload.classIndexMax))
+                ? Number(latestRunIdConfigPayload.classIndexMax)
+                : undefined,
+              structuredLevelMin: Number.isFinite(Number(latestRunIdConfigPayload.structuredLevelMin))
+                ? Number(latestRunIdConfigPayload.structuredLevelMin)
+                : undefined,
+              structuredLevelMax: Number.isFinite(Number(latestRunIdConfigPayload.structuredLevelMax))
+                ? Number(latestRunIdConfigPayload.structuredLevelMax)
+                : undefined,
+              structuredClassMin: Number.isFinite(Number(latestRunIdConfigPayload.structuredClassMin))
+                ? Number(latestRunIdConfigPayload.structuredClassMin)
+                : undefined,
+              structuredClassMax: Number.isFinite(Number(latestRunIdConfigPayload.structuredClassMax))
+                ? Number(latestRunIdConfigPayload.structuredClassMax)
+                : undefined,
+              structuredIndexMin: Number.isFinite(Number(latestRunIdConfigPayload.structuredIndexMin))
+                ? Number(latestRunIdConfigPayload.structuredIndexMin)
+                : undefined,
+              structuredIndexMax: Number.isFinite(Number(latestRunIdConfigPayload.structuredIndexMax))
+                ? Number(latestRunIdConfigPayload.structuredIndexMax)
+                : undefined
+            };
+            await updateSessionRemoteConfig(sessionId, idPatch);
+            await updateSessionLocalIdRules(sessionId, null);
+            const updated = await getSession(sessionId);
+            if (active && updated) setSession(updated);
+          }
+
           const relevant = latestClearAll
             ? events.filter((event) => (event.capturedAtMs || 0) >= latestClearAll)
             : events;
@@ -631,6 +821,7 @@ export default function CaptureScreen() {
             type: event.type || 'PASS',
             capturedAtMs: event.capturedAtMs || Date.now(),
             refEventId: event.refEventId || undefined,
+            payload: event.payload || undefined,
             syncedAtMs: Date.now()
           }));
 
@@ -700,6 +891,7 @@ export default function CaptureScreen() {
     if (!sessionId) return;
     listEventsForSession(sessionId).then((events) => {
       hydrateFromEvents(events);
+      setHasRunnerData(hasRunnerDataSinceLastReset(events));
     });
   }, [sessionId, templateConfig, stationId]);
 
@@ -757,6 +949,7 @@ export default function CaptureScreen() {
     if (!sessionId) return;
     const all = await listEventsForSession(sessionId);
     hydrateFromEvents(all);
+    setHasRunnerData(hasRunnerDataSinceLastReset(all));
     channelRef.current?.postMessage({ type: 'events-updated', sessionId });
   }
 
@@ -979,24 +1172,151 @@ export default function CaptureScreen() {
   }
 
   async function handleSaveLocalOverride() {
-    if (!sessionId) return;
+    if (!sessionId || !canChangeSharedConfig) {
+      setToast('Config changes allowed only at start station before runner data is recorded.');
+      setTimeout(() => setToast(''), 1800);
+      return;
+    }
     const rules = formToOverrideRules(overrideForm);
-    await updateSessionLocalIdRules(sessionId, rules);
+    const idPatch: Partial<SessionRow> = {
+      runnerIdFormat: rules.runnerIdFormat || 'numeric',
+      runnerIdMin: rules.runnerIdMin,
+      runnerIdMax: rules.runnerIdMax,
+      classPrefixes: rules.classPrefixes,
+      classIndexMin: rules.classIndexMin,
+      classIndexMax: rules.classIndexMax,
+      structuredLevelMin: rules.structuredLevelMin,
+      structuredLevelMax: rules.structuredLevelMax,
+      structuredClassMin: rules.structuredClassMin,
+      structuredClassMax: rules.structuredClassMax,
+      structuredIndexMin: rules.structuredIndexMin,
+      structuredIndexMax: rules.structuredIndexMax
+    };
+    await updateSessionRemoteConfig(sessionId, idPatch);
+    await updateSessionLocalIdRules(sessionId, null);
+    await addEvent({
+      sessionId,
+      runnerId: 'GLOBAL',
+      stationId: stationId || startStationId || 'LAP_END',
+      type: 'RUNIDCFG_SET',
+      capturedAtMs: Date.now(),
+      refEventId: encodeConfigRef({ ...idPatch }),
+      payload: {
+        ...idPatch
+      }
+    });
     const updated = await getSession(sessionId);
     setSession(updated || null);
     setShowOverrideModal(false);
-    setToast('Local run config override saved.');
+    setToast('Runner ID config updated for this run.');
     setTimeout(() => setToast(''), 1400);
+    await refreshEvents();
   }
 
   async function handleClearLocalOverride() {
-    if (!sessionId) return;
+    if (!sessionId || !canChangeSharedConfig) {
+      setToast('Config changes allowed only at start station before runner data is recorded.');
+      setTimeout(() => setToast(''), 1800);
+      return;
+    }
+    const idPatch: Partial<SessionRow> = {
+      runnerIdFormat: 'numeric',
+      runnerIdMin: undefined,
+      runnerIdMax: undefined,
+      classPrefixes: undefined,
+      classIndexMin: undefined,
+      classIndexMax: undefined,
+      structuredLevelMin: undefined,
+      structuredLevelMax: undefined,
+      structuredClassMin: undefined,
+      structuredClassMax: undefined,
+      structuredIndexMin: undefined,
+      structuredIndexMax: undefined
+    };
+    await updateSessionRemoteConfig(sessionId, idPatch);
     await updateSessionLocalIdRules(sessionId, null);
+    await addEvent({
+      sessionId,
+      runnerId: 'GLOBAL',
+      stationId: stationId || startStationId || 'LAP_END',
+      type: 'RUNIDCFG_SET',
+      capturedAtMs: Date.now(),
+      refEventId: encodeConfigRef({ ...idPatch }),
+      payload: {
+        ...idPatch
+      }
+    });
     const updated = await getSession(sessionId);
     setSession(updated || null);
     setShowOverrideModal(false);
-    setToast('Local override cleared. Using original run config.');
+    setToast('Runner ID config reset to numeric (shared).');
     setTimeout(() => setToast(''), 1600);
+    await refreshEvents();
+  }
+
+  function handleOpenOverrideModal() {
+    if (!canChangeSharedConfig) return;
+    // Always re-seed form from current active rules when opening.
+    setOverrideForm(toOverrideForm(session));
+    setShowOverrideModal(true);
+  }
+
+  function handleOpenRunConfigModal() {
+    if (!canChangeSharedConfig) return;
+    setRunConfigForm(toRunConfigForm(session));
+    setShowRunConfigModal(true);
+  }
+
+  async function handleSaveRunConfigLocal() {
+    if (!sessionId || !canChangeSharedConfig) {
+      setToast('Config changes allowed only at start station before runner data is recorded.');
+      setTimeout(() => setToast(''), 1800);
+      return;
+    }
+    const template = (String(runConfigForm.templateKey || 'A').toUpperCase() as SessionRow['templateKey']);
+    const laps = Math.max(1, Number.parseInt(String(runConfigForm.lapsRequired || '1'), 10) || 1);
+    const enforcement: Enforcement =
+      CHECKPOINT_TEMPLATES.has(String(template))
+        ? (['OFF', 'SOFT', 'STRICT'].includes(runConfigForm.enforcement) ? runConfigForm.enforcement : 'SOFT')
+        : 'OFF';
+    const gap = Number.parseInt(String(runConfigForm.scanGapMs || '10000'), 10);
+    const scanGapMs = Number.isFinite(gap) ? Math.min(30000, Math.max(1000, gap)) : 10000;
+    const patch: Partial<SessionRow> = {
+      name: String(runConfigForm.name || '').trim() || undefined,
+      templateKey: template,
+      lapsRequired: laps,
+      enforcement,
+      scanGapMs
+    };
+
+    await updateSessionRemoteConfig(sessionId, patch);
+    await addEvent({
+      sessionId,
+      runnerId: 'GLOBAL',
+      stationId: stationId || startStationId || 'LAP_END',
+      type: 'RUNCFG_SET',
+      capturedAtMs: Date.now(),
+      refEventId: encodeConfigRef({
+        name: patch.name,
+        templateKey: patch.templateKey,
+        lapsRequired: patch.lapsRequired,
+        enforcement: patch.enforcement,
+        scanGapMs: patch.scanGapMs
+      }),
+      payload: {
+        name: patch.name,
+        templateKey: patch.templateKey,
+        lapsRequired: patch.lapsRequired,
+        enforcement: patch.enforcement,
+        scanGapMs: patch.scanGapMs
+      }
+    });
+    const updated = await getSession(sessionId);
+    if (updated) setSession(updated);
+    setShowRunConfigModal(false);
+    setToast('Run config updated for this run.');
+    setTimeout(() => setToast(''), 1500);
+    await refreshEvents();
   }
 
   async function handleGlobalStart() {
@@ -1067,6 +1387,14 @@ export default function CaptureScreen() {
           <Link className="btn-link" to="/">
             Back to Setup
           </Link>
+          <button
+            type="button"
+            className="btn-link"
+            onClick={handleProjectorToggle}
+            disabled={!stationId}
+          >
+            {projectorOpen ? 'Close Projector View' : 'Projector View'}
+          </button>
         </div>
       )}
 
@@ -1290,32 +1618,53 @@ export default function CaptureScreen() {
         </div>
 
         <section className="capture-ops card">
-          <div className="capture-section-title">Run Controls</div>
-          <div className="capture-footer-actions">
-            {isControlStation && (
-              <>
-                <button type="button" className="secondary" onClick={() => setShowOverrideModal(true)}>
-                  Change runner ID format
+          <div className="capture-ops-header">
+            <div className="capture-section-title">Run Controls</div>
+            <div className="note">
+              Modifications only allowed at START / Lap Start / End / FINISH stations. Changes will be pushed to other stations.
+            </div>
+          </div>
+          <div className="capture-controls-grid">
+            <div className="capture-controls-col">
+              <div className="capture-control-with-note">
+                <button type="button" className="secondary" onClick={handleOpenRunConfigModal} disabled={!canChangeSharedConfig}>
+                  Run Config
                 </button>
+                <div className="note">Run config (shared): {runConfigSummary}</div>
+                {!canEditRunConfig && (
+                  <div className="note">Edit run config at start station: {startStationId}</div>
+                )}
+                {canEditRunConfig && hasRunnerData && (
+                  <div className="note">Config locked: runner data already recorded. Reset session to unlock.</div>
+                )}
+              </div>
+            </div>
+            <div className="capture-controls-col">
+              <div className="capture-control-with-note">
+                <button type="button" className="secondary" onClick={handleOpenOverrideModal} disabled={!canChangeSharedConfig}>
+                  Runner ID Format
+                </button>
+                <div className="note">Accepted IDs (shared for this run): {runnerFormatNote}</div>
+                <div className="note">{runnerFormatConfigNote}</div>
+                {!canEditRunConfig && (
+                  <div className="note">Edit runner ID format at start station: {startStationId}</div>
+                )}
+              </div>
+            </div>
+            <div className="capture-controls-col capture-controls-col-actions">
+              {isControlStation && (
                 <button type="button" className="secondary" onClick={() => setShowResetConfirm(true)}>
                   Reset Session Data
                 </button>
+              )}
+            </div>
+            <div className="capture-controls-col capture-controls-col-actions">
+              {isControlStation && (
                 <button type="button" className="secondary" onClick={handleExport}>
                   Export CSV
                 </button>
-              </>
-            )}
-            <button
-              type="button"
-              className="secondary"
-              onClick={handleProjectorToggle}
-              disabled={!stationId}
-            >
-              {projectorOpen ? 'Close Projector View' : 'Projector View'}
-            </button>
-          </div>
-          <div className="note">
-            ID format, reset session data, export csv apply only to START, Lap Start / End, or FINISH station.
+              )}
+            </div>
           </div>
         </section>
         <section className="capture-diagnostics card">
@@ -1388,6 +1737,101 @@ export default function CaptureScreen() {
           )}
         </section>
       </div>
+      {showRunConfigModal && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true">
+          <div className="modal-card" style={{ width: 'min(620px, 100%)' }}>
+            <div className="modal-header">
+              <div className="text-base font-semibold">Change run config</div>
+              <button type="button" className="btn-link" onClick={() => setShowRunConfigModal(false)}>
+                Close
+              </button>
+            </div>
+            <div className="grid">
+              <div className="note">Applies to this run. Other stations update after sync pull.</div>
+              {!canChangeSharedConfig && (
+                <div className="error">Locked: changes are allowed only before runner data is recorded.</div>
+              )}
+              <div>
+                <label htmlFor="cfgName">Config Name</label>
+                <input
+                  id="cfgName"
+                  value={runConfigForm.name}
+                  onChange={(event) => setRunConfigForm((prev) => ({ ...prev, name: event.target.value }))}
+                  className="input-lg"
+                  placeholder="e.g. P5 Morning Trial"
+                />
+              </div>
+              <div className="inline-row">
+                <div>
+                  <label htmlFor="cfgTemplate">Setup Type</label>
+                  <select
+                    id="cfgTemplate"
+                    value={runConfigForm.templateKey}
+                    onChange={(event) => setRunConfigForm((prev) => ({ ...prev, templateKey: event.target.value as RunConfigForm['templateKey'] }))}
+                    className="input-lg"
+                  >
+                    <option value="A">Setup A</option>
+                    <option value="B">Setup B</option>
+                    <option value="C">Setup C</option>
+                    <option value="D">Setup D</option>
+                    <option value="E">Setup E</option>
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="cfgLaps">Laps Required</label>
+                  <input
+                    id="cfgLaps"
+                    type="number"
+                    min={1}
+                    value={runConfigForm.lapsRequired}
+                    onChange={(event) => setRunConfigForm((prev) => ({ ...prev, lapsRequired: event.target.value }))}
+                    className="input-lg"
+                  />
+                </div>
+              </div>
+              <div className="inline-row">
+                <div>
+                  <label htmlFor="cfgEnforcement">Checkpoint Enforcement</label>
+                  <select
+                    id="cfgEnforcement"
+                    value={runConfigForm.enforcement}
+                    onChange={(event) => setRunConfigForm((prev) => ({ ...prev, enforcement: event.target.value as Enforcement }))}
+                    className="input-lg"
+                    disabled={!CHECKPOINT_TEMPLATES.has(runConfigForm.templateKey)}
+                  >
+                    <option value="OFF">OFF</option>
+                    <option value="SOFT">SOFT</option>
+                    <option value="STRICT">STRICT</option>
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="cfgGap">Time Between Scans</label>
+                  <select
+                    id="cfgGap"
+                    value={runConfigForm.scanGapMs}
+                    onChange={(event) => setRunConfigForm((prev) => ({ ...prev, scanGapMs: event.target.value }))}
+                    className="input-lg"
+                  >
+                    {[5, 10, 15, 20, 25, 30].map((seconds) => (
+                      <option key={seconds} value={seconds * 1000}>
+                        {seconds} seconds
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="reset-actions">
+                <button type="button" className="secondary" onClick={() => setShowRunConfigModal(false)}>
+                  Cancel
+                </button>
+                <button type="button" onClick={handleSaveRunConfigLocal} disabled={!canChangeSharedConfig}>
+                  Save run config
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       {showOverrideModal && (
         <div className="modal-backdrop" role="dialog" aria-modal="true">
           <div className="modal-card" style={{ width: 'min(560px, 100%)' }}>
@@ -1398,7 +1842,10 @@ export default function CaptureScreen() {
               </button>
             </div>
             <div className="grid">
-              <div className="note">This will not change the original run config.</div>
+              <div className="note">Applies to all stations in this run. Only start station can change this.</div>
+              {!canChangeSharedConfig && (
+                <div className="error">Locked: changes are allowed only before runner data is recorded.</div>
+              )}
               <div>
                 <label htmlFor="overrideFormat">Runner ID Format</label>
                 <select
@@ -1477,11 +1924,11 @@ export default function CaptureScreen() {
                 </div>
               )}
               <div className="reset-actions">
-                <button type="button" className="secondary" onClick={handleClearLocalOverride}>
-                  Reset to original
+                <button type="button" className="secondary" onClick={handleClearLocalOverride} disabled={!canChangeSharedConfig}>
+                  Reset to numeric default
                 </button>
-                <button type="button" onClick={handleSaveLocalOverride}>
-                  Save local override
+                <button type="button" onClick={handleSaveLocalOverride} disabled={!canChangeSharedConfig}>
+                  Save runner ID config
                 </button>
               </div>
             </div>

@@ -53,6 +53,7 @@ export type EventRow = {
   type: string;
   capturedAtMs: number;
   refEventId?: string;
+  payload?: Record<string, any>;
   syncedAtMs?: number;
   source?: 'local' | 'remote';
 };

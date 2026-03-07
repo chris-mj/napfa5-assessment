@@ -197,35 +197,11 @@ create table if not exists run_configs (
   laps_required integer not null,
   enforcement text,
   scan_gap_ms integer,
-  runner_id_format text default 'numeric',
-  runner_id_min integer,
-  runner_id_max integer,
-  class_prefixes text[],
-  class_index_min integer,
-  class_index_max integer,
-  structured_level_min integer,
-  structured_level_max integer,
-  structured_class_min integer,
-  structured_class_max integer,
-  structured_index_min integer,
-  structured_index_max integer,
   pairing_token text,
   pairing_qr_data_url text,
   pairing_barcode_data_url text,
   created_at timestamptz default now()
 );
-alter table if exists run_configs add column if not exists runner_id_format text default 'numeric';
-alter table if exists run_configs add column if not exists runner_id_min integer;
-alter table if exists run_configs add column if not exists runner_id_max integer;
-alter table if exists run_configs add column if not exists class_prefixes text[];
-alter table if exists run_configs add column if not exists class_index_min integer;
-alter table if exists run_configs add column if not exists class_index_max integer;
-alter table if exists run_configs add column if not exists structured_level_min integer;
-alter table if exists run_configs add column if not exists structured_level_max integer;
-alter table if exists run_configs add column if not exists structured_class_min integer;
-alter table if exists run_configs add column if not exists structured_class_max integer;
-alter table if exists run_configs add column if not exists structured_index_min integer;
-alter table if exists run_configs add column if not exists structured_index_max integer;
 create index if not exists idx_run_configs_session on run_configs (session_id);
 create unique index if not exists idx_run_configs_pairing_token on run_configs (pairing_token);
 
@@ -253,6 +229,35 @@ create table if not exists session_roster (
   added_at timestamptz default now(),
   unique (session_id, student_id)
 );
+
+-- Session groups (for grouping roster students within a session)
+create table if not exists public.session_groups (
+  id uuid primary key default gen_random_uuid(),
+  session_id uuid not null references public.sessions(id) on delete cascade,
+  group_code text not null,
+  group_name text,
+  created_by uuid null references auth.users(id),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (session_id, group_code)
+);
+
+create table if not exists public.session_group_members (
+  id uuid primary key default gen_random_uuid(),
+  session_id uuid not null references public.sessions(id) on delete cascade,
+  session_group_id uuid not null references public.session_groups(id) on delete cascade,
+  student_id uuid not null references public.students(id) on delete cascade,
+  position int null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (session_id, student_id),
+  unique (session_group_id, student_id)
+);
+
+create index if not exists idx_session_groups_session on public.session_groups(session_id);
+create index if not exists idx_session_group_members_session on public.session_group_members(session_id);
+create index if not exists idx_session_group_members_group on public.session_group_members(session_group_id);
+create index if not exists idx_session_group_members_student on public.session_group_members(student_id);
 
 -- Scores: one row per session+student for summary/best scores
 create table if not exists scores (

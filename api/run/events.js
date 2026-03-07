@@ -56,12 +56,12 @@ export default async function handler(req, res) {
   const sinceIso = toIsoSince(req.query?.since);
   let query = supabase
     .from('run_events')
-    .select('event_id, run_config_id, session_id, station_id, event_type, occurred_at, payload')
+    .select('event_id, run_config_id, session_id, station_id, event_type, occurred_at, created_at, payload')
     .eq('run_config_id', config.id)
-    .order('occurred_at', { ascending: true });
+    .order('created_at', { ascending: true });
 
   if (sinceIso) {
-    query = query.gt('occurred_at', sinceIso);
+    query = query.gt('created_at', sinceIso);
   }
 
   const { data: events, error: eventsError } = await query;
@@ -77,8 +77,10 @@ export default async function handler(req, res) {
     stationId: event.station_id,
     type: event.event_type,
     capturedAtMs: new Date(event.occurred_at).getTime(),
+    serverCreatedAtMs: event.created_at ? new Date(event.created_at).getTime() : undefined,
     runnerId: event.payload?.runner_id || null,
-    refEventId: event.payload?.ref_event_id || null
+    refEventId: event.payload?.ref_event_id || null,
+    payload: event.payload?.client_payload || null
   }));
 
   res.status(200).json({

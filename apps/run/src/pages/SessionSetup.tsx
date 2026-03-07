@@ -17,18 +17,6 @@ type TokenResponse = {
   enforcement?: Enforcement;
   scanGapMs?: number;
   name?: string;
-  runnerIdFormat?: 'numeric' | 'classIndex' | 'structured4';
-  runnerIdMin?: number;
-  runnerIdMax?: number;
-  classPrefixes?: string[];
-  classIndexMin?: number;
-  classIndexMax?: number;
-  structuredLevelMin?: number;
-  structuredLevelMax?: number;
-  structuredClassMin?: number;
-  structuredClassMax?: number;
-  structuredIndexMin?: number;
-  structuredIndexMax?: number;
 };
 
 function defaultEnforcement(templateKey: TemplateKey): Enforcement {
@@ -48,6 +36,13 @@ function parseTokenValue(value: string): string {
   return trimmed;
 }
 
+function parseOptionalInt(value: string): number | undefined {
+  const text = String(value || '').trim();
+  if (!text) return undefined;
+  const n = Number.parseInt(text, 10);
+  return Number.isFinite(n) ? n : undefined;
+}
+
 export default function SessionSetup() {
   const navigate = useNavigate();
   const [templateKey, setTemplateKey] = useState<TemplateKey>('A');
@@ -56,6 +51,17 @@ export default function SessionSetup() {
   const [enforcement, setEnforcement] = useState<Enforcement>(() => defaultEnforcement('A'));
   const [scanGapMs, setScanGapMs] = useState(10000);
   const [runnerIdFormat, setRunnerIdFormat] = useState<'numeric' | 'classIndex' | 'structured4'>('numeric');
+  const [runnerIdMin, setRunnerIdMin] = useState('');
+  const [runnerIdMax, setRunnerIdMax] = useState('');
+  const [classPrefixes, setClassPrefixes] = useState('');
+  const [classIndexMin, setClassIndexMin] = useState('');
+  const [classIndexMax, setClassIndexMax] = useState('');
+  const [structuredLevelMin, setStructuredLevelMin] = useState('');
+  const [structuredLevelMax, setStructuredLevelMax] = useState('');
+  const [structuredClassMin, setStructuredClassMin] = useState('');
+  const [structuredClassMax, setStructuredClassMax] = useState('');
+  const [structuredIndexMin, setStructuredIndexMin] = useState('');
+  const [structuredIndexMax, setStructuredIndexMax] = useState('');
   const runnerFormatNote =
     runnerIdFormat === 'classIndex'
       ? 'Accepted format: letter + digits (A04, b10).'
@@ -100,6 +106,21 @@ export default function SessionSetup() {
   async function handleCreateSession() {
     if (templateKey !== 'A') return;
     if (!Number.isFinite(lapsRequired) || lapsRequired < 1) return;
+    const parsedRunnerMin = parseOptionalInt(runnerIdMin);
+    const parsedRunnerMax = parseOptionalInt(runnerIdMax);
+    const parsedClassMin = parseOptionalInt(classIndexMin);
+    const parsedClassMax = parseOptionalInt(classIndexMax);
+    const parsedLevelMin = parseOptionalInt(structuredLevelMin);
+    const parsedLevelMax = parseOptionalInt(structuredLevelMax);
+    const parsedStructClassMin = parseOptionalInt(structuredClassMin);
+    const parsedStructClassMax = parseOptionalInt(structuredClassMax);
+    const parsedStructIndexMin = parseOptionalInt(structuredIndexMin);
+    const parsedStructIndexMax = parseOptionalInt(structuredIndexMax);
+    const parsedPrefixes = String(classPrefixes || '')
+      .split(',')
+      .map((x) => x.trim().toUpperCase())
+      .filter(Boolean);
+
     const sessionId = await createSession(
       templateKey,
       lapsRequired,
@@ -108,13 +129,72 @@ export default function SessionSetup() {
       undefined,
       scanGapMs,
       sessionName.trim() || undefined,
-      runnerIdFormat
+      runnerIdFormat,
+      parsedRunnerMin,
+      parsedRunnerMax,
+      parsedPrefixes,
+      parsedClassMin,
+      parsedClassMax,
+      parsedLevelMin,
+      parsedLevelMax,
+      parsedStructClassMin,
+      parsedStructClassMax,
+      parsedStructIndexMin,
+      parsedStructIndexMax
     );
     navigate(`/station?sessionId=${encodeURIComponent(sessionId)}`);
   }
 
   const lapsValid = Number.isFinite(lapsRequired) && lapsRequired >= 1;
-  const canCreate = templateKey === 'A' && lapsValid;
+  const parsedRunnerMin = parseOptionalInt(runnerIdMin);
+  const parsedRunnerMax = parseOptionalInt(runnerIdMax);
+  const parsedClassMin = parseOptionalInt(classIndexMin);
+  const parsedClassMax = parseOptionalInt(classIndexMax);
+  const parsedLevelMin = parseOptionalInt(structuredLevelMin);
+  const parsedLevelMax = parseOptionalInt(structuredLevelMax);
+  const parsedStructClassMin = parseOptionalInt(structuredClassMin);
+  const parsedStructClassMax = parseOptionalInt(structuredClassMax);
+  const parsedStructIndexMin = parseOptionalInt(structuredIndexMin);
+  const parsedStructIndexMax = parseOptionalInt(structuredIndexMax);
+
+  const runnerRulesError = useMemo(() => {
+    if (runnerIdFormat === 'numeric') {
+      if (parsedRunnerMin != null && parsedRunnerMax != null && parsedRunnerMin > parsedRunnerMax) {
+        return 'Numeric ID range is invalid: Min cannot be greater than Max.';
+      }
+      return '';
+    }
+    if (runnerIdFormat === 'classIndex') {
+      if (parsedClassMin != null && parsedClassMax != null && parsedClassMin > parsedClassMax) {
+        return 'Class index range is invalid: Min cannot be greater than Max.';
+      }
+      return '';
+    }
+    if (parsedLevelMin != null && parsedLevelMax != null && parsedLevelMin > parsedLevelMax) {
+      return 'Structured Level range is invalid: Min cannot be greater than Max.';
+    }
+    if (parsedStructClassMin != null && parsedStructClassMax != null && parsedStructClassMin > parsedStructClassMax) {
+      return 'Structured Class range is invalid: Min cannot be greater than Max.';
+    }
+    if (parsedStructIndexMin != null && parsedStructIndexMax != null && parsedStructIndexMin > parsedStructIndexMax) {
+      return 'Structured Index range is invalid: Min cannot be greater than Max.';
+    }
+    return '';
+  }, [
+    runnerIdFormat,
+    parsedRunnerMin,
+    parsedRunnerMax,
+    parsedClassMin,
+    parsedClassMax,
+    parsedLevelMin,
+    parsedLevelMax,
+    parsedStructClassMin,
+    parsedStructClassMax,
+    parsedStructIndexMin,
+    parsedStructIndexMax
+  ]);
+
+  const canCreate = templateKey === 'A' && lapsValid && !runnerRulesError;
 
   const handleTokenValidate = async () => {
     const tokenValue = parseTokenValue(tokenInput);
@@ -138,19 +218,7 @@ export default function SessionSetup() {
         enforcement: data.enforcement,
         scanGapMs: data.scanGapMs,
         pairingToken: tokenValue,
-        name: data.name,
-        runnerIdFormat: data.runnerIdFormat,
-        runnerIdMin: data.runnerIdMin,
-        runnerIdMax: data.runnerIdMax,
-        classPrefixes: data.classPrefixes,
-        classIndexMin: data.classIndexMin,
-        classIndexMax: data.classIndexMax,
-        structuredLevelMin: data.structuredLevelMin,
-        structuredLevelMax: data.structuredLevelMax,
-        structuredClassMin: data.structuredClassMin,
-        structuredClassMax: data.structuredClassMax,
-        structuredIndexMin: data.structuredIndexMin,
-        structuredIndexMax: data.structuredIndexMax
+        name: data.name
       });
       setShowTokenModal(false);
       setTokenInput('');
@@ -281,6 +349,159 @@ export default function SessionSetup() {
               </select>
               <div className="note">{runnerFormatNote}</div>
             </div>
+            {runnerIdFormat === 'numeric' && (
+              <div className="inline-row">
+                <div>
+                  <label htmlFor="runnerIdMin">Numeric Min (optional)</label>
+                  <input
+                    id="runnerIdMin"
+                    type="number"
+                    min={0}
+                    value={runnerIdMin}
+                    onChange={(event) => setRunnerIdMin(event.target.value)}
+                    className="input-lg"
+                    placeholder="e.g., 1"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="runnerIdMax">Numeric Max (optional)</label>
+                  <input
+                    id="runnerIdMax"
+                    type="number"
+                    min={0}
+                    value={runnerIdMax}
+                    onChange={(event) => setRunnerIdMax(event.target.value)}
+                    className="input-lg"
+                    placeholder="e.g., 120"
+                  />
+                </div>
+              </div>
+            )}
+            {runnerIdFormat === 'classIndex' && (
+              <div className="grid">
+                <div>
+                  <label htmlFor="classPrefixes">Class Prefixes (optional)</label>
+                  <input
+                    id="classPrefixes"
+                    value={classPrefixes}
+                    onChange={(event) => setClassPrefixes(event.target.value)}
+                    className="input-lg"
+                    placeholder="e.g., A,B,C"
+                  />
+                  <div className="note">Leave blank to allow any A-Z prefix.</div>
+                </div>
+                <div className="inline-row">
+                  <div>
+                    <label htmlFor="classIndexMin">Index Min (optional)</label>
+                    <input
+                      id="classIndexMin"
+                      type="number"
+                      min={0}
+                      value={classIndexMin}
+                      onChange={(event) => setClassIndexMin(event.target.value)}
+                      className="input-lg"
+                      placeholder="e.g., 1"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="classIndexMax">Index Max (optional)</label>
+                    <input
+                      id="classIndexMax"
+                      type="number"
+                      min={0}
+                      value={classIndexMax}
+                      onChange={(event) => setClassIndexMax(event.target.value)}
+                      className="input-lg"
+                      placeholder="e.g., 40"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+            {runnerIdFormat === 'structured4' && (
+              <div className="grid">
+                <div className="inline-row">
+                  <div>
+                    <label htmlFor="structuredLevelMin">Level Min (L)</label>
+                    <input
+                      id="structuredLevelMin"
+                      type="number"
+                      min={0}
+                      max={9}
+                      value={structuredLevelMin}
+                      onChange={(event) => setStructuredLevelMin(event.target.value)}
+                      className="input-lg"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="structuredLevelMax">Level Max (L)</label>
+                    <input
+                      id="structuredLevelMax"
+                      type="number"
+                      min={0}
+                      max={9}
+                      value={structuredLevelMax}
+                      onChange={(event) => setStructuredLevelMax(event.target.value)}
+                      className="input-lg"
+                    />
+                  </div>
+                </div>
+                <div className="inline-row">
+                  <div>
+                    <label htmlFor="structuredClassMin">Class Min (C)</label>
+                    <input
+                      id="structuredClassMin"
+                      type="number"
+                      min={0}
+                      max={9}
+                      value={structuredClassMin}
+                      onChange={(event) => setStructuredClassMin(event.target.value)}
+                      className="input-lg"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="structuredClassMax">Class Max (C)</label>
+                    <input
+                      id="structuredClassMax"
+                      type="number"
+                      min={0}
+                      max={9}
+                      value={structuredClassMax}
+                      onChange={(event) => setStructuredClassMax(event.target.value)}
+                      className="input-lg"
+                    />
+                  </div>
+                </div>
+                <div className="inline-row">
+                  <div>
+                    <label htmlFor="structuredIndexMin">Index Min (II)</label>
+                    <input
+                      id="structuredIndexMin"
+                      type="number"
+                      min={0}
+                      max={99}
+                      value={structuredIndexMin}
+                      onChange={(event) => setStructuredIndexMin(event.target.value)}
+                      className="input-lg"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="structuredIndexMax">Index Max (II)</label>
+                    <input
+                      id="structuredIndexMax"
+                      type="number"
+                      min={0}
+                      max={99}
+                      value={structuredIndexMax}
+                      onChange={(event) => setStructuredIndexMax(event.target.value)}
+                      className="input-lg"
+                    />
+                  </div>
+                </div>
+                <div className="note">Example 1101 means Level 1, Class 1, Index 01.</div>
+              </div>
+            )}
+            {!!runnerRulesError && <div className="error">{runnerRulesError}</div>}
 
           <button onClick={handleCreateSession} disabled={!canCreate} className="btn-lg">
             Create Session (Setup A)

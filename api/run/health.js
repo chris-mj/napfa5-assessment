@@ -36,7 +36,7 @@ export default async function handler(req, res) {
   const supabase = createClient(SUPABASE_URL, SERVICE_ROLE);
   const { data: config, error: configError } = await supabase
     .from('run_configs')
-    .select('id, session_id, name, template_key, laps_required, enforcement, scan_gap_ms, runner_id_format, runner_id_min, runner_id_max, class_prefixes, class_index_min, class_index_max, structured_level_min, structured_level_max, structured_class_min, structured_class_max, structured_index_min, structured_index_max')
+    .select('id, session_id, name, template_key, laps_required, enforcement, scan_gap_ms')
     .eq('pairing_token', pairingToken)
     .maybeSingle();
 
@@ -57,18 +57,6 @@ export default async function handler(req, res) {
     lapsRequired: config.laps_required,
     enforcement: config.enforcement || undefined,
     scanGapMs: config.scan_gap_ms || undefined,
-    runnerIdFormat: config.runner_id_format || 'numeric',
-    runnerIdMin: config.runner_id_min ?? undefined,
-    runnerIdMax: config.runner_id_max ?? undefined,
-    classPrefixes: Array.isArray(config.class_prefixes) ? config.class_prefixes : undefined,
-    classIndexMin: config.class_index_min ?? undefined,
-    classIndexMax: config.class_index_max ?? undefined,
-    structuredLevelMin: config.structured_level_min ?? undefined,
-    structuredLevelMax: config.structured_level_max ?? undefined,
-    structuredClassMin: config.structured_class_min ?? undefined,
-    structuredClassMax: config.structured_class_max ?? undefined,
-    structuredIndexMin: config.structured_index_min ?? undefined,
-    structuredIndexMax: config.structured_index_max ?? undefined,
     matchesSession,
     matchesRunConfig
   });

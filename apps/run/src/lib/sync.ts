@@ -19,7 +19,8 @@ function toPayload(event: EventRow) {
     stationId: event.stationId,
     type: event.type,
     capturedAtMs: event.capturedAtMs,
-    refEventId: event.refEventId ?? null
+    refEventId: event.refEventId ?? null,
+    payload: event.payload ?? null
   };
 }
 

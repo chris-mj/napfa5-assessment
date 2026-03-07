@@ -369,10 +369,45 @@ main {
   flex-wrap: wrap;
 }
 
+.capture-control-with-note {
+  display: grid;
+  gap: 6px;
+  min-width: 260px;
+}
+
+.capture-controls-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(180px, 0.55fr) minmax(180px, 0.55fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.capture-controls-col {
+  display: grid;
+  gap: 10px;
+}
+
+.capture-controls-col-actions {
+  justify-items: start;
+}
+
+.capture-controls-col-actions > button {
+  width: 100%;
+  max-width: 280px;
+}
+
 .capture-ops,
 .capture-diagnostics {
   display: grid;
   gap: 10px;
+}
+
+.capture-ops-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 @media (max-width: 900px) {
@@ -404,6 +439,9 @@ main {
   .capture-main-col {
     position: static;
     top: auto;
+  }
+  .capture-controls-grid {
+    grid-template-columns: 1fr;
   }
   .capture-summary {
     position: static;

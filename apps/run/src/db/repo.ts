@@ -9,7 +9,18 @@ export async function createSession(
   pairingToken?: string,
   scanGapMs?: number,
   name?: string,
-  runnerIdFormat?: 'numeric' | 'classIndex' | 'structured4'
+  runnerIdFormat?: 'numeric' | 'classIndex' | 'structured4',
+  runnerIdMin?: number,
+  runnerIdMax?: number,
+  classPrefixes?: string[],
+  classIndexMin?: number,
+  classIndexMax?: number,
+  structuredLevelMin?: number,
+  structuredLevelMax?: number,
+  structuredClassMin?: number,
+  structuredClassMax?: number,
+  structuredIndexMin?: number,
+  structuredIndexMax?: number
 ): Promise<string> {
   const id = crypto.randomUUID();
   const record: SessionRow = {
@@ -18,6 +29,17 @@ export async function createSession(
     templateKey,
     lapsRequired,
     runnerIdFormat,
+    runnerIdMin,
+    runnerIdMax,
+    classPrefixes,
+    classIndexMin,
+    classIndexMax,
+    structuredLevelMin,
+    structuredLevelMax,
+    structuredClassMin,
+    structuredClassMax,
+    structuredIndexMin,
+    structuredIndexMax,
     enforcement,
     createdAt: Date.now(),
     globalStartMs,
@@ -192,6 +214,36 @@ export async function updateSessionLocalIdRules(
     localIdRulesOverride: rules ?? undefined,
     localIdRulesOverrideUpdatedAt: rules ? Date.now() : undefined
   });
+}
+
+export async function updateSessionRemoteConfig(
+  sessionId: string,
+  patch: Partial<
+    Pick<
+      SessionRow,
+      | 'name'
+      | 'remoteSessionId'
+      | 'runConfigId'
+      | 'templateKey'
+      | 'lapsRequired'
+      | 'enforcement'
+      | 'scanGapMs'
+      | 'runnerIdFormat'
+      | 'runnerIdMin'
+      | 'runnerIdMax'
+      | 'classPrefixes'
+      | 'classIndexMin'
+      | 'classIndexMax'
+      | 'structuredLevelMin'
+      | 'structuredLevelMax'
+      | 'structuredClassMin'
+      | 'structuredClassMax'
+      | 'structuredIndexMin'
+      | 'structuredIndexMax'
+    >
+  >
+): Promise<void> {
+  await db.sessions.update(sessionId, patch);
 }
 
 function escapeCsv(value: string | number | undefined): string {
