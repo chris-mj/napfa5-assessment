@@ -1,7 +1,19 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { createSession, deleteSession, listSessions, upsertTokenSession } from '../db/repo';
-import { postValidateToken } from '../lib/runApi';
+import { useNavigate } from 'react-router-dom';
+import {
+  addEvent,
+  clearSessionEvents,
+  createSession,
+  deleteSession,
+  listEventsForSession,
+  listSessions,
+  updateSessionGlobalEnd,
+  updateSessionGlobalPaused,
+  updateSessionGlobalStart,
+  upsertTokenSession
+} from '../db/repo';
+import { fetchRunEvents, postValidateToken } from '../lib/runApi';
+import { reconcileSessionWithCloud, syncEvents } from '../lib/sync';
 
 const TEMPLATE_OPTIONS = ['A', 'B', 'C', 'D', 'E'] as const;
 
@@ -76,6 +88,16 @@ export default function SessionSetup() {
   const [tokenInput, setTokenInput] = useState('');
   const [tokenError, setTokenError] = useState('');
   const [tokenLoading, setTokenLoading] = useState(false);
+  const [resumeBusyId, setResumeBusyId] = useState('');
+  const [resumeError, setResumeError] = useState('');
+  const [showTokenDecisionModal, setShowTokenDecisionModal] = useState(false);
+  const [pendingTokenSessionId, setPendingTokenSessionId] = useState('');
+  const [decisionBusy, setDecisionBusy] = useState(false);
+  const [decisionNote, setDecisionNote] = useState('');
+  const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
+  const [pendingDeleteSessionId, setPendingDeleteSessionId] = useState('');
+  const [pendingDeleteSessionName, setPendingDeleteSessionName] = useState('');
+  const [deleteBusy, setDeleteBusy] = useState(false);
 
   const enforcementOptions = useMemo<Enforcement[]>(() => ['OFF', 'SOFT', 'STRICT'], []);
 
@@ -222,12 +244,115 @@ export default function SessionSetup() {
       });
       setShowTokenModal(false);
       setTokenInput('');
-      navigate(`/station?sessionId=${encodeURIComponent(localId)}`);
+      const existingEvents = await listEventsForSession(localId);
+      const hasLocalData = existingEvents.length > 0;
+      let hasCloudData = false;
+      try {
+        const pulled = await fetchRunEvents({ pairingToken: tokenValue });
+        hasCloudData = Array.isArray(pulled.events) && pulled.events.length > 0;
+      } catch {
+        // If cloud pull fails here, continue with local decision only.
+      }
+      if (hasLocalData || hasCloudData) {
+        setPendingTokenSessionId(localId);
+        if (hasLocalData && hasCloudData) {
+          setDecisionNote('Existing local and cloud data found for this run session config.');
+        } else if (hasCloudData) {
+          setDecisionNote('Cloud data found for this run session config.');
+        } else {
+          setDecisionNote('Existing local data found for this run session config.');
+        }
+        setShowTokenDecisionModal(true);
+      } else {
+        navigate(`/station?sessionId=${encodeURIComponent(localId)}`);
+      }
       refreshSessions();
     } catch (err: any) {
       setTokenError(err.message || 'Token validation failed.');
     } finally {
       setTokenLoading(false);
+    }
+  };
+
+  const handleResumeSession = async (sessionId: string) => {
+    setResumeBusyId(sessionId);
+    setResumeError('');
+    try {
+      const result = await reconcileSessionWithCloud(sessionId);
+      if (result.error) {
+        setResumeError(`Resume synced with warnings: ${result.error}`);
+      }
+    } catch (err: any) {
+      setResumeError(err?.message || 'Resume sync failed; continuing with local data.');
+    } finally {
+      setResumeBusyId('');
+      navigate(`/station?sessionId=${encodeURIComponent(sessionId)}`);
+    }
+  };
+
+  const handleRequestDeleteSession = (sessionId: string, sessionName?: string) => {
+    setPendingDeleteSessionId(sessionId);
+    setPendingDeleteSessionName(sessionName || sessionId);
+    setShowDeleteConfirmModal(true);
+  };
+
+  const handleConfirmDeleteSession = async () => {
+    if (!pendingDeleteSessionId) return;
+    setDeleteBusy(true);
+    try {
+      await deleteSession(pendingDeleteSessionId);
+      setShowDeleteConfirmModal(false);
+      setPendingDeleteSessionId('');
+      setPendingDeleteSessionName('');
+      refreshSessions();
+    } finally {
+      setDeleteBusy(false);
+    }
+  };
+
+  const handleTokenDecisionLoadAndMerge = async () => {
+    if (!pendingTokenSessionId) return;
+    setDecisionBusy(true);
+    setTokenError('');
+    try {
+      const result = await reconcileSessionWithCloud(pendingTokenSessionId);
+      if (result.error) {
+        setTokenError(`Resume synced with warnings: ${result.error}`);
+      }
+      setShowTokenDecisionModal(false);
+      navigate(`/station?sessionId=${encodeURIComponent(pendingTokenSessionId)}`);
+    } catch (err: any) {
+      setTokenError(err?.message || 'Failed to load and merge session.');
+    } finally {
+      setDecisionBusy(false);
+    }
+  };
+
+  const handleTokenDecisionResetAll = async () => {
+    if (!pendingTokenSessionId) return;
+    setDecisionBusy(true);
+    setTokenError('');
+    try {
+      const nowMs = Date.now();
+      await clearSessionEvents(pendingTokenSessionId);
+      await updateSessionGlobalStart(pendingTokenSessionId, undefined);
+      await updateSessionGlobalPaused(pendingTokenSessionId, false);
+      await updateSessionGlobalEnd(pendingTokenSessionId, undefined);
+      await addEvent({
+        sessionId: pendingTokenSessionId,
+        runnerId: 'GLOBAL',
+        stationId: 'LAP_END',
+        type: 'CLEAR_ALL',
+        capturedAtMs: nowMs
+      });
+      await syncEvents(pendingTokenSessionId);
+      await reconcileSessionWithCloud(pendingTokenSessionId);
+      setShowTokenDecisionModal(false);
+      navigate(`/station?sessionId=${encodeURIComponent(pendingTokenSessionId)}`);
+    } catch (err: any) {
+      setTokenError(err?.message || 'Failed to reset run data.');
+    } finally {
+      setDecisionBusy(false);
     }
   };
 
@@ -513,6 +638,7 @@ export default function SessionSetup() {
         <div className="grid">
           <h2>Recent Sessions</h2>
           {sessions.length === 0 && <div className="note">No sessions yet.</div>}
+          {!!resumeError && <div className="error">{resumeError}</div>}
           {sessions.map((session) => (
             <div key={session.id} className="session-row">
               <div>
@@ -520,21 +646,18 @@ export default function SessionSetup() {
                 <div className="note">Template {session.templateKey}</div>
               </div>
               <div className="session-actions">
-                <Link
+                <button
+                  type="button"
                   className="btn-link"
-                  to={`/station?sessionId=${encodeURIComponent(session.id)}`}
+                  onClick={() => handleResumeSession(session.id)}
+                  disabled={resumeBusyId === session.id}
                 >
-                  Resume
-                </Link>
+                  {resumeBusyId === session.id ? 'Resuming...' : 'Resume'}
+                </button>
                 <button
                   type="button"
                   className="secondary"
-                  onClick={async () => {
-                    const ok = window.confirm('Delete this session and all its events?');
-                    if (!ok) return;
-                    await deleteSession(session.id);
-                    refreshSessions();
-                  }}
+                  onClick={() => handleRequestDeleteSession(session.id, session.name)}
                 >
                   Delete
                 </button>
@@ -575,6 +698,79 @@ export default function SessionSetup() {
               </button>
               <div className="note">
                 Tokens come from Napfa5 Session Detail -&gt; Run Setup.
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {showTokenDecisionModal && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true">
+          <div className="modal-card">
+            <div className="modal-header">
+              <div className="text-base font-semibold">Existing Run Data Found</div>
+              <button type="button" className="btn-link" onClick={() => setShowTokenDecisionModal(false)} disabled={decisionBusy}>
+                Close
+              </button>
+            </div>
+            <div className="grid">
+              <div className="note">
+                {decisionNote || 'Existing data was found for this run session config. Choose how to continue.'}
+              </div>
+              <button
+                type="button"
+                className="btn-lg"
+                onClick={handleTokenDecisionLoadAndMerge}
+                disabled={decisionBusy}
+              >
+                {decisionBusy ? 'Processing...' : 'Load local and cloud data'}
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                onClick={handleTokenDecisionResetAll}
+                disabled={decisionBusy}
+              >
+                {decisionBusy ? 'Processing...' : 'Reset all'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showDeleteConfirmModal && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true">
+          <div className="modal-card">
+            <div className="modal-header">
+              <div className="text-base font-semibold">Delete Local Session</div>
+              <button
+                type="button"
+                className="btn-link"
+                onClick={() => setShowDeleteConfirmModal(false)}
+                disabled={deleteBusy}
+              >
+                Close
+              </button>
+            </div>
+            <div className="grid">
+              <div className="note">
+                Session: {pendingDeleteSessionName}
+              </div>
+              <div className="note">
+                Delete this local session and local events on this device only? Cloud data and other device data are not deleted.
+                To delete cloud data, use the main Napfa-5 app Run Session Setup configuration.
+                To delete run session data on other devices, delete it locally on each device.
+              </div>
+              <div className="reset-actions">
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => setShowDeleteConfirmModal(false)}
+                  disabled={deleteBusy}
+                >
+                  Cancel
+                </button>
+                <button type="button" onClick={handleConfirmDeleteSession} disabled={deleteBusy}>
+                  {deleteBusy ? 'Deleting...' : 'Delete Local Session'}
+                </button>
               </div>
             </div>
           </div>

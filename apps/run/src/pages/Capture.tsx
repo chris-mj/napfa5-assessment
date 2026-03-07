@@ -68,8 +68,6 @@ type OverrideForm = {
 };
 
 type RunConfigForm = {
-  name: string;
-  templateKey: 'A' | 'B' | 'C' | 'D' | 'E';
   lapsRequired: string;
   enforcement: Enforcement;
   scanGapMs: string;
@@ -233,10 +231,7 @@ function parseOptInt(value: string) {
 }
 
 function toRunConfigForm(session: SessionRow | null): RunConfigForm {
-  const template = (String(session?.templateKey || 'A').toUpperCase() as RunConfigForm['templateKey']);
   return {
-    name: String(session?.name || ''),
-    templateKey: ['A', 'B', 'C', 'D', 'E'].includes(template) ? template : 'A',
     lapsRequired: String(Number.isFinite(session?.lapsRequired as number) ? session?.lapsRequired : 3),
     enforcement: ((session?.enforcement as Enforcement) || 'OFF'),
     scanGapMs: String(Number.isFinite(session?.scanGapMs as number) ? session?.scanGapMs : 10000)
@@ -746,10 +741,6 @@ export default function CaptureScreen() {
 
           if (latestRunConfigSet > 0 && latestRunConfigPayload && sessionId) {
             const patch: Partial<SessionRow> = {
-              name: typeof latestRunConfigPayload.name === 'string' ? latestRunConfigPayload.name : session?.name,
-              templateKey: typeof latestRunConfigPayload.templateKey === 'string'
-                ? String(latestRunConfigPayload.templateKey).toUpperCase()
-                : session?.templateKey,
               lapsRequired: Number.isFinite(Number(latestRunConfigPayload.lapsRequired))
                 ? Number(latestRunConfigPayload.lapsRequired)
                 : session?.lapsRequired,
@@ -1273,7 +1264,7 @@ export default function CaptureScreen() {
       setTimeout(() => setToast(''), 1800);
       return;
     }
-    const template = (String(runConfigForm.templateKey || 'A').toUpperCase() as SessionRow['templateKey']);
+    const template = String(session?.templateKey || 'A').toUpperCase();
     const laps = Math.max(1, Number.parseInt(String(runConfigForm.lapsRequired || '1'), 10) || 1);
     const enforcement: Enforcement =
       CHECKPOINT_TEMPLATES.has(String(template))
@@ -1282,8 +1273,6 @@ export default function CaptureScreen() {
     const gap = Number.parseInt(String(runConfigForm.scanGapMs || '10000'), 10);
     const scanGapMs = Number.isFinite(gap) ? Math.min(30000, Math.max(1000, gap)) : 10000;
     const patch: Partial<SessionRow> = {
-      name: String(runConfigForm.name || '').trim() || undefined,
-      templateKey: template,
       lapsRequired: laps,
       enforcement,
       scanGapMs
@@ -1297,15 +1286,11 @@ export default function CaptureScreen() {
       type: 'RUNCFG_SET',
       capturedAtMs: Date.now(),
       refEventId: encodeConfigRef({
-        name: patch.name,
-        templateKey: patch.templateKey,
         lapsRequired: patch.lapsRequired,
         enforcement: patch.enforcement,
         scanGapMs: patch.scanGapMs
       }),
       payload: {
-        name: patch.name,
-        templateKey: patch.templateKey,
         lapsRequired: patch.lapsRequired,
         enforcement: patch.enforcement,
         scanGapMs: patch.scanGapMs
@@ -1316,6 +1301,67 @@ export default function CaptureScreen() {
     setShowRunConfigModal(false);
     setToast('Run config updated for this run.');
     setTimeout(() => setToast(''), 1500);
+    await refreshEvents();
+  }
+
+  async function handleResetRunConfigToOriginal() {
+    if (!sessionId || !canChangeSharedConfig) {
+      setToast('Config changes allowed only at start station before runner data is recorded.');
+      setTimeout(() => setToast(''), 1800);
+      return;
+    }
+    const token = String(session?.pairingToken || '').trim();
+    if (!token) {
+      setToast('Pairing token missing. Cannot load original setup.');
+      setTimeout(() => setToast(''), 2200);
+      return;
+    }
+    const { response, body } = await postValidateToken(token);
+    if (!response.ok) {
+      setToast(body?.error ? `Reset failed: ${body.error}` : 'Reset failed.');
+      setTimeout(() => setToast(''), 2200);
+      return;
+    }
+
+    const template = String(session?.templateKey || body?.templateKey || 'A').toUpperCase();
+    const laps = Math.max(1, Number.parseInt(String(body?.lapsRequired ?? session?.lapsRequired ?? 1), 10) || 1);
+    const enforcement: Enforcement =
+      CHECKPOINT_TEMPLATES.has(template)
+        ? (['OFF', 'SOFT', 'STRICT'].includes(String(body?.enforcement || '')) ? body.enforcement : 'SOFT')
+        : 'OFF';
+    const gapRaw = Number.parseInt(String(body?.scanGapMs ?? session?.scanGapMs ?? 10000), 10);
+    const scanGapMs = Number.isFinite(gapRaw) ? Math.min(30000, Math.max(1000, gapRaw)) : 10000;
+    const patch: Partial<SessionRow> = {
+      lapsRequired: laps,
+      enforcement,
+      scanGapMs
+    };
+
+    await updateSessionRemoteConfig(sessionId, patch);
+    await addEvent({
+      sessionId,
+      runnerId: 'GLOBAL',
+      stationId: stationId || startStationId || 'LAP_END',
+      type: 'RUNCFG_SET',
+      capturedAtMs: Date.now(),
+      refEventId: encodeConfigRef({
+        lapsRequired: patch.lapsRequired,
+        enforcement: patch.enforcement,
+        scanGapMs: patch.scanGapMs
+      }),
+      payload: {
+        lapsRequired: patch.lapsRequired,
+        enforcement: patch.enforcement,
+        scanGapMs: patch.scanGapMs
+      }
+    });
+    const updated = await getSession(sessionId);
+    if (updated) {
+      setSession(updated);
+      setRunConfigForm(toRunConfigForm(updated));
+    }
+    setToast('Run session config reset to original setup.');
+    setTimeout(() => setToast(''), 1700);
     await refreshEvents();
   }
 
@@ -1413,7 +1459,12 @@ export default function CaptureScreen() {
             <div className="capture-status-controls">
               {showGlobalStart && stationId === startStationId && (
                 <>
-                  <button type="button" className="capture-control-btn start" onClick={handleGlobalStart}>
+                  <button
+                    type="button"
+                    className="capture-control-btn start"
+                    onClick={handleGlobalStart}
+                    disabled={runStarted && !runPaused && !runEnded}
+                  >
                     {runStarted && runPaused ? 'Start (Resume)' : 'Start'}
                   </button>
                   {runStarted && !runEnded && (
@@ -1628,11 +1679,11 @@ export default function CaptureScreen() {
             <div className="capture-controls-col">
               <div className="capture-control-with-note">
                 <button type="button" className="secondary" onClick={handleOpenRunConfigModal} disabled={!canChangeSharedConfig}>
-                  Run Config
+                  Run Session Config
                 </button>
                 <div className="note">Run config (shared): {runConfigSummary}</div>
                 {!canEditRunConfig && (
-                  <div className="note">Edit run config at start station: {startStationId}</div>
+                  <div className="note">Edit run session config at start station: {startStationId}</div>
                 )}
                 {canEditRunConfig && hasRunnerData && (
                   <div className="note">Config locked: runner data already recorded. Reset session to unlock.</div>
@@ -1741,7 +1792,7 @@ export default function CaptureScreen() {
         <div className="modal-backdrop" role="dialog" aria-modal="true">
           <div className="modal-card" style={{ width: 'min(620px, 100%)' }}>
             <div className="modal-header">
-              <div className="text-base font-semibold">Change run config</div>
+              <div className="text-base font-semibold">Change run session config</div>
               <button type="button" className="btn-link" onClick={() => setShowRunConfigModal(false)}>
                 Close
               </button>
@@ -1752,30 +1803,13 @@ export default function CaptureScreen() {
                 <div className="error">Locked: changes are allowed only before runner data is recorded.</div>
               )}
               <div>
-                <label htmlFor="cfgName">Config Name</label>
-                <input
-                  id="cfgName"
-                  value={runConfigForm.name}
-                  onChange={(event) => setRunConfigForm((prev) => ({ ...prev, name: event.target.value }))}
-                  className="input-lg"
-                  placeholder="e.g. P5 Morning Trial"
-                />
+                <label>Config Name</label>
+                <div className="text-2xl font-semibold">{session?.name || '-'}</div>
               </div>
               <div className="inline-row">
                 <div>
-                  <label htmlFor="cfgTemplate">Setup Type</label>
-                  <select
-                    id="cfgTemplate"
-                    value={runConfigForm.templateKey}
-                    onChange={(event) => setRunConfigForm((prev) => ({ ...prev, templateKey: event.target.value as RunConfigForm['templateKey'] }))}
-                    className="input-lg"
-                  >
-                    <option value="A">Setup A</option>
-                    <option value="B">Setup B</option>
-                    <option value="C">Setup C</option>
-                    <option value="D">Setup D</option>
-                    <option value="E">Setup E</option>
-                  </select>
+                  <label>Setup Type</label>
+                  <div className="text-2xl font-semibold">Setup {session?.templateKey || '-'}</div>
                 </div>
                 <div>
                   <label htmlFor="cfgLaps">Laps Required</label>
@@ -1797,7 +1831,7 @@ export default function CaptureScreen() {
                     value={runConfigForm.enforcement}
                     onChange={(event) => setRunConfigForm((prev) => ({ ...prev, enforcement: event.target.value as Enforcement }))}
                     className="input-lg"
-                    disabled={!CHECKPOINT_TEMPLATES.has(runConfigForm.templateKey)}
+                    disabled={!CHECKPOINT_TEMPLATES.has(String(session?.templateKey || ''))}
                   >
                     <option value="OFF">OFF</option>
                     <option value="SOFT">SOFT</option>
@@ -1824,8 +1858,11 @@ export default function CaptureScreen() {
                 <button type="button" className="secondary" onClick={() => setShowRunConfigModal(false)}>
                   Cancel
                 </button>
+                <button type="button" className="secondary" onClick={handleResetRunConfigToOriginal} disabled={!canChangeSharedConfig}>
+                  Reset to original setup
+                </button>
                 <button type="button" onClick={handleSaveRunConfigLocal} disabled={!canChangeSharedConfig}>
-                  Save run config
+                  Save run session config
                 </button>
               </div>
             </div>
@@ -1946,7 +1983,7 @@ export default function CaptureScreen() {
             </div>
             <div className="grid">
               <div className="note" style={{ fontSize: '14px' }}>
-                This clears all scans on this device and resets the session for all stations.
+                This clears run session data locally only (this device and related stations). It does not delete cloud data. To delete cloud data, use the main Napfa-5 app Run Session Setup configuration.
               </div>
               <div className="reset-actions">
                 <button

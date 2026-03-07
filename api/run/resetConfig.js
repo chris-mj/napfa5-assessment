@@ -86,5 +86,25 @@ export default async function handler(req, res) {
     return;
   }
 
-  res.status(200).json({ ok: true });
+  const nowIso = new Date().toISOString();
+  const clearEvent = {
+    event_id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+    run_config_id: runConfigId,
+    session_id: sessionId,
+    station_id: 'LAP_END',
+    event_type: 'CLEAR_ALL',
+    occurred_at: nowIso,
+    payload: { runner_id: 'GLOBAL' }
+  };
+
+  const { error: insertClearError } = await supabase
+    .from('run_events')
+    .insert(clearEvent);
+
+  if (insertClearError) {
+    res.status(500).json({ error: 'Run events deleted, but failed to broadcast CLEAR_ALL marker' });
+    return;
+  }
+
+  res.status(200).json({ ok: true, clearAllBroadcast: true });
 }
