@@ -212,6 +212,12 @@ export async function fetchRunHealth(input: {
     };
   };
 
+  // In local run-app dev (localhost:5174), /api/run/health may not exist.
+  // Skip direct health endpoint fetch to avoid noisy 404 logs and use token-validate fallback.
+  if (import.meta.env.DEV && !getRunApiBaseUrl()) {
+    return fallbackFromValidate();
+  }
+
   const url = new URL(runApiUrl('/api/run/health'), window.location.origin);
   if (input.sessionId) url.searchParams.set('sessionId', input.sessionId);
   if (input.runConfigId) url.searchParams.set('runConfigId', input.runConfigId);

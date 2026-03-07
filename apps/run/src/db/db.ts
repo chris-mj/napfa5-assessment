@@ -37,6 +37,8 @@ export type SessionRow = {
   enforcement?: string;
   createdAt: number;
   globalStartMs?: number;
+  globalPaused?: boolean;
+  globalEndMs?: number;
   pairingToken?: string;
   scanGapMs?: number;
   localIdRulesOverride?: RunnerIdRules;

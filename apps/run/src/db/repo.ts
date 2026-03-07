@@ -172,8 +172,16 @@ export async function deleteSession(sessionId: string): Promise<void> {
   });
 }
 
-export async function updateSessionGlobalStart(sessionId: string, globalStartMs: number): Promise<void> {
+export async function updateSessionGlobalStart(sessionId: string, globalStartMs?: number): Promise<void> {
   await db.sessions.update(sessionId, { globalStartMs });
+}
+
+export async function updateSessionGlobalEnd(sessionId: string, globalEndMs?: number): Promise<void> {
+  await db.sessions.update(sessionId, { globalEndMs });
+}
+
+export async function updateSessionGlobalPaused(sessionId: string, globalPaused?: boolean): Promise<void> {
+  await db.sessions.update(sessionId, { globalPaused });
 }
 
 export async function updateSessionLocalIdRules(

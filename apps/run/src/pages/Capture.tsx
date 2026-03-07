@@ -8,6 +8,8 @@ import {
   getSession,
   listEventsForSession,
   upsertRemoteEvents,
+  updateSessionGlobalEnd,
+  updateSessionGlobalPaused,
   updateSessionLocalIdRules,
   updateSessionGlobalStart
 } from '../db/repo';
@@ -20,6 +22,13 @@ import { fetchRunHealth } from '../lib/runApi';
 
 const GLOBAL_START_TEMPLATES = new Set(['A', 'B', 'C', 'D', 'E']);
 const SYNC_INTERVAL_MS = 5000;
+const STATIONS_BY_TEMPLATE: Record<string, string[]> = {
+  A: ['LAP_END'],
+  B: ['LAP_END', 'A'],
+  C: ['LAP_END', 'A', 'B'],
+  D: ['START', 'LAP_END'],
+  E: ['LAP_END', 'FINISH']
+};
 
 type Enforcement = 'OFF' | 'SOFT' | 'STRICT';
 
@@ -244,6 +253,16 @@ function formToOverrideRules(form: OverrideForm): RunnerIdRules {
   };
 }
 
+function displayEventType(type: string) {
+  if (type === 'PASS') return '';
+  if (type === 'START_SET') return 'START';
+  if (type === 'RESUME_SET') return 'RESUME';
+  if (type === 'PAUSE_SET') return 'PAUSE';
+  if (type === 'END_SET') return 'END';
+  if (type === 'CLEAR_ALL') return 'RESET';
+  return type;
+}
+
 export default function CaptureScreen() {
   const [params] = useSearchParams();
   const sessionId = params.get('sessionId') ?? '';
@@ -251,6 +270,7 @@ export default function CaptureScreen() {
   const [session, setSession] = useState<SessionRow | null>(null);
   const [runnerId, setRunnerId] = useState('');
   const [recentEvents, setRecentEvents] = useState<EventRow[]>([]);
+  const [recentTypeById, setRecentTypeById] = useState<Record<string, string>>({});
   const [runnerSummaries, setRunnerSummaries] = useState<RunnerSummary[]>([]);
   const [toast, setToast] = useState('');
   const [tokenStatus, setTokenStatus] = useState<'idle' | 'checking' | 'valid' | 'invalid'>('idle');
@@ -269,9 +289,11 @@ export default function CaptureScreen() {
   const [showTechDetails, setShowTechDetails] = useState(false);
   const [showOverrideModal, setShowOverrideModal] = useState(false);
   const [overrideForm, setOverrideForm] = useState<OverrideForm>(() => toOverrideForm(null));
+  const [clockMs, setClockMs] = useState(Date.now());
   const [projectorOpen, setProjectorOpen] = useState(false);
   const [inputFocused, setInputFocused] = useState(true);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [showEndConfirm, setShowEndConfirm] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const lastClearAllRef = useRef<number>(0);
   const remoteSinceRef = useRef<number>(0);
@@ -343,8 +365,15 @@ export default function CaptureScreen() {
     effectiveRuleSession?.structuredIndexMax
   ]);
 
-  const showGlobalStart = session && GLOBAL_START_TEMPLATES.has(session.templateKey);
-  const hasStartStation = session && ['D'].includes(session.templateKey);
+  const normalizedTemplateKey = String(session?.templateKey || '').toUpperCase();
+  const templateStations = STATIONS_BY_TEMPLATE[normalizedTemplateKey] || ['LAP_END'];
+  const showGlobalStart = Boolean(session) && GLOBAL_START_TEMPLATES.has(normalizedTemplateKey);
+  const startStationId = templateStations.includes('START') ? 'START' : 'LAP_END';
+  const hasStartStation = Boolean(showGlobalStart);
+  const isControlStation = stationId === 'START' || stationId === 'LAP_END' || stationId === 'FINISH';
+  const runStarted = Boolean(session?.globalStartMs);
+  const runPaused = Boolean(session?.globalPaused);
+  const runEnded = Boolean(session?.globalEndMs);
   const syncIsStale = session?.pairingToken && session?.remoteSessionId
     ? (!lastPullAtMs || !lastPushAtMs || Date.now() - lastPullAtMs > 15000 || Date.now() - lastPushAtMs > 15000)
     : false;
@@ -356,6 +385,11 @@ export default function CaptureScreen() {
       : syncIsStale
         ? 'Delayed'
         : 'Connected';
+  const connectionTone = hasSyncIssue
+    ? 'danger'
+    : (!session?.pairingToken || !session?.remoteSessionId || syncIsStale)
+      ? 'warn'
+      : 'ok';
 
 
   const buildSummaries = (events: EventRow[]) => {
@@ -372,6 +406,7 @@ export default function CaptureScreen() {
 
     const byRunner = new Map<string, EventRow[]>();
     for (const event of filterUndoneEvents(events)) {
+      if (!['PASS', 'UNDO', 'CLEAR'].includes(event.type)) continue;
       if (!event.runnerId) continue;
       if (!byRunner.has(event.runnerId)) byRunner.set(event.runnerId, []);
       byRunner.get(event.runnerId)!.push(event);
@@ -407,8 +442,37 @@ export default function CaptureScreen() {
       .slice(0, 20);
   };
 
+  const buildRecentTypeMap = (events: EventRow[]) => {
+    const map: Record<string, string> = {};
+    // First PASS at start-station for a runner (after CLEAR_ALL) is treated as START in UI.
+    const chronological = filterUndoneEvents(
+      [...events].filter((event) => event.source !== 'remote')
+    ).sort((a, b) => a.capturedAtMs - b.capturedAtMs);
+    const startedRunners = new Set<string>();
+    for (const event of chronological) {
+      if (event.type === 'CLEAR_ALL') {
+        startedRunners.clear();
+        map[event.id] = 'RESET';
+        continue;
+      }
+      if (event.type === 'START_SET') {
+        map[event.id] = 'START';
+        continue;
+      }
+      if (event.type === 'PASS' && event.stationId === startStationId) {
+        const rid = String(event.runnerId || '');
+        if (rid && !startedRunners.has(rid)) {
+          startedRunners.add(rid);
+          map[event.id] = 'START';
+        }
+      }
+    }
+    return map;
+  };
+
   const hydrateFromEvents = (events: EventRow[]) => {
     setRecentEvents(buildLocalRecent(events));
+    setRecentTypeById(buildRecentTypeMap(events));
     setRunnerSummaries(buildSummaries(events));
   };
 
@@ -416,6 +480,11 @@ export default function CaptureScreen() {
     if (!sessionId) return;
     getSession(sessionId).then((value) => setSession(value));
   }, [sessionId]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setClockMs(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     setOverrideForm(toOverrideForm(session));
@@ -496,8 +565,24 @@ export default function CaptureScreen() {
         });
         const events = pulled.events || [];
         if (events.length) {
+          let latestStartSet = 0;
+          let latestResumeSet = 0;
+          let latestPauseSet = 0;
+          let latestEndSet = 0;
           let latestClearAll = 0;
           for (const event of events) {
+            if (event.type === 'START_SET' && event.capturedAtMs) {
+              latestStartSet = Math.max(latestStartSet, event.capturedAtMs);
+            }
+            if (event.type === 'RESUME_SET' && event.capturedAtMs) {
+              latestResumeSet = Math.max(latestResumeSet, event.capturedAtMs);
+            }
+            if (event.type === 'PAUSE_SET' && event.capturedAtMs) {
+              latestPauseSet = Math.max(latestPauseSet, event.capturedAtMs);
+            }
+            if (event.type === 'END_SET' && event.capturedAtMs) {
+              latestEndSet = Math.max(latestEndSet, event.capturedAtMs);
+            }
             if (event.type === 'CLEAR_ALL' && event.capturedAtMs) {
               latestClearAll = Math.max(latestClearAll, event.capturedAtMs);
             }
@@ -506,9 +591,33 @@ export default function CaptureScreen() {
             }
           }
 
-          if (latestClearAll > lastClearAllRef.current) {
-            lastClearAllRef.current = latestClearAll;
+          const latestStartOrResume = Math.max(latestStartSet, latestResumeSet);
+          const latestControl = Math.max(latestStartSet, latestResumeSet, latestPauseSet, latestEndSet, latestClearAll);
+
+          if (latestControl === latestClearAll && latestClearAll > 0) {
             await clearSessionEvents(sessionId);
+            await updateSessionGlobalStart(sessionId, undefined);
+            await updateSessionGlobalPaused(sessionId, false);
+            await updateSessionGlobalEnd(sessionId, undefined);
+            if (active) {
+              setSession((prev) => (prev ? { ...prev, globalStartMs: undefined, globalPaused: false, globalEndMs: undefined } : prev));
+            }
+          } else if (latestControl > 0) {
+            const paused = latestPauseSet > latestStartOrResume && latestPauseSet > latestEndSet;
+            const ended = latestEndSet > latestStartOrResume && latestEndSet >= latestPauseSet;
+            if (latestStartOrResume > 0) {
+              await updateSessionGlobalStart(sessionId, latestStartOrResume);
+            }
+            await updateSessionGlobalPaused(sessionId, paused);
+            await updateSessionGlobalEnd(sessionId, ended ? latestEndSet : undefined);
+            if (active) {
+              setSession((prev) => (prev ? {
+                ...prev,
+                globalStartMs: latestStartOrResume || prev.globalStartMs,
+                globalPaused: paused,
+                globalEndMs: ended ? latestEndSet : undefined
+              } : prev));
+            }
           }
 
           const relevant = latestClearAll
@@ -731,6 +840,30 @@ export default function CaptureScreen() {
       await handleUndoRunnerById(normalizedTarget);
       return;
     }
+    if (!runStarted) {
+      setRunnerId('');
+      setOverridePending(false);
+      inputRef.current?.focus();
+      setToast('Run has not started. Press Start first.');
+      setTimeout(() => setToast(''), 1500);
+      return;
+    }
+    if (runPaused) {
+      setRunnerId('');
+      setOverridePending(false);
+      inputRef.current?.focus();
+      setToast('Run is paused. Resume/Start to continue scanning.');
+      setTimeout(() => setToast(''), 1500);
+      return;
+    }
+    if (runEnded) {
+      setRunnerId('');
+      setOverridePending(false);
+      inputRef.current?.focus();
+      setToast('Run has ended. No more scans accepted.');
+      setTimeout(() => setToast(''), 1500);
+      return;
+    }
     const idValidation = normalizeRunnerIdWithRules(trimmed, effectiveRuleSession);
     const normalizedId = idValidation.normalized;
     if (!normalizedId) {
@@ -814,6 +947,10 @@ export default function CaptureScreen() {
   async function handleResetSession() {
     if (!sessionId) return;
     await clearSessionEvents(sessionId);
+    await updateSessionGlobalStart(sessionId, undefined);
+    await updateSessionGlobalPaused(sessionId, false);
+    await updateSessionGlobalEnd(sessionId, undefined);
+    setSession((prev) => (prev ? { ...prev, globalStartMs: undefined, globalPaused: false, globalEndMs: undefined } : prev));
     const nowMs = Date.now();
     lastClearAllRef.current = nowMs;
     await addEvent({
@@ -865,15 +1002,49 @@ export default function CaptureScreen() {
   async function handleGlobalStart() {
     if (!sessionId) return;
     const startMs = Date.now();
+    const eventType = runStarted ? 'RESUME_SET' : 'START_SET';
     await addEvent({
       sessionId,
       runnerId: 'GLOBAL',
-      stationId: 'START',
-      type: 'START_SET',
+      stationId: stationId || startStationId,
+      type: eventType,
       capturedAtMs: startMs
     });
     await updateSessionGlobalStart(sessionId, startMs);
-    setSession((prev) => (prev ? { ...prev, globalStartMs: startMs } : prev));
+    await updateSessionGlobalPaused(sessionId, false);
+    await updateSessionGlobalEnd(sessionId, undefined);
+    setSession((prev) => (prev ? { ...prev, globalStartMs: startMs, globalPaused: false, globalEndMs: undefined } : prev));
+    await refreshEvents();
+  }
+
+  async function handleGlobalPause() {
+    if (!sessionId || !runStarted || runEnded) return;
+    const pauseMs = Date.now();
+    await addEvent({
+      sessionId,
+      runnerId: 'GLOBAL',
+      stationId: stationId || startStationId,
+      type: 'PAUSE_SET',
+      capturedAtMs: pauseMs
+    });
+    await updateSessionGlobalPaused(sessionId, true);
+    setSession((prev) => (prev ? { ...prev, globalPaused: true } : prev));
+    await refreshEvents();
+  }
+
+  async function handleGlobalEnd() {
+    if (!sessionId || !runStarted || !runPaused) return;
+    const endMs = Date.now();
+    await addEvent({
+      sessionId,
+      runnerId: 'GLOBAL',
+      stationId: stationId || startStationId,
+      type: 'END_SET',
+      capturedAtMs: endMs
+    });
+    await updateSessionGlobalPaused(sessionId, false);
+    await updateSessionGlobalEnd(sessionId, endMs);
+    setSession((prev) => (prev ? { ...prev, globalPaused: false, globalEndMs: endMs } : prev));
     await refreshEvents();
   }
 
@@ -899,39 +1070,56 @@ export default function CaptureScreen() {
         </div>
       )}
 
-      <div className="capture-layout">
-        <section className="capture-left card">
-          {!inputFocused && (
-            <div
-              className="focus-overlay"
-              onClick={() => {
-                inputRef.current?.focus();
-                setInputFocused(true);
-              }}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' || event.key === ' ') {
-                  inputRef.current?.focus();
-                  setInputFocused(true);
-                }
-              }}
-            >
-              Put cursor in scan box
+      <div className="capture-redesign">
+        <section className="capture-status-strip card">
+          <div className="capture-status-top">
+            <div className="capture-status-station">
+              {stationId ? stationLabel(session?.templateKey, stationId) : 'Station not set'}
             </div>
-          )}
-          <div className="station-title">
-            {stationId
-              ? `STATION SCANNING: ${stationLabel(session?.templateKey, stationId)}`
-              : 'STATION SCANNING: -'}
+            <div className="capture-status-right">
+              <div className={`capture-status-badge ${connectionTone}`}>{connectionLabel}</div>
+              <div className="capture-status-clock">{new Date(clockMs).toLocaleTimeString()}</div>
+            </div>
           </div>
-          <p className="note">
-            Session: {sessionId} | Station: {stationId ? stationLabel(session?.templateKey, stationId) : 'Not set'}{' '}
-            <Link to={`/station?sessionId=${encodeURIComponent(sessionId)}`}>Switch station</Link>
-          </p>
+          <div className="capture-status-controls-meta">
+            <div className="capture-status-controls">
+              {showGlobalStart && stationId === startStationId && (
+                <>
+                  <button type="button" className="capture-control-btn start" onClick={handleGlobalStart}>
+                    {runStarted && runPaused ? 'Start (Resume)' : 'Start'}
+                  </button>
+                  {runStarted && !runEnded && (
+                    <>
+                    <button type="button" className="capture-control-btn pause" onClick={handleGlobalPause} disabled={runPaused}>
+                      Pause
+                    </button>
+                    <button
+                      type="button"
+                      className="capture-control-btn end"
+                      onClick={() => setShowEndConfirm(true)}
+                      disabled={!runPaused}
+                    >
+                      End
+                    </button>
+                  </>
+                )}
+                </>
+              )}
+            </div>
+            <div className="capture-status-meta">
+              <div>Last received: {lastPullAtMs ? new Date(lastPullAtMs).toLocaleTimeString() : 'never'}</div>
+              <div>Last sent: {lastPushAtMs ? new Date(lastPushAtMs).toLocaleTimeString() : 'never'}</div>
+              <div>Pending upload: {syncPending}</div>
+            </div>
+          </div>
+        </section>
 
+        <div className="capture-workspace">
+          <div className="capture-main-col">
+            <section className="capture-primary card">
+          <div className="station-title">Record Runner</div>
           <form onSubmit={handleSubmit} className="capture-form">
-            <div>
+            <div className="capture-input-wrap">
               <label htmlFor="runner">Runner ID</label>
               <input
                 id="runner"
@@ -948,11 +1136,31 @@ export default function CaptureScreen() {
                 placeholder="Scan or type runner ID"
                 style={{ fontSize: '24px', height: '56px' }}
               />
+              <div
+                className={`focus-overlay ${!inputFocused ? 'is-visible' : ''}`}
+                onClick={() => {
+                  if (inputFocused) return;
+                  inputRef.current?.focus();
+                  setInputFocused(true);
+                }}
+                role="button"
+                tabIndex={!inputFocused ? 0 : -1}
+                aria-hidden={inputFocused}
+                onKeyDown={(event) => {
+                  if (inputFocused) return;
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    inputRef.current?.focus();
+                    setInputFocused(true);
+                  }
+                }}
+              >
+                Put cursor in scan box
+              </div>
             </div>
             <button
               type="submit"
               className="btn-lg"
-              disabled={tokenStatus === 'invalid' || tokenStatus === 'checking'}
+              disabled={tokenStatus === 'invalid' || tokenStatus === 'checking' || !runStarted || runPaused || runEnded}
               onMouseDown={handleHoldStart}
               onMouseUp={handleHoldEnd}
               onMouseLeave={handleHoldEnd}
@@ -961,48 +1169,156 @@ export default function CaptureScreen() {
             >
               Record
             </button>
-            {showGlobalStart && stationId === 'START' && (
-              <button type="button" className="secondary" onClick={handleGlobalStart}>
-                Start
-              </button>
-            )}
           </form>
 
           {toast && <div className="toast">{toast}</div>}
+          {tokenStatus === 'checking' && <div className="note">Validating pairing token...</div>}
+          {tokenStatus === 'invalid' && <div className="error">Token invalid: {tokenError}</div>}
+          {!runStarted && (
+            <div className="note">Waiting for Start signal before accepting scans.</div>
+          )}
+          {runStarted && runPaused && !runEnded && (
+            <div className="note">Run is paused. Scanning is temporarily locked.</div>
+          )}
+          {runEnded && (
+            <div className="note">Run ended. Recording is locked.</div>
+          )}
           {hasStartStation && (
             <div className="note">
               Start: {session?.globalStartMs ? new Date(session.globalStartMs).toLocaleTimeString() : 'Not set'}
             </div>
           )}
-          {tokenStatus === 'checking' && <div className="note">Validating pairing token...</div>}
-          {tokenStatus === 'invalid' && <div className="error">Token invalid: {tokenError}</div>}
-          <div className="note">Connection: {connectionLabel}</div>
-          <div className="note">
-            Last received: {lastPullAtMs ? new Date(lastPullAtMs).toLocaleTimeString() : 'never'} | Last sent: {lastPushAtMs ? new Date(lastPushAtMs).toLocaleTimeString() : 'never'}
-          </div>
-          {syncPending > 0 && <div className="note">Pending upload: {syncPending}</div>}
           {hasSyncIssue && (
             <div className="error">
-              Sync needs attention. Open technical details for error info.
+              Sync needs attention.
             </div>
           )}
-          {stationId === 'LAP_END' && (
-            <>
+          <div className="capture-inline-note">
+            <div className="tag">
+              ID format: {runnerFormatNote}
+            </div>
+            <div className="tag">-cID clears runner</div>
+            <div className="tag">--ID undo last local scan</div>
+          </div>
+            </section>
+
+            <div className="card capture-recent-sticky">
+              <div className="capture-section-title">Runner Summary</div>
               <div className="note">
-                {session?.localIdRulesOverride
-                  ? 'Local override active for this run only.'
-                  : 'Using original run config.'}
+                {(() => {
+                  const total = runnerSummaries.length;
+                  const lapsRequired = session?.lapsRequired;
+                  const completed = runnerSummaries.filter((runner) =>
+                    lapsRequired != null ? runner.lapCount >= lapsRequired : runner.finished
+                  ).length;
+                  const running = Math.max(0, total - completed);
+                  return `Running: ${running} | Completed: ${completed} | Total: ${total}`;
+                })()}
               </div>
-              <button
-                type="button"
-                className="secondary"
-                onClick={() => setShowOverrideModal(true)}
-              >
-                Change runner ID format
-              </button>
-              <div className="note">This will not change the original run config.</div>
-            </>
-          )}
+              <div className="capture-table-wrap">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Runner</th>
+                      <th>Laps</th>
+                      <th>Finished</th>
+                      <th>Flags</th>
+                      <th>Last Seen</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {runnerSummaries.map((runner) => {
+                      const lapsRequired = session?.lapsRequired;
+                      const completedByLaps =
+                        lapsRequired != null && runner.lapCount >= lapsRequired;
+                      const lastLap =
+                        lapsRequired != null &&
+                        !completedByLaps &&
+                        runner.lapCount === lapsRequired - 1;
+                      const rowClass = completedByLaps || runner.finished ? 'row-success' : lastLap ? 'row-warning' : '';
+                      return (
+                        <tr key={runner.runnerId} className={rowClass}>
+                          <td>{runner.runnerId}</td>
+                          <td>
+                            {runner.lapCount}/{session?.lapsRequired ?? '-'}
+                          </td>
+                          <td>{completedByLaps || runner.finished ? 'Yes' : 'No'}</td>
+                          <td>{runner.flags.join(', ') || '-'}</td>
+                          <td>{runner.lastSeenAtMs ? new Date(runner.lastSeenAtMs).toLocaleTimeString() : '-'}</td>
+                      </tr>
+                    );
+                    })}
+                    {runnerSummaries.length === 0 && (
+                      <tr>
+                        <td colSpan={5}>No runners yet.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <section className="card capture-summary">
+              <div className="capture-section-title">Recent Scans (this station)</div>
+              <div className="capture-table-wrap">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Time</th>
+                      <th>Runner</th>
+                      <th>Type</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recentEvents.map((event) => (
+                      <tr key={event.id}>
+                        <td>{new Date(event.capturedAtMs).toLocaleTimeString()}</td>
+                        <td>{event.runnerId}</td>
+                        <td>{recentTypeById[event.id] || displayEventType(event.type)}</td>
+                      </tr>
+                    ))}
+                    {recentEvents.length === 0 && (
+                      <tr>
+                        <td colSpan={3}>No scans yet.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+          </section>
+        </div>
+
+        <section className="capture-ops card">
+          <div className="capture-section-title">Run Controls</div>
+          <div className="capture-footer-actions">
+            {isControlStation && (
+              <>
+                <button type="button" className="secondary" onClick={() => setShowOverrideModal(true)}>
+                  Change runner ID format
+                </button>
+                <button type="button" className="secondary" onClick={() => setShowResetConfirm(true)}>
+                  Reset Session Data
+                </button>
+                <button type="button" className="secondary" onClick={handleExport}>
+                  Export CSV
+                </button>
+              </>
+            )}
+            <button
+              type="button"
+              className="secondary"
+              onClick={handleProjectorToggle}
+              disabled={!stationId}
+            >
+              {projectorOpen ? 'Close Projector View' : 'Projector View'}
+            </button>
+          </div>
+          <div className="note">
+            ID format, reset session data, export csv apply only to START, Lap Start / End, or FINISH station.
+          </div>
+        </section>
+        <section className="capture-diagnostics card">
           <button
             type="button"
             className="secondary"
@@ -1070,131 +1386,13 @@ export default function CaptureScreen() {
               </div>
             </>
           )}
-          <div className="capture-inline-note">
-            <div className="tag">
-              ID format: {runnerFormatNote}
-            </div>
-          </div>
-          <div className="capture-inline-note">
-            <div className="tag">-cID clears runner</div>
-            <div className="tag">--ID undo last local scan</div>
-          </div>
-
         </section>
-
-        <section className="capture-middle card">
-          <div className="capture-section-title">Recent Scans (this station)</div>
-          <div className="capture-table-wrap">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Time</th>
-                  <th>Runner</th>
-                  <th>Type</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recentEvents.map((event) => (
-                  <tr key={event.id}>
-                    <td>{new Date(event.capturedAtMs).toLocaleTimeString()}</td>
-                    <td>{event.runnerId}</td>
-                    <td>{event.type}</td>
-                  </tr>
-                ))}
-                {recentEvents.length === 0 && (
-                  <tr>
-                    <td colSpan={3}>No scans yet.</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        <section className="capture-right card">
-          <div className="capture-section-title">Runner Summary</div>
-          <div className="note">
-            {(() => {
-              const total = runnerSummaries.length;
-              const lapsRequired = session?.lapsRequired;
-              const completed = runnerSummaries.filter((runner) =>
-                lapsRequired != null ? runner.lapCount >= lapsRequired : runner.finished
-              ).length;
-              const running = Math.max(0, total - completed);
-              return `Running: ${running} | Completed: ${completed} | Total: ${total}`;
-            })()}
-          </div>
-          <div className="capture-table-wrap">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Runner</th>
-                  <th>Laps</th>
-                  <th>Finished</th>
-                  <th>Flags</th>
-                  <th>Last Seen</th>
-                </tr>
-              </thead>
-              <tbody>
-                {runnerSummaries.map((runner) => {
-                  const lapsRequired = session?.lapsRequired;
-                  const completedByLaps =
-                    lapsRequired != null && runner.lapCount >= lapsRequired;
-                  const lastLap =
-                    lapsRequired != null &&
-                    !completedByLaps &&
-                    runner.lapCount === lapsRequired - 1;
-                  const rowClass = completedByLaps || runner.finished ? 'row-success' : lastLap ? 'row-warning' : '';
-                  return (
-                    <tr key={runner.runnerId} className={rowClass}>
-                      <td>{runner.runnerId}</td>
-                      <td>
-                        {runner.lapCount}/{session?.lapsRequired ?? '-'}
-                      </td>
-                      <td>{completedByLaps || runner.finished ? 'Yes' : 'No'}</td>
-                      <td>{runner.flags.join(', ') || '-'}</td>
-                      <td>{runner.lastSeenAtMs ? new Date(runner.lastSeenAtMs).toLocaleTimeString() : '-'}</td>
-                  </tr>
-                );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      </div>
-
-      <div className="capture-footer card">
-        <div className="capture-footer-actions">
-          {stationId === 'LAP_END' && (
-            <>
-              <button type="button" className="secondary" onClick={() => setShowResetConfirm(true)}>
-                Reset Session Data
-              </button>
-              <button type="button" className="secondary" onClick={handleExport}>
-                Export CSV
-              </button>
-            </>
-          )}
-          <button
-            type="button"
-            className="secondary"
-            onClick={handleProjectorToggle}
-            disabled={!stationId}
-          >
-            {projectorOpen ? 'Close Projector View' : 'Projector View'}
-          </button>
-        </div>
-        <div className="note">
-          {stationId === 'LAP_END'
-            ? 'Warning: reset clears local history and broadcasts a reset to all stations.'
-            : 'Reset and export are available only at the Lap Start / End station.'}
-        </div>
       </div>
       {showOverrideModal && (
         <div className="modal-backdrop" role="dialog" aria-modal="true">
           <div className="modal-card" style={{ width: 'min(560px, 100%)' }}>
             <div className="modal-header">
-              <div className="text-base font-semibold">Change config for this run only</div>
+              <div className="text-base font-semibold">Change runner ID format</div>
               <button type="button" className="btn-link" onClick={() => setShowOverrideModal(false)}>
                 Close
               </button>
@@ -1319,6 +1517,41 @@ export default function CaptureScreen() {
                   }}
                 >
                   Reset Now
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {showEndConfirm && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true">
+          <div className="modal-card">
+            <div className="modal-header">
+              <div className="text-base font-semibold">End Run</div>
+              <button type="button" className="btn-link" onClick={() => setShowEndConfirm(false)}>
+                Close
+              </button>
+            </div>
+            <div className="grid">
+              <div className="note" style={{ fontSize: '14px' }}>
+                End run now? This will stop all stations from accepting scans.
+              </div>
+              <div className="reset-actions">
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => setShowEndConfirm(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setShowEndConfirm(false);
+                    await handleGlobalEnd();
+                  }}
+                >
+                  Confirm End
                 </button>
               </div>
             </div>
