@@ -876,23 +876,93 @@ function ScannerModal({ onClose, onDetected }) {
   const controlsRef = useRef(null);
   const [supported, setSupported] = useState(true);
   const [err, setErr] = useState("");
-  const [facingMode, setFacingMode] = useState("environment");
+  const [facingMode, setFacingMode] = useState("user");
+  const [preferredDeviceId, setPreferredDeviceId] = useState("");
+  const [activeCameraLabel, setActiveCameraLabel] = useState("");
+  const [activeCameraId, setActiveCameraId] = useState("");
+  const [debugError, setDebugError] = useState("");
+  const [lastTriedMode, setLastTriedMode] = useState("user");
+
+  const stopActiveMedia = () => {
+    if (controlsRef.current) {
+      try { controlsRef.current.stop(); } catch {}
+      controlsRef.current = null;
+    }
+    if (streamRef.current) {
+      try { streamRef.current.getTracks().forEach((t) => t.stop()); } catch {}
+      streamRef.current = null;
+    }
+    if (videoRef.current) {
+      try { videoRef.current.pause(); videoRef.current.srcObject = null; } catch {}
+    }
+  };
+
+  const pickDeviceForMode = (devices, mode, currentId) => {
+    if (!Array.isArray(devices) || devices.length === 0) return null;
+    const list = devices.filter((d) => d && d.kind === "videoinput");
+    if (!list.length) return null;
+    const norm = (s) => String(s || "").toLowerCase();
+    const backWords = ["back", "rear", "environment", "world"];
+    const frontWords = ["front", "user", "facetime"];
+    const wanted = mode === "user" ? frontWords : backWords;
+    const match = list.find((d) => wanted.some((w) => norm(d.label).includes(w)));
+    if (match) return match;
+    const other = list.find((d) => d.deviceId && d.deviceId !== currentId);
+    if (other) return other;
+    return list[0];
+  };
+
   useEffect(() => {
     let cleanupFn = null;
     const hasBarcode = "BarcodeDetector" in window;
+    let cancelled = false;
     const start = async () => {
       try {
         setErr("");
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode } });
+        setDebugError("");
+        setLastTriedMode(facingMode);
+        stopActiveMedia();
+        // iOS Safari can throw AbortError when switching camera too quickly.
+        await new Promise((resolve) => setTimeout(resolve, 120));
+        const candidates = [];
+        if (preferredDeviceId) candidates.push({ deviceId: { exact: preferredDeviceId } });
+        candidates.push({ facingMode: { exact: facingMode } });
+        candidates.push({ facingMode });
+        candidates.push(true);
+        let stream = null;
+        const candidateErrors = [];
+        for (const video of candidates) {
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({ video });
+            break;
+          } catch (openErr) {
+            const hint = typeof video === "boolean"
+              ? "default"
+              : (video?.deviceId ? "deviceId" : (video?.facingMode ? "facingMode" : "video"));
+            const msg = `${hint}: ${openErr?.name || "Error"} ${openErr?.message || ""}`.trim();
+            candidateErrors.push(msg);
+          }
+        }
+        if (!stream) throw new Error(candidateErrors.join(" | ") || "Camera unavailable.");
+        if (cancelled) {
+          try { stream.getTracks().forEach((t) => t.stop()); } catch {}
+          return;
+        }
         streamRef.current = stream;
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
           await videoRef.current.play();
         }
+        try {
+          const track = stream.getVideoTracks?.()[0];
+          const activeId = track?.getSettings?.()?.deviceId;
+          setActiveCameraLabel(track?.label || "");
+          setActiveCameraId(activeId || "");
+          if (activeId) setPreferredDeviceId(activeId);
+        } catch {}
         if (hasBarcode) {
           setSupported(true);
           const detector = new window.BarcodeDetector({ formats: ["qr_code", "code_128", "code_39"] });
-          let cancelled = false;
           const tick = async () => {
             if (cancelled) return;
             try {
@@ -928,17 +998,30 @@ function ScannerModal({ onClose, onDetected }) {
           }
         }
       } catch (e) {
-        setErr(e.message || "Camera unavailable.");
+        const full = `${e?.name || "Error"}: ${e?.message || "Camera unavailable."}`;
+        setErr(e?.message || "Camera unavailable.");
+        setDebugError(full);
       }
     };
     start();
     return () => {
-      if (controlsRef.current) { try { controlsRef.current.stop(); } catch {} controlsRef.current = null; }
-      if (streamRef.current) { try { streamRef.current.getTracks().forEach((t) => t.stop()); } catch {} streamRef.current = null; }
-      if (videoRef.current) { try { videoRef.current.pause(); videoRef.current.srcObject = null; } catch {} }
+      cancelled = true;
+      stopActiveMedia();
       if (typeof cleanupFn === "function") cleanupFn();
     };
   }, [onDetected, facingMode]);
+
+  const handleSwitchCamera = async () => {
+    const nextMode = facingMode === "environment" ? "user" : "environment";
+    try {
+      if (navigator.mediaDevices?.enumerateDevices) {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const target = pickDeviceForMode(devices, nextMode, preferredDeviceId);
+        if (target?.deviceId) setPreferredDeviceId(target.deviceId);
+      }
+    } catch {}
+    setFacingMode(nextMode);
+  };
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
@@ -957,9 +1040,15 @@ function ScannerModal({ onClose, onDetected }) {
           )}
           {err && <div className="text-sm text-red-600">{err}</div>}
           <div className="text-xs text-gray-500">Tip: Point the camera at the group QR.</div>
+          <div className="text-[11px] text-slate-600 border rounded bg-slate-50 p-2 break-all">
+            <div><span className="font-medium">Debug mode:</span> {lastTriedMode}</div>
+            <div><span className="font-medium">Active camera:</span> {activeCameraLabel || "-"}</div>
+            <div><span className="font-medium">Device ID:</span> {activeCameraId || "-"}</div>
+            <div><span className="font-medium">Last media error:</span> {debugError || "-"}</div>
+          </div>
         </div>
         <div className="px-3 py-2 border-t flex items-center justify-between gap-2">
-          <button type="button" onClick={() => setFacingMode((prev) => (prev === "environment" ? "user" : "environment"))} className="px-3 py-1.5 border rounded hover:bg-gray-50">Switch Camera</button>
+          <button type="button" onClick={handleSwitchCamera} className="px-3 py-1.5 border rounded hover:bg-gray-50">Switch Camera</button>
           <button onClick={onClose} className="px-3 py-1.5 border rounded hover:bg-gray-50">Close</button>
         </div>
       </div>
