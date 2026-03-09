@@ -879,13 +879,7 @@ function ScannerModal({ onClose, onDetected }) {
   const [err, setErr] = useState("");
   const [facingMode, setFacingMode] = useState("user");
   const [preferredDeviceId, setPreferredDeviceId] = useState("");
-  const [activeCameraLabel, setActiveCameraLabel] = useState("");
   const [activeCameraId, setActiveCameraId] = useState("");
-  const [debugError, setDebugError] = useState("");
-  const [lastTriedMode, setLastTriedMode] = useState("user");
-  const [debugEngine, setDebugEngine] = useState("-");
-  const [debugZxingDeviceId, setDebugZxingDeviceId] = useState("-");
-  const [debugCandidates, setDebugCandidates] = useState("");
 
   useEffect(() => {
     onDetectedRef.current = onDetected;
@@ -927,10 +921,6 @@ function ScannerModal({ onClose, onDetected }) {
     const start = async () => {
       try {
         setErr("");
-        setDebugError("");
-        setLastTriedMode(facingMode);
-        setDebugEngine("-");
-        setDebugZxingDeviceId("-");
         stopActiveMedia();
         // iOS Safari can throw AbortError when switching camera too quickly.
         await new Promise((resolve) => setTimeout(resolve, 120));
@@ -939,12 +929,6 @@ function ScannerModal({ onClose, onDetected }) {
         candidates.push({ facingMode });
         if (preferredDeviceId) candidates.push({ deviceId: { exact: preferredDeviceId } });
         candidates.push(true);
-        setDebugCandidates(candidates.map((video) => {
-          if (typeof video === "boolean") return "default";
-          if (video?.deviceId) return "deviceId";
-          if (video?.facingMode) return "facingMode";
-          return "video";
-        }).join(" -> "));
         let stream = null;
         let resolvedDeviceId = preferredDeviceId || "";
         const candidateErrors = [];
@@ -973,7 +957,6 @@ function ScannerModal({ onClose, onDetected }) {
         try {
           const track = stream.getVideoTracks?.()[0];
           const activeId = track?.getSettings?.()?.deviceId;
-          setActiveCameraLabel(track?.label || "");
           setActiveCameraId(activeId || "");
           if (activeId) {
             setPreferredDeviceId(activeId);
@@ -981,7 +964,6 @@ function ScannerModal({ onClose, onDetected }) {
           }
         } catch {}
         if (hasBarcode) {
-          setDebugEngine("BarcodeDetector");
           setSupported(true);
           const detector = new window.BarcodeDetector({ formats: ["qr_code", "code_128", "code_39"] });
           const tick = async () => {
@@ -1002,8 +984,6 @@ function ScannerModal({ onClose, onDetected }) {
           try {
             const { BrowserMultiFormatReader } = await import("@zxing/browser");
             setSupported(true);
-            setDebugEngine("ZXing");
-            setDebugZxingDeviceId(resolvedDeviceId || "(null)");
             const codeReader = new BrowserMultiFormatReader();
             const controls = await codeReader.decodeFromVideoDevice(resolvedDeviceId || null, videoRef.current, (result, _err, c) => {
               if (result) {
@@ -1017,14 +997,11 @@ function ScannerModal({ onClose, onDetected }) {
             controlsRef.current = controls;
             cleanupFn = () => { try { controls.stop(); codeReader.reset(); } catch {} };
           } catch {
-            setDebugEngine("ZXing-failed");
             setSupported(false);
           }
         }
       } catch (e) {
-        const full = `${e?.name || "Error"}: ${e?.message || "Camera unavailable."}`;
         setErr(e?.message || "Camera unavailable.");
-        setDebugError(full);
       }
     };
     start();
@@ -1064,16 +1041,6 @@ function ScannerModal({ onClose, onDetected }) {
           )}
           {err && <div className="text-sm text-red-600">{err}</div>}
           <div className="text-xs text-gray-500">Tip: Point the camera at the group QR.</div>
-          <div className="text-[11px] text-slate-600 border rounded bg-slate-50 p-2 break-all">
-            <div><span className="font-medium">Debug marker:</span> 1135H</div>
-            <div><span className="font-medium">Engine:</span> {debugEngine}</div>
-            <div><span className="font-medium">Debug mode:</span> {lastTriedMode}</div>
-            <div><span className="font-medium">Candidate order:</span> {debugCandidates || "-"}</div>
-            <div><span className="font-medium">Active camera:</span> {activeCameraLabel || "-"}</div>
-            <div><span className="font-medium">Device ID:</span> {activeCameraId || "-"}</div>
-            <div><span className="font-medium">ZXing device request:</span> {debugZxingDeviceId || "-"}</div>
-            <div><span className="font-medium">Last media error:</span> {debugError || "-"}</div>
-          </div>
         </div>
         <div className="px-3 py-2 border-t flex items-center justify-between gap-2">
           <button type="button" onClick={handleSwitchCamera} className="px-3 py-1.5 border rounded hover:bg-gray-50">Switch Camera</button>
