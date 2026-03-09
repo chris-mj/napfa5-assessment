@@ -1966,6 +1966,7 @@ function ScannerModal({ onClose, onDetected }) {
   const videoRef = useRef(null)
   const streamRef = useRef(null)
   const controlsRef = useRef(null)
+  const onDetectedRef = useRef(onDetected)
   const [supported, setSupported] = useState(true)
   const [err, setErr] = useState('')
   const [facingMode, setFacingMode] = useState('user')
@@ -1974,6 +1975,10 @@ function ScannerModal({ onClose, onDetected }) {
   const [activeCameraId, setActiveCameraId] = useState('')
   const [debugError, setDebugError] = useState('')
   const [lastTriedMode, setLastTriedMode] = useState('user')
+
+  useEffect(() => {
+    onDetectedRef.current = onDetected
+  }, [onDetected])
 
   const stopActiveMedia = () => {
     if (controlsRef.current) {
@@ -2019,9 +2024,9 @@ function ScannerModal({ onClose, onDetected }) {
         await new Promise((resolve) => setTimeout(resolve, 120))
 
         const candidates = []
-        if (preferredDeviceId) candidates.push({ deviceId: { exact: preferredDeviceId } })
         candidates.push({ facingMode: { exact: facingMode } })
         candidates.push({ facingMode })
+        if (preferredDeviceId) candidates.push({ deviceId: { exact: preferredDeviceId } })
         candidates.push(true)
 
         let stream = null
@@ -2067,7 +2072,7 @@ function ScannerModal({ onClose, onDetected }) {
               const frame = await detector.detect(videoRef.current)
               if (frame && frame.length > 0) {
                 const value = frame[0].rawValue
-                if (value) { onDetected(value) }
+                if (value) { onDetectedRef.current?.(value) }
                 return
               }
             } catch {}
@@ -2083,7 +2088,7 @@ function ScannerModal({ onClose, onDetected }) {
             const controls = await codeReader.decodeFromVideoDevice(null, videoRef.current, (result, _err, controls) => {
               if (result) {
                 const v = result.getText()
-                if (v) { controls.stop(); onDetected(v) }
+                if (v) { controls.stop(); onDetectedRef.current?.(v) }
               }
             })
             controlsRef.current = controls
@@ -2105,14 +2110,14 @@ function ScannerModal({ onClose, onDetected }) {
       stopActiveMedia()
       if (typeof cleanupFn === 'function') cleanupFn()
     }
-  }, [onDetected, facingMode])
+  }, [facingMode])
 
   const handleSwitchCamera = async () => {
     const nextMode = facingMode === 'environment' ? 'user' : 'environment'
     try {
       if (navigator.mediaDevices?.enumerateDevices) {
         const devices = await navigator.mediaDevices.enumerateDevices()
-        const target = pickDeviceForMode(devices, nextMode, preferredDeviceId)
+        const target = pickDeviceForMode(devices, nextMode, activeCameraId || preferredDeviceId)
         if (target?.deviceId) setPreferredDeviceId(target.deviceId)
       }
     } catch {}
@@ -2139,6 +2144,7 @@ function ScannerModal({ onClose, onDetected }) {
           {err && <div className="text-sm text-red-600">{err}</div>}
           <div className="text-xs text-gray-500">Tip: Point the camera at the QR/Barcode on the student card.</div>
           <div className="text-[11px] text-slate-600 border rounded bg-slate-50 p-2 break-all">
+            <div><span className="font-medium">Debug marker:</span> 1135H</div>
             <div><span className="font-medium">Debug mode:</span> {lastTriedMode}</div>
             <div><span className="font-medium">Active camera:</span> {activeCameraLabel || '-'}</div>
             <div><span className="font-medium">Device ID:</span> {activeCameraId || '-'}</div>
