@@ -456,9 +456,25 @@ export default function SessionGroups({ session, membership, canManage }) {
       if (!buckets.has(key)) buckets.set(key, []);
       buckets.get(key).push(s);
     });
+    const splitEvenlyByTargetSize = (arr, targetSize) => {
+      const total = arr.length;
+      if (!total) return [];
+      const groupCount = Math.max(1, Math.ceil(total / targetSize));
+      const base = Math.floor(total / groupCount);
+      const remainder = total % groupCount;
+      const out = [];
+      let cursor = 0;
+      for (let i = 0; i < groupCount; i += 1) {
+        const take = base + (i < remainder ? 1 : 0);
+        out.push(arr.slice(cursor, cursor + take));
+        cursor += take;
+      }
+      return out;
+    };
+
     const chunks = [];
     buckets.forEach((arr) => {
-      for (let i = 0; i < arr.length; i += size) chunks.push(arr.slice(i, i + size));
+      splitEvenlyByTargetSize(arr, size).forEach((chunk) => chunks.push(chunk));
     });
     if (!chunks.length) return;
 

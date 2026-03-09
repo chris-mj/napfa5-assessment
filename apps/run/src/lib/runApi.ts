@@ -161,3 +161,65 @@ export async function ingestRunEvents(input: {
     status: response.status
   };
 }
+
+export async function fetchRunHealth(input: {
+  pairingToken: string;
+  sessionId?: string;
+  runConfigId?: string;
+}) {
+  const fallbackFromValidate = async () => {
+    const { response, body } = await postValidateToken(input.pairingToken);
+    if (!response.ok) {
+      throw new Error(body?.error || `health fallback failed (${response.status})`);
+    }
+    const resolvedRunConfigId = body.runConfigId as string;
+    const resolvedSessionId = body.sessionId as string;
+    return {
+      ok: true,
+      runConfigId: resolvedRunConfigId,
+      sessionId: resolvedSessionId,
+      name: body.name as string | undefined,
+      templateKey: body.templateKey as string | undefined,
+      lapsRequired: body.lapsRequired as number | undefined,
+      enforcement: body.enforcement as string | undefined,
+      scanGapMs: body.scanGapMs as number | undefined,
+      matchesSession: input.sessionId ? String(input.sessionId) === String(resolvedSessionId) : true,
+      matchesRunConfig: input.runConfigId ? String(input.runConfigId) === String(resolvedRunConfigId) : true
+    };
+  };
+
+  // In local run-app dev (localhost:5174), /api/run/health may not exist.
+  // Skip direct health endpoint fetch to avoid noisy 404 logs and use token-validate fallback.
+  if (import.meta.env.DEV && !getRunApiBaseUrl()) {
+    return fallbackFromValidate();
+  }
+
+  const url = new URL(runApiUrl('/api/run/health'), window.location.origin);
+  if (input.sessionId) url.searchParams.set('sessionId', input.sessionId);
+  if (input.runConfigId) url.searchParams.set('runConfigId', input.runConfigId);
+
+  const response = await fetch(url.toString(), {
+    headers: { Authorization: `Bearer ${input.pairingToken}` },
+    cache: 'no-store'
+  });
+  const contentType = response.headers.get('content-type') || '';
+  if (response.status === 404 || response.status === 405 || !contentType.toLowerCase().includes('application/json')) {
+    return fallbackFromValidate();
+  }
+  const body = await parseJsonOrThrow(response, 'health');
+  if (!response.ok) {
+    throw new Error(body.error || `health failed (${response.status})`);
+  }
+  return {
+    ok: Boolean(body.ok),
+    runConfigId: body.runConfigId as string,
+    sessionId: body.sessionId as string,
+    name: body.name as string | undefined,
+    templateKey: body.templateKey as string | undefined,
+    lapsRequired: body.lapsRequired as number | undefined,
+    enforcement: body.enforcement as string | undefined,
+    scanGapMs: body.scanGapMs as number | undefined,
+    matchesSession: Boolean(body.matchesSession),
+    matchesRunConfig: Boolean(body.matchesRunConfig)
+  };
+}

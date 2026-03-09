@@ -25,7 +25,7 @@ export default function Navbar({ user, onLogout }) {
   const isAssessActive = ["/sessions", "/add-attempt", "/add-attempt-group", "/pft-calculator", "/view-score", "/platform-owner"].some(p => pathname.startsWith(p));
   const isManageActive = ["/manage-students", "/modify-user"].some(p => pathname.startsWith(p));
   const isLearnActive = ["/target-score", "/learning-hub"].some(p => pathname.startsWith(p));
-  const isInsightsActive = ["/charts", "/audit", "/gamification"].some(p => pathname.startsWith(p));
+  const isInsightsActive = ["/charts", "/audit", "/gamification", "/run-ops"].some(p => pathname.startsWith(p));
   const isContactActive = ["/contact", "/user-guide"].some(p => pathname.startsWith(p));
 
   useEffect(() => {
@@ -207,6 +207,7 @@ export default function Navbar({ user, onLogout }) {
                           <NavLink to="/gamification" onClick={() => setInsightsOpen(false)} className={({ isActive }) => `block px-3 py-2 text-slate-700 hover:bg-blue-50 ${isActive ? 'bg-blue-100/70 text-blue-900' : ''}`} role="menuitem">Challenge Hub</NavLink>
                           <NavLink to="/charts" onClick={() => setInsightsOpen(false)} className={({ isActive }) => `block px-3 py-2 text-slate-700 hover:bg-blue-50 ${isActive ? 'bg-blue-100/70 text-blue-900' : ''}`} role="menuitem">Charts</NavLink>
                           <NavLink to="/audit" onClick={() => setInsightsOpen(false)} className={({ isActive }) => `block px-3 py-2 text-slate-700 hover:bg-blue-50 ${isActive ? 'bg-blue-100/70 text-blue-900' : ''}`} role="menuitem">Audit</NavLink>
+                          <NavLink to="/run-ops" onClick={() => setInsightsOpen(false)} className={({ isActive }) => `block px-3 py-2 text-slate-700 hover:bg-blue-50 ${isActive ? 'bg-blue-100/70 text-blue-900' : ''}`} role="menuitem">Run Ops</NavLink>
                           {isOwner && (
                             <NavLink to="/summary-data" onClick={() => setInsightsOpen(false)} className={({ isActive }) => `block px-3 py-2 text-slate-700 hover:bg-blue-50 ${isActive ? 'bg-blue-100/70 text-blue-900' : ''}`} role="menuitem">Summary Data</NavLink>
                           )}
@@ -356,6 +357,7 @@ export default function Navbar({ user, onLogout }) {
                       <NavLink to="/gamification" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Challenge Hub</NavLink>
                       <NavLink to="/charts" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Charts</NavLink>
                       <NavLink to="/audit" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Audit</NavLink>
+                      <NavLink to="/run-ops" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Run Ops</NavLink>
                       {isOwner && (
                         <NavLink to="/summary-data" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Summary Data</NavLink>
                       )}

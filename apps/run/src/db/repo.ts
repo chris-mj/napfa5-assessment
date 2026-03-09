@@ -1,5 +1,5 @@
 import Dexie from 'dexie';
-import { db, type EventRow, type SessionRow } from './db';
+import { db, type EventRow, type RunnerIdRules, type SessionRow } from './db';
 
 export async function createSession(
   templateKey: string,
@@ -9,7 +9,18 @@ export async function createSession(
   pairingToken?: string,
   scanGapMs?: number,
   name?: string,
-  runnerIdFormat?: 'numeric' | 'classIndex'
+  runnerIdFormat?: 'numeric' | 'classIndex' | 'structured4',
+  runnerIdMin?: number,
+  runnerIdMax?: number,
+  classPrefixes?: string[],
+  classIndexMin?: number,
+  classIndexMax?: number,
+  structuredLevelMin?: number,
+  structuredLevelMax?: number,
+  structuredClassMin?: number,
+  structuredClassMax?: number,
+  structuredIndexMin?: number,
+  structuredIndexMax?: number
 ): Promise<string> {
   const id = crypto.randomUUID();
   const record: SessionRow = {
@@ -18,6 +29,17 @@ export async function createSession(
     templateKey,
     lapsRequired,
     runnerIdFormat,
+    runnerIdMin,
+    runnerIdMax,
+    classPrefixes,
+    classIndexMin,
+    classIndexMax,
+    structuredLevelMin,
+    structuredLevelMax,
+    structuredClassMin,
+    structuredClassMax,
+    structuredIndexMin,
+    structuredIndexMax,
     enforcement,
     createdAt: Date.now(),
     globalStartMs,
@@ -38,7 +60,18 @@ export async function upsertTokenSession(input: {
   scanGapMs?: number;
   pairingToken: string;
   name?: string;
-  runnerIdFormat?: 'numeric' | 'classIndex';
+  runnerIdFormat?: 'numeric' | 'classIndex' | 'structured4';
+  runnerIdMin?: number;
+  runnerIdMax?: number;
+  classPrefixes?: string[];
+  classIndexMin?: number;
+  classIndexMax?: number;
+  structuredLevelMin?: number;
+  structuredLevelMax?: number;
+  structuredClassMin?: number;
+  structuredClassMax?: number;
+  structuredIndexMin?: number;
+  structuredIndexMax?: number;
 }): Promise<string> {
   const record: SessionRow = {
     id: input.runConfigId,
@@ -48,6 +81,17 @@ export async function upsertTokenSession(input: {
     templateKey: input.templateKey,
     lapsRequired: input.lapsRequired,
     runnerIdFormat: input.runnerIdFormat ?? 'numeric',
+    runnerIdMin: input.runnerIdMin,
+    runnerIdMax: input.runnerIdMax,
+    classPrefixes: input.classPrefixes,
+    classIndexMin: input.classIndexMin,
+    classIndexMax: input.classIndexMax,
+    structuredLevelMin: input.structuredLevelMin,
+    structuredLevelMax: input.structuredLevelMax,
+    structuredClassMin: input.structuredClassMin,
+    structuredClassMax: input.structuredClassMax,
+    structuredIndexMin: input.structuredIndexMin,
+    structuredIndexMax: input.structuredIndexMax,
     enforcement: input.enforcement,
     createdAt: Date.now(),
     pairingToken: input.pairingToken,
@@ -150,8 +194,56 @@ export async function deleteSession(sessionId: string): Promise<void> {
   });
 }
 
-export async function updateSessionGlobalStart(sessionId: string, globalStartMs: number): Promise<void> {
+export async function updateSessionGlobalStart(sessionId: string, globalStartMs?: number): Promise<void> {
   await db.sessions.update(sessionId, { globalStartMs });
+}
+
+export async function updateSessionGlobalEnd(sessionId: string, globalEndMs?: number): Promise<void> {
+  await db.sessions.update(sessionId, { globalEndMs });
+}
+
+export async function updateSessionGlobalPaused(sessionId: string, globalPaused?: boolean): Promise<void> {
+  await db.sessions.update(sessionId, { globalPaused });
+}
+
+export async function updateSessionLocalIdRules(
+  sessionId: string,
+  rules: RunnerIdRules | null
+): Promise<void> {
+  await db.sessions.update(sessionId, {
+    localIdRulesOverride: rules ?? undefined,
+    localIdRulesOverrideUpdatedAt: rules ? Date.now() : undefined
+  });
+}
+
+export async function updateSessionRemoteConfig(
+  sessionId: string,
+  patch: Partial<
+    Pick<
+      SessionRow,
+      | 'name'
+      | 'remoteSessionId'
+      | 'runConfigId'
+      | 'templateKey'
+      | 'lapsRequired'
+      | 'enforcement'
+      | 'scanGapMs'
+      | 'runnerIdFormat'
+      | 'runnerIdMin'
+      | 'runnerIdMax'
+      | 'classPrefixes'
+      | 'classIndexMin'
+      | 'classIndexMax'
+      | 'structuredLevelMin'
+      | 'structuredLevelMax'
+      | 'structuredClassMin'
+      | 'structuredClassMax'
+      | 'structuredIndexMin'
+      | 'structuredIndexMax'
+    >
+  >
+): Promise<void> {
+  await db.sessions.update(sessionId, patch);
 }
 
 function escapeCsv(value: string | number | undefined): string {

@@ -1,5 +1,20 @@
 import Dexie, { type Table } from 'dexie';
 
+export type RunnerIdRules = {
+  runnerIdFormat?: 'numeric' | 'classIndex' | 'structured4';
+  runnerIdMin?: number;
+  runnerIdMax?: number;
+  classPrefixes?: string[];
+  classIndexMin?: number;
+  classIndexMax?: number;
+  structuredLevelMin?: number;
+  structuredLevelMax?: number;
+  structuredClassMin?: number;
+  structuredClassMax?: number;
+  structuredIndexMin?: number;
+  structuredIndexMax?: number;
+};
+
 export type SessionRow = {
   id: string;
   name?: string;
@@ -7,12 +22,27 @@ export type SessionRow = {
   runConfigId?: string;
   templateKey: string;
   lapsRequired: number;
-  runnerIdFormat?: 'numeric' | 'classIndex';
+  runnerIdFormat?: 'numeric' | 'classIndex' | 'structured4';
+  runnerIdMin?: number;
+  runnerIdMax?: number;
+  classPrefixes?: string[];
+  classIndexMin?: number;
+  classIndexMax?: number;
+  structuredLevelMin?: number;
+  structuredLevelMax?: number;
+  structuredClassMin?: number;
+  structuredClassMax?: number;
+  structuredIndexMin?: number;
+  structuredIndexMax?: number;
   enforcement?: string;
   createdAt: number;
   globalStartMs?: number;
+  globalPaused?: boolean;
+  globalEndMs?: number;
   pairingToken?: string;
   scanGapMs?: number;
+  localIdRulesOverride?: RunnerIdRules;
+  localIdRulesOverrideUpdatedAt?: number;
 };
 
 export type EventRow = {
@@ -23,6 +53,7 @@ export type EventRow = {
   type: string;
   capturedAtMs: number;
   refEventId?: string;
+  payload?: Record<string, any>;
   syncedAtMs?: number;
   source?: 'local' | 'remote';
 };
@@ -54,6 +85,11 @@ export class RunDb extends Dexie {
         'id, sessionId, runnerId, stationId, capturedAtMs, syncedAtMs, [sessionId+runnerId], [sessionId+capturedAtMs], [sessionId+syncedAtMs]'
     });
     this.version(5).stores({
+      sessions: 'id, createdAt, name, remoteSessionId, runConfigId',
+      events:
+        'id, sessionId, runnerId, stationId, capturedAtMs, syncedAtMs, [sessionId+runnerId], [sessionId+capturedAtMs], [sessionId+syncedAtMs]'
+    });
+    this.version(6).stores({
       sessions: 'id, createdAt, name, remoteSessionId, runConfigId',
       events:
         'id, sessionId, runnerId, stationId, capturedAtMs, syncedAtMs, [sessionId+runnerId], [sessionId+capturedAtMs], [sessionId+syncedAtMs]'

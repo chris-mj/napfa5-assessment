@@ -17,7 +17,7 @@ import SessionGroups from "../components/SessionGroups";
 const ROLE_CAN_MANAGE = ["superadmin", "admin"];
 const RESET_RUN_ENDPOINT = import.meta.env.DEV
     ? 'http://localhost:3000/api/run/resetConfig'
-    : 'https://napfa5.sg/api/run/resetConfig';
+    : 'https://napfa5-assessment.vercel.app/api/run/resetConfig';
 
 function RosterRow({ s, sessionId, canRecord, onSaved }) {
     const [open, setOpen] = useState(false);
@@ -94,6 +94,14 @@ export default function SessionDetail({ user }) {
     });
     const [runConfigSaving, setRunConfigSaving] = useState(false);
     const [runConfigFlash, setRunConfigFlash] = useState("");
+    const [showRunDataDeleteModal, setShowRunDataDeleteModal] = useState(false);
+    const [pendingRunDataDeleteConfig, setPendingRunDataDeleteConfig] = useState(null);
+    const [runDataDeleteBusy, setRunDataDeleteBusy] = useState(false);
+    const [showRunConfigDeleteModal, setShowRunConfigDeleteModal] = useState(false);
+    const [pendingDeleteRunConfig, setPendingDeleteRunConfig] = useState(null);
+    const [runConfigDeleteBusy, setRunConfigDeleteBusy] = useState(false);
+    const [showSessionDeleteModal, setShowSessionDeleteModal] = useState(false);
+    const [sessionDeleteBusy, setSessionDeleteBusy] = useState(false);
     const [activeTab, setActiveTab] = useState(() => {
         if (location.hash === '#scores') return 'scores';
         if (location.hash === '#houses') return 'houses';
@@ -702,27 +710,104 @@ export default function SessionDetail({ user }) {
         link.download = fileName;
         link.click();
     };
+
+    const toSafeFilePart = (value) => String(value || "")
+        .trim()
+        .replace(/[^a-zA-Z0-9-_ ]+/g, "")
+        .replace(/\s+/g, "-")
+        .slice(0, 48) || "run-session-config";
+
+    const escapeCsvCell = (value) => {
+        if (value == null) return "";
+        const text = String(value);
+        if (text.includes(",") || text.includes('"') || text.includes("\n")) {
+            return `"${text.replace(/"/g, '""')}"`;
+        }
+        return text;
+    };
+
+    const handleDownloadRunSessionData = async (config) => {
+        if (!config?.id) return;
+        setRunConfigSaving(true);
+        setRunConfigFlash("");
+        try {
+            const { data, error: err } = await supabase
+                .from("run_events")
+                .select("event_id, run_config_id, session_id, station_id, event_type, occurred_at, created_at, payload")
+                .eq("run_config_id", config.id)
+                .order("occurred_at", { ascending: true });
+            if (err) throw err;
+            const rows = data || [];
+            const header = [
+                "event_id",
+                "run_config_id",
+                "session_id",
+                "station_id",
+                "event_type",
+                "occurred_at",
+                "created_at",
+                "payload_json"
+            ];
+            const csvRows = rows.map((row) => ([
+                row.event_id,
+                row.run_config_id,
+                row.session_id,
+                row.station_id,
+                row.event_type,
+                row.occurred_at,
+                row.created_at,
+                row.payload ? JSON.stringify(row.payload) : ""
+            ].map(escapeCsvCell).join(",")));
+            const csv = [header.join(","), ...csvRows].join("\n");
+            const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            const cfgName = toSafeFilePart(config.name || config.id);
+            const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+            a.href = url;
+            a.download = `${cfgName}-run-session-data-${stamp}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+            setRunConfigFlash(`Downloaded ${rows.length} run events.`);
+        } catch (err) {
+            setRunConfigFlash(err.message || "Failed to download run session data.");
+        } finally {
+            setRunConfigSaving(false);
+        }
+    };
+
+    const buildRunConfigWritePayload = (source, base = {}) => {
+        return {
+            ...base,
+            name: source.name || null,
+            template_key: source.template_key,
+            laps_required: Number(source.laps_required) || 1,
+            enforcement: source.enforcement,
+            scan_gap_ms: Number(source.scan_gap_ms) || 10000
+        };
+    };
+
     const handleCreateRunConfig = async () => {
         if (!session) return;
         setRunConfigSaving(true);
         setRunConfigFlash("");
         try {
             const token = crypto.randomUUID();
-            const payload = {
+            const payload = buildRunConfigWritePayload(runConfigForm, {
                 session_id: session.id,
-                name: runConfigForm.name || null,
-                template_key: runConfigForm.template_key,
-                laps_required: Number(runConfigForm.laps_required) || 1,
-                enforcement: runConfigForm.enforcement,
-                scan_gap_ms: Number(runConfigForm.scan_gap_ms) || 10000,
                 pairing_token: token
-            };
+            });
             const { data, error: err } = await supabase
                 .from('run_configs')
                 .insert(payload)
-                .select()
-                .single();
+                .select('id')
+                .maybeSingle();
             if (err) throw err;
+            if (!data) {
+                throw new Error("Run config was not returned after create. Check table RLS policies for run_configs.");
+            }
             setRunConfigForm({
                 name: "",
                 template_key: "A",
@@ -733,7 +818,7 @@ export default function SessionDetail({ user }) {
             setRunConfigFlash("Run config created. Generate QR/barcode if needed.");
             await loadRunConfigs();
         } catch (err) {
-            setRunConfigFlash(err.message || "Failed to create run config.");
+            setRunConfigFlash(err.message || "Failed to create run session config.");
         } finally {
             setRunConfigSaving(false);
         }
@@ -756,21 +841,21 @@ export default function SessionDetail({ user }) {
         setRunConfigSaving(true);
         setRunConfigFlash("");
         try {
-            const { error: err } = await supabase
+            const payload = buildRunConfigWritePayload(config);
+            const { data, error: err } = await supabase
                 .from('run_configs')
-                .update({
-                    name: config.name || null,
-                    template_key: config.template_key,
-                    laps_required: Number(config.laps_required) || 1,
-                    enforcement: config.enforcement,
-                    scan_gap_ms: Number(config.scan_gap_ms) || 10000
-                })
-                .eq('id', config.id);
+                .update(payload)
+                .eq('id', config.id)
+                .select('id')
+                .maybeSingle();
             if (err) throw err;
+            if (!data) {
+                throw new Error("Run config update returned no row. Check table RLS policies for run_configs.");
+            }
             setRunConfigFlash("Run config saved.");
             await loadRunConfigs();
         } catch (err) {
-            setRunConfigFlash(err.message || "Failed to save run config.");
+            setRunConfigFlash(err.message || "Failed to save run session config.");
         } finally {
             setRunConfigSaving(false);
         }
@@ -800,8 +885,15 @@ export default function SessionDetail({ user }) {
     };
 
     const handleResetRunConfig = async (config) => {
-        const confirmReset = window.confirm("Reset all synced run data for this config? Stations will need to resync after reset.");
-        if (!confirmReset) return;
+        if (!config?.id) return;
+        setPendingRunDataDeleteConfig(config);
+        setShowRunDataDeleteModal(true);
+    };
+
+    const handleConfirmDeleteCloudRunData = async () => {
+        const config = pendingRunDataDeleteConfig;
+        if (!config?.id) return;
+        setRunDataDeleteBusy(true);
         setRunConfigSaving(true);
         setRunConfigFlash("");
         try {
@@ -818,10 +910,13 @@ export default function SessionDetail({ user }) {
             });
             const body = await response.json().catch(() => null);
             if (!response.ok) throw new Error(body?.error || 'Failed to reset run data.');
-            setRunConfigFlash("Run data reset. Ask stations to clear local data or wait for reset sync.");
+            setRunConfigFlash("Cloud run data deleted. CLEAR_ALL marker sent. Stations will clear local data on next sync.");
+            setShowRunDataDeleteModal(false);
+            setPendingRunDataDeleteConfig(null);
         } catch (err) {
-            setRunConfigFlash(err.message || "Failed to reset run data.");
+            setRunConfigFlash(err.message || "Failed to delete cloud run data.");
         } finally {
+            setRunDataDeleteBusy(false);
             setRunConfigSaving(false);
         }
     };
@@ -860,35 +955,74 @@ export default function SessionDetail({ user }) {
     };
 
     const handleDeleteRunConfig = async (config) => {
-        const confirmDelete = window.confirm("Delete this run config? This action cannot be undone.");
-        if (!confirmDelete) return;
+        if (!config?.id) return;
+        setPendingDeleteRunConfig(config);
+        setShowRunConfigDeleteModal(true);
+    };
+
+    const handleConfirmDeleteRunConfig = async () => {
+        const config = pendingDeleteRunConfig;
+        if (!config?.id) return;
+        setRunConfigDeleteBusy(true);
         setRunConfigSaving(true);
         setRunConfigFlash("");
         try {
+            const { error: eventsErr } = await supabase
+                .from("run_events")
+                .delete()
+                .eq("run_config_id", config.id);
+            if (eventsErr) throw eventsErr;
             const { error: err } = await supabase
                 .from('run_configs')
                 .delete()
                 .eq('id', config.id);
             if (err) throw err;
-            setRunConfigFlash("Run config deleted.");
+            setRunConfigFlash("Run session config deleted. Related cloud run data was deleted.");
+            setShowRunConfigDeleteModal(false);
+            setPendingDeleteRunConfig(null);
             await loadRunConfigs();
         } catch (err) {
-            setRunConfigFlash(err.message || "Failed to delete run config.");
+            setRunConfigFlash(err.message || "Failed to delete run session config.");
         } finally {
+            setRunConfigDeleteBusy(false);
             setRunConfigSaving(false);
         }
     };
 
+    const isMissingRelationError = (err) => {
+        const msg = String(err?.message || "").toLowerCase();
+        return msg.includes("relation") && msg.includes("does not exist");
+    };
+
     const handleDelete = async () => {
+        setShowSessionDeleteModal(true);
+    };
+
+    const handleConfirmDeleteSession = async () => {
         if (!session) return;
-        const confirmDelete = window.confirm("Delete this session? This action cannot be undone.");
-        if (!confirmDelete) return;
-        const { error: err } = await supabase.from("sessions").delete().eq("id", session.id);
-        if (err) {
+        setSessionDeleteBusy(true);
+        setFlash("");
+        try {
+            // Best-effort cleanup for IPPT-3 rows if table exists in this deployment.
+            const { error: ipErr } = await supabase
+                .from("ippt3_scores")
+                .delete()
+                .eq("session_id", session.id);
+            if (ipErr && !isMissingRelationError(ipErr)) throw ipErr;
+
+            const { error: err } = await supabase
+                .from("sessions")
+                .delete()
+                .eq("id", session.id);
+            if (err) throw err;
+
+            setShowSessionDeleteModal(false);
+            navigate("/sessions");
+        } catch (err) {
             setFlash(err.message || "Failed to delete session.");
-            return;
+        } finally {
+            setSessionDeleteBusy(false);
         }
-        navigate("/sessions");
     };
 
     const handleRemoveFromRoster = async (studentId) => {
@@ -1955,6 +2089,16 @@ export default function SessionDetail({ user }) {
                     >
                         Houses
                     </button>
+                    <button
+                        role="tab"
+                        aria-selected={activeTab === 'groups'}
+                        className={(activeTab === 'groups'
+                            ? 'bg-white text-blue-700 shadow border border-gray-200'
+                            : 'text-gray-600 hover:text-gray-800') + ' px-3 py-1.5 rounded-md transition-colors'}
+                        onClick={() => setActiveTab('groups')}
+                    >
+                        Groups
+                    </button>
                     {canManage && (
                         <button
                             role="tab"
@@ -1967,16 +2111,6 @@ export default function SessionDetail({ user }) {
                             Run Setup
                         </button>
                     )}
-                    <button
-                        role="tab"
-                        aria-selected={activeTab === 'groups'}
-                        className={(activeTab === 'groups'
-                            ? 'bg-white text-blue-700 shadow border border-gray-200'
-                            : 'text-gray-600 hover:text-gray-800') + ' px-3 py-1.5 rounded-md transition-colors'}
-                        onClick={() => setActiveTab('groups')}
-                    >
-                        Groups
-                    </button>
                 </div>
             </nav>
 
@@ -2008,13 +2142,13 @@ export default function SessionDetail({ user }) {
                         <div className="border rounded-lg bg-white p-4">
                             <div className="text-sm font-semibold text-gray-800 mb-2">How it works</div>
                             <div className="text-xs text-gray-600 space-y-2">
-                                <div>1. Create a run config for a specific setup.</div>
+                                <div>1. Create a run session config for a specific setup.</div>
                                 <div>2. Generate the pairing token + QR/barcode.</div>
                                 <div>3. Scan the token on each run device to join.</div>
                             </div>
-                            <div className="text-sm font-semibold text-gray-800 mt-4 mb-3">Create Run Config</div>
+                            <div className="text-sm font-semibold text-gray-800 mt-4 mb-3">Create Run Session Config</div>
                             <div className="text-xs text-gray-600 mb-3">
-                                Create a run configuration and share its pairing token with run devices.
+                                Create a run session configuration and share its pairing token with run devices.
                             </div>
                             <div className="grid sm:grid-cols-2 gap-3">
                                 {['A','B','C','D','E'].map((k) => (
@@ -2029,7 +2163,7 @@ export default function SessionDetail({ user }) {
                                         className={`border rounded-lg p-0 text-left hover:border-blue-300 ${runConfigForm.template_key === k ? 'border-blue-500 bg-blue-50/40' : 'border-gray-200'}`}
                                     >
                                         <div className="flex items-center gap-3">
-                                            <img src={`/setup${k}.svg`} alt={`Setup ${k}`} className="w-64 h-64 object-contain" />
+                                            <img src={`/setup${k}.svg`} alt={`Setup ${k}`} className="w-64 h-auto object-contain" />
                                             <div className="max-w-[160px]">
                                                 <div className="text-sm font-semibold">Setup {k}</div>
                                                 <div className="text-xs text-gray-600">
@@ -2098,6 +2232,11 @@ export default function SessionDetail({ user }) {
                                     </select>
                                     <div className="text-xs text-gray-500 mt-1">Debounce window per runner.</div>
                                 </div>
+                                <div className="sm:col-span-2">
+                                    <div className="text-xs text-gray-600">
+                                        Runner ID format and accepted range are configured on each run station device.
+                                    </div>
+                                </div>
                             </div>
                             <div className="pt-3 flex flex-wrap gap-2">
                                 <button
@@ -2106,15 +2245,15 @@ export default function SessionDetail({ user }) {
                                     disabled={runConfigSaving}
                                     className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-60"
                                 >
-                                    {runConfigSaving ? 'Saving...' : 'Create Run Config'}
+                                    {runConfigSaving ? 'Saving...' : 'Create Run Session Config'}
                                 </button>
                             </div>
                         </div>
 
                         <div className="border rounded-lg bg-white p-4">
-                            <div className="text-sm font-semibold text-gray-800 mb-2">Run Configs</div>
+                            <div className="text-sm font-semibold text-gray-800 mb-2">Run Session Configs</div>
                             {runConfigs.length === 0 && (
-                                <div className="text-sm text-gray-600">No run configurations yet.</div>
+                                <div className="text-sm text-gray-600">No run session configurations yet.</div>
                             )}
                             <div className="space-y-2">
                                 {runConfigs.map((config) => {
@@ -2126,7 +2265,7 @@ export default function SessionDetail({ user }) {
                                                 <img src={`/setup${config.template_key}.svg`} alt={`Setup ${config.template_key}`} className="w-12 h-12 object-contain" />
                                                 <div>
                                                     <div className="text-sm font-semibold text-gray-800">
-                                                        {config.name || `Run Config ${config.id?.slice(0, 6)}`}
+                                                        {config.name || `Run Session Config ${config.id?.slice(0, 6)}`}
                                                     </div>
                                                     <div className="text-xs text-gray-600">
                                                         Setup {config.template_key} - Laps {config.laps_required} - Enforcement {config.enforcement || 'OFF'}
@@ -2212,6 +2351,11 @@ export default function SessionDetail({ user }) {
                                                         </select>
                                                         <div className="text-xs text-gray-500 mt-1">Debounce window per runner.</div>
                                                     </div>
+                                                    <div className="sm:col-span-2">
+                                                        <div className="text-xs text-gray-600">
+                                                            Runner ID format and accepted range are configured on each run station device.
+                                                        </div>
+                                                    </div>
                                                     <div>
                                                         <label className="block text-xs mb-1">Pairing Token</label>
                                                         <input
@@ -2259,10 +2403,17 @@ export default function SessionDetail({ user }) {
                                                         onClick={() => handleResetRunConfig(config)}
                                                         className="text-xs px-3 py-1.5 border rounded hover:bg-gray-50"
                                                     >
-                                                        Reset Run Data
+                                                        Delete cloud run data
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleDownloadRunSessionData(config)}
+                                                        className="text-xs px-3 py-1.5 border rounded hover:bg-gray-50"
+                                                    >
+                                                        Download All Run Session Data
                                                     </button>
                                                 </div>
-                                                <div className="text-xs text-amber-600">Warning: reset deletes synced run events for this config. Stations should clear local data.</div>
+                                                <div className="text-xs text-amber-600">Warning: this deletes cloud run events for this config and sends CLEAR_ALL to clear station local data on sync.</div>
                                                 {runConfigFlash && <div className="text-xs text-blue-600">{runConfigFlash}</div>}
                                                 {(config.pairing_qr_data_url || config.pairing_barcode_data_url) && (
                                                     <div className="grid sm:grid-cols-2 gap-3 pt-2">
@@ -2615,6 +2766,202 @@ export default function SessionDetail({ user }) {
                     setMassEditNotice('');
                 }}
             />
+            {showRunConfigDeleteModal && pendingDeleteRunConfig && (
+                <div className="fixed inset-0 z-50">
+                    <div
+                        className="absolute inset-0 bg-black/35"
+                        onClick={() => {
+                            if (runConfigDeleteBusy) return;
+                            setShowRunConfigDeleteModal(false);
+                            setPendingDeleteRunConfig(null);
+                        }}
+                    />
+                    <div className="absolute inset-0 flex items-center justify-center p-4">
+                        <div role="dialog" aria-modal="true" className="w-full max-w-lg bg-white rounded-lg shadow-lg border">
+                            <div className="px-4 py-3 border-b flex items-center justify-between gap-2">
+                                <div className="font-medium">Delete Run Session Config</div>
+                                <button
+                                    type="button"
+                                    className="px-2 py-1 border rounded hover:bg-gray-50 text-sm"
+                                    onClick={() => {
+                                        setShowRunConfigDeleteModal(false);
+                                        setPendingDeleteRunConfig(null);
+                                    }}
+                                    disabled={runConfigDeleteBusy}
+                                >
+                                    Close
+                                </button>
+                            </div>
+                            <div className="p-4 space-y-3">
+                                <div className="text-sm text-gray-700">
+                                    You are deleting: <span className="font-semibold">{pendingDeleteRunConfig.name || `Run Session Config ${pendingDeleteRunConfig.id?.slice(0, 6)}`}</span>
+                                </div>
+                                <div className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded p-3">
+                                    Warning: deleting this run session config will delete all related run session data in the database.
+                                    Download all run session data first.
+                                </div>
+                            </div>
+                            <div className="px-4 py-3 border-t flex flex-wrap justify-end gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => handleDownloadRunSessionData(pendingDeleteRunConfig)}
+                                    className="px-3 py-1.5 border rounded hover:bg-gray-50 text-sm"
+                                    disabled={runConfigDeleteBusy}
+                                >
+                                    Download All Run Session Data
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setShowRunConfigDeleteModal(false);
+                                        setPendingDeleteRunConfig(null);
+                                    }}
+                                    className="px-3 py-1.5 border rounded hover:bg-gray-50 text-sm"
+                                    disabled={runConfigDeleteBusy}
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleConfirmDeleteRunConfig}
+                                    className="px-3 py-1.5 border rounded bg-red-600 text-white hover:bg-red-700 disabled:opacity-60 text-sm"
+                                    disabled={runConfigDeleteBusy}
+                                >
+                                    {runConfigDeleteBusy ? "Deleting..." : "Delete Run Session Config"}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {showRunDataDeleteModal && pendingRunDataDeleteConfig && (
+                <div className="fixed inset-0 z-50">
+                    <div
+                        className="absolute inset-0 bg-black/35"
+                        onClick={() => {
+                            if (runDataDeleteBusy) return;
+                            setShowRunDataDeleteModal(false);
+                            setPendingRunDataDeleteConfig(null);
+                        }}
+                    />
+                    <div className="absolute inset-0 flex items-center justify-center p-4">
+                        <div role="dialog" aria-modal="true" className="w-full max-w-lg bg-white rounded-lg shadow-lg border">
+                            <div className="px-4 py-3 border-b flex items-center justify-between gap-2">
+                                <div className="font-medium">Delete Cloud Run Data</div>
+                                <button
+                                    type="button"
+                                    className="px-2 py-1 border rounded hover:bg-gray-50 text-sm"
+                                    onClick={() => {
+                                        setShowRunDataDeleteModal(false);
+                                        setPendingRunDataDeleteConfig(null);
+                                    }}
+                                    disabled={runDataDeleteBusy}
+                                >
+                                    Close
+                                </button>
+                            </div>
+                            <div className="p-4 space-y-3">
+                                <div className="text-sm text-gray-700">
+                                    Target: <span className="font-semibold">{pendingRunDataDeleteConfig.name || `Run Session Config ${pendingRunDataDeleteConfig.id?.slice(0, 6)}`}</span>
+                                </div>
+                                <div className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded p-3">
+                                    Warning: this will delete all run session cloud data for this config in the database.
+                                    Download all run session data first.
+                                    A CLEAR_ALL marker will be sent so stations clear local data on next sync.
+                                </div>
+                            </div>
+                            <div className="px-4 py-3 border-t flex flex-wrap justify-end gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => handleDownloadRunSessionData(pendingRunDataDeleteConfig)}
+                                    className="px-3 py-1.5 border rounded hover:bg-gray-50 text-sm"
+                                    disabled={runDataDeleteBusy}
+                                >
+                                    Download All Run Session Data
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setShowRunDataDeleteModal(false);
+                                        setPendingRunDataDeleteConfig(null);
+                                    }}
+                                    className="px-3 py-1.5 border rounded hover:bg-gray-50 text-sm"
+                                    disabled={runDataDeleteBusy}
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleConfirmDeleteCloudRunData}
+                                    className="px-3 py-1.5 border rounded bg-red-600 text-white hover:bg-red-700 disabled:opacity-60 text-sm"
+                                    disabled={runDataDeleteBusy}
+                                >
+                                    {runDataDeleteBusy ? "Deleting..." : "Delete cloud run data"}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {showSessionDeleteModal && session && (
+                <div className="fixed inset-0 z-50">
+                    <div
+                        className="absolute inset-0 bg-black/35"
+                        onClick={() => {
+                            if (sessionDeleteBusy) return;
+                            setShowSessionDeleteModal(false);
+                        }}
+                    />
+                    <div className="absolute inset-0 flex items-center justify-center p-4">
+                        <div role="dialog" aria-modal="true" className="w-full max-w-lg bg-white rounded-lg shadow-lg border">
+                            <div className="px-4 py-3 border-b flex items-center justify-between gap-2">
+                                <div className="font-medium">Delete Session</div>
+                                <button
+                                    type="button"
+                                    className="px-2 py-1 border rounded hover:bg-gray-50 text-sm"
+                                    onClick={() => setShowSessionDeleteModal(false)}
+                                    disabled={sessionDeleteBusy}
+                                >
+                                    Close
+                                </button>
+                            </div>
+                            <div className="p-4 space-y-3">
+                                <div className="text-sm text-gray-700">
+                                    You are deleting: <span className="font-semibold">{session.title}</span>
+                                </div>
+                                <div className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded p-3">
+                                    This will permanently delete this session and related session data in the database.
+                                </div>
+                                <div className="text-sm text-gray-700">Data that will be deleted:</div>
+                                <ul className="list-disc pl-5 text-sm text-gray-700 space-y-1">
+                                    <li>Run session configs and run events.</li>
+                                    <li>Session roster, including house allocations.</li>
+                                    <li>Session groups and group member allocations.</li>
+                                    <li>NAPFA/IPPT score rows linked to this session.</li>
+                                </ul>
+                            </div>
+                            <div className="px-4 py-3 border-t flex flex-wrap justify-end gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowSessionDeleteModal(false)}
+                                    className="px-3 py-1.5 border rounded hover:bg-gray-50 text-sm"
+                                    disabled={sessionDeleteBusy}
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleConfirmDeleteSession}
+                                    className="px-3 py-1.5 border rounded bg-red-600 text-white hover:bg-red-700 disabled:opacity-60 text-sm"
+                                    disabled={sessionDeleteBusy}
+                                >
+                                    {sessionDeleteBusy ? "Deleting..." : "Delete Session"}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

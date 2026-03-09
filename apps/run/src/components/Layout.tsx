@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
+import { getSession } from '../db/repo';
 
 function shortSessionId(sessionId?: string | null) {
   if (!sessionId) return '-';
@@ -20,6 +21,7 @@ export default function Layout() {
     return params.get('sessionId');
   }, [location.search]);
   const [stationId, setStationId] = useState<string | null>(null);
+  const [sessionLabel, setSessionLabel] = useState('-');
 
   useEffect(() => {
     const handleOnline = () => setOnline(true);
@@ -35,11 +37,30 @@ export default function Layout() {
   useEffect(() => {
     if (!sessionId) {
       setStationId(null);
+      setSessionLabel('-');
       return;
     }
     const key = stationStorageKey(sessionId);
     setStationId(localStorage.getItem(key));
   }, [sessionId, location.pathname]);
+
+  useEffect(() => {
+    let active = true;
+    const loadSessionLabel = async () => {
+      if (!sessionId) {
+        if (active) setSessionLabel('-');
+        return;
+      }
+      const localSession = await getSession(sessionId);
+      if (!active) return;
+      const preferred = String(localSession?.name || '').trim();
+      setSessionLabel(preferred || shortSessionId(sessionId));
+    };
+    loadSessionLabel();
+    return () => {
+      active = false;
+    };
+  }, [sessionId]);
 
   useEffect(() => {
     if (!import.meta.env.DEV) return;
@@ -72,7 +93,7 @@ export default function Layout() {
           <div className="app-title">napfa5-run</div>
         </Link>
         <div className="app-meta">
-          <span>Session: {shortSessionId(sessionId)}</span>
+          <span>Session: {sessionLabel}</span>
           <span>Station: {stationId ?? '-'}</span>
           <span className={online ? 'status online' : 'status offline'}>
             {online ? 'Online' : 'Offline'}

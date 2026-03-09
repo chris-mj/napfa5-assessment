@@ -69,7 +69,8 @@ export default async function handler(req, res) {
     occurred_at: new Date(event.capturedAtMs).toISOString(),
     payload: {
       runner_id: event.runnerId || null,
-      ref_event_id: event.refEventId || null
+      ref_event_id: event.refEventId || null,
+      client_payload: event.payload || null
     }
   }));
 

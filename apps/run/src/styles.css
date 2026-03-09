@@ -106,14 +106,166 @@ main {
   font-size: 14px;
 }
 
+.capture-redesign {
+  display: grid;
+  gap: 16px;
+}
+
+.capture-status-strip {
+  position: sticky;
+  top: 10px;
+  z-index: 5;
+  display: grid;
+  gap: 10px;
+  align-items: start;
+}
+
+.capture-status-top {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.capture-status-right {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.capture-status-controls-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.capture-status-station {
+  font-size: 22px;
+  font-weight: 800;
+}
+
+.capture-status-controls {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.capture-status-badge {
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 4px 10px;
+  border: 1px solid transparent;
+}
+
+.capture-status-badge.ok {
+  background: rgba(34, 197, 94, 0.18);
+  color: #bbf7d0;
+  border-color: rgba(34, 197, 94, 0.35);
+}
+
+.capture-status-badge.warn {
+  background: rgba(250, 204, 21, 0.16);
+  color: #fde68a;
+  border-color: rgba(250, 204, 21, 0.32);
+}
+
+.capture-status-badge.danger {
+  background: rgba(239, 68, 68, 0.2);
+  color: #fecaca;
+  border-color: rgba(239, 68, 68, 0.4);
+}
+
+.capture-status-meta {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  margin-left: auto;
+  font-size: 12px;
+  color: #cbd5f5;
+}
+
+.capture-status-clock {
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+}
+
+.capture-control-btn {
+  min-width: 120px;
+  text-align: center;
+  border-radius: 999px;
+  padding: 10px 16px;
+  font-weight: 700;
+  border: 1px solid transparent;
+}
+
+.capture-control-btn.start {
+  background: #15803d;
+  border-color: #166534;
+  color: #ecfdf5;
+}
+
+.capture-control-btn.pause {
+  background: #d97706;
+  border-color: #b45309;
+  color: #fffbeb;
+}
+
+.capture-control-btn.end {
+  background: #b91c1c;
+  border-color: #991b1b;
+  color: #fef2f2;
+}
+
+.capture-control-btn:disabled {
+  opacity: 0.55;
+}
+
+.capture-workspace {
+  display: grid;
+  grid-template-columns: minmax(340px, 1.05fr) minmax(360px, 0.95fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.capture-main-col {
+  display: grid;
+  gap: 16px;
+  position: sticky;
+  top: 120px;
+  align-self: start;
+}
+
+.capture-recent-sticky {
+  position: static;
+}
+
+.capture-summary .capture-table-wrap {
+  max-height: 620px;
+}
+
+.capture-summary {
+  position: sticky;
+  top: 120px;
+  align-self: start;
+}
+
 .capture-layout {
   display: grid;
-  grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
+  grid-template-columns: minmax(320px, 460px) minmax(280px, 360px) minmax(360px, 1fr);
   gap: 16px;
   align-items: start;
 }
 
 .capture-left,
+.capture-middle,
 .capture-right {
   display: flex;
   flex-direction: column;
@@ -124,20 +276,44 @@ main {
   position: relative;
 }
 
+.capture-primary {
+  position: relative;
+}
+
+.capture-input-wrap {
+  position: relative;
+}
+
 .focus-overlay {
-  position: sticky;
-  top: 12px;
-  margin: 0 12px;
-  padding: 10px 14px;
-  border-radius: 999px;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 56px;
+  padding: 8px 12px;
+  border-radius: 14px;
   background: rgba(15, 23, 42, 0.92);
   border: 1px solid #fbbf24;
   color: #fbbf24;
   font-weight: 700;
   text-align: center;
-  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
   cursor: pointer;
   z-index: 2;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-6px);
+  transition: opacity 0.18s ease, transform 0.18s ease, visibility 0.18s ease;
+}
+
+.focus-overlay.is-visible {
+  pointer-events: auto;
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
 }
 
 .capture-form {
@@ -170,6 +346,9 @@ main {
 .capture-right .capture-table-wrap {
   max-height: 520px;
 }
+.capture-middle .capture-table-wrap {
+  max-height: 520px;
+}
 
 .capture-main .table {
   font-size: 14px;
@@ -190,7 +369,87 @@ main {
   flex-wrap: wrap;
 }
 
+.capture-control-with-note {
+  display: grid;
+  gap: 6px;
+  min-width: 260px;
+}
+
+.capture-controls-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(180px, 0.55fr) minmax(180px, 0.55fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.capture-controls-col {
+  display: grid;
+  gap: 10px;
+}
+
+.capture-controls-col-actions {
+  justify-items: start;
+}
+
+.capture-controls-col-actions > button {
+  width: 100%;
+  max-width: 280px;
+}
+
+.capture-ops,
+.capture-diagnostics {
+  display: grid;
+  gap: 10px;
+}
+
+.capture-ops-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
 @media (max-width: 900px) {
+  .capture-status-strip {
+    position: static;
+  }
+  .capture-status-top {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .capture-status-right {
+    justify-content: flex-start;
+    margin-left: 0;
+  }
+  .capture-status-controls-meta {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .capture-status-meta {
+    justify-content: flex-start;
+    margin-left: 0;
+  }
+  .capture-status-clock {
+    font-size: 24px;
+  }
+  .capture-workspace {
+    grid-template-columns: 1fr;
+  }
+  .capture-main-col {
+    position: static;
+    top: auto;
+  }
+  .capture-controls-grid {
+    grid-template-columns: 1fr;
+  }
+  .capture-summary {
+    position: static;
+    top: auto;
+  }
+  .capture-recent-sticky {
+    position: static;
+  }
   .capture-layout {
     grid-template-columns: 1fr;
   }

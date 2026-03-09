@@ -230,6 +230,35 @@ create table if not exists session_roster (
   unique (session_id, student_id)
 );
 
+-- Session groups (for grouping roster students within a session)
+create table if not exists public.session_groups (
+  id uuid primary key default gen_random_uuid(),
+  session_id uuid not null references public.sessions(id) on delete cascade,
+  group_code text not null,
+  group_name text,
+  created_by uuid null references auth.users(id),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (session_id, group_code)
+);
+
+create table if not exists public.session_group_members (
+  id uuid primary key default gen_random_uuid(),
+  session_id uuid not null references public.sessions(id) on delete cascade,
+  session_group_id uuid not null references public.session_groups(id) on delete cascade,
+  student_id uuid not null references public.students(id) on delete cascade,
+  position int null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (session_id, student_id),
+  unique (session_group_id, student_id)
+);
+
+create index if not exists idx_session_groups_session on public.session_groups(session_id);
+create index if not exists idx_session_group_members_session on public.session_group_members(session_id);
+create index if not exists idx_session_group_members_group on public.session_group_members(session_group_id);
+create index if not exists idx_session_group_members_student on public.session_group_members(student_id);
+
 -- Scores: one row per session+student for summary/best scores
 create table if not exists scores (
   id uuid primary key default gen_random_uuid(),
@@ -338,6 +367,7 @@ alter table if exists students enable row level security;
 alter table if exists enrollments enable row level security;
 alter table if exists sessions enable row level security;
 alter table if exists run_configs enable row level security;
+alter table if exists run_events enable row level security;
 alter table if exists session_roster enable row level security;
 alter table if exists scores enable row level security;
 alter table if exists memberships enable row level security;
@@ -457,6 +487,16 @@ do $$ begin
   );
 exception when duplicate_object then null; end $$;
 
+-- Sessions: platform owner (single global owner email) can read across all schools.
+-- Required for global school selector in Run Ops and other cross-school operational views.
+do $$ begin
+  create policy sessions_select_platform_owner
+  on sessions for select
+  using (
+    lower(coalesce(auth.jwt() ->> 'email', '')) = lower('christopher_teo_ming_jian@moe.edu.sg')
+  );
+exception when duplicate_object then null; end $$;
+
 do $$ begin
   create policy sessions_admin_cud
   on sessions for all
@@ -477,6 +517,32 @@ do $$ begin
   );
 exception when duplicate_object then null; end $$;
 
+-- Run events: admins/superadmins can read events for sessions in their own school(s).
+-- This powers school-scoped operational monitoring while preserving tenancy boundaries.
+do $$ begin
+  create policy run_events_select_by_membership
+  on run_events for select
+  using (
+    exists (
+      select 1 from sessions s
+      join memberships m on m.school_id = s.school_id
+      where s.id = run_events.session_id
+        and m.user_id = auth.uid()
+        and m.role in ('admin','superadmin')
+    )
+  );
+exception when duplicate_object then null; end $$;
+
+-- Run events: platform owner can read all run events across schools.
+-- This enables global run operations oversight and troubleshooting.
+do $$ begin
+  create policy run_events_select_platform_owner
+  on run_events for select
+  using (
+    lower(coalesce(auth.jwt() ->> 'email', '')) = lower('christopher_teo_ming_jian@moe.edu.sg')
+  );
+exception when duplicate_object then null; end $$;
+
 -- Run configs: select by membership; CUD by admin/superadmin
 do $$ begin
   create policy run_configs_select_by_membership
@@ -488,6 +554,16 @@ do $$ begin
       where s.id = run_configs.session_id
         and m.user_id = auth.uid()
     )
+  );
+exception when duplicate_object then null; end $$;
+
+-- Run configs: platform owner can read all run configurations across schools.
+-- Needed for cross-school diagnostics of run setup and token/config issues.
+do $$ begin
+  create policy run_configs_select_platform_owner
+  on run_configs for select
+  using (
+    lower(coalesce(auth.jwt() ->> 'email', '')) = lower('christopher_teo_ming_jian@moe.edu.sg')
   );
 exception when duplicate_object then null; end $$;
 
