@@ -1232,6 +1232,10 @@ function ScannerModal({ onClose, onDetected }) {
   const [err, setErr] = useState('')
   const [facingMode, setFacingMode] = useState('user')
   const [preferredDeviceId, setPreferredDeviceId] = useState('')
+  const [activeCameraLabel, setActiveCameraLabel] = useState('')
+  const [activeCameraId, setActiveCameraId] = useState('')
+  const [debugError, setDebugError] = useState('')
+  const [lastTriedMode, setLastTriedMode] = useState('user')
 
   const stopActiveMedia = () => {
     if (controlsRef.current) {
@@ -1269,6 +1273,8 @@ function ScannerModal({ onClose, onDetected }) {
     const start = async () => {
       try {
         setErr('')
+        setDebugError('')
+        setLastTriedMode(facingMode)
         stopActiveMedia()
         // iOS Safari can throw AbortError when switching camera too quickly.
         await new Promise((resolve) => setTimeout(resolve, 120))
@@ -1278,13 +1284,20 @@ function ScannerModal({ onClose, onDetected }) {
         candidates.push({ facingMode })
         candidates.push(true)
         let stream = null
+        const candidateErrors = []
         for (const video of candidates) {
           try {
             stream = await navigator.mediaDevices.getUserMedia({ video })
             break
-          } catch {}
+          } catch (openErr) {
+            const hint = typeof video === 'boolean'
+              ? 'default'
+              : (video?.deviceId ? 'deviceId' : (video?.facingMode ? 'facingMode' : 'video'))
+            const msg = `${hint}: ${openErr?.name || 'Error'} ${openErr?.message || ''}`.trim()
+            candidateErrors.push(msg)
+          }
         }
-        if (!stream) throw new Error('Camera unavailable.')
+        if (!stream) throw new Error(candidateErrors.join(' | ') || 'Camera unavailable.')
         if (cancelled) {
           try { stream.getTracks().forEach(t => t.stop()) } catch {}
           return
@@ -1295,7 +1308,10 @@ function ScannerModal({ onClose, onDetected }) {
           await videoRef.current.play()
         }
         try {
+          const track = stream.getVideoTracks?.()[0]
           const activeId = stream.getVideoTracks?.()[0]?.getSettings?.()?.deviceId
+          setActiveCameraLabel(track?.label || '')
+          setActiveCameraId(activeId || '')
           if (activeId) setPreferredDeviceId(activeId)
         } catch {}
         if (hasBarcode) {
@@ -1334,7 +1350,9 @@ function ScannerModal({ onClose, onDetected }) {
           }
         }
       } catch (e) {
-        setErr(e.message || 'Camera unavailable.')
+        const full = `${e?.name || 'Error'}: ${e?.message || 'Camera unavailable.'}`
+        setErr(e?.message || 'Camera unavailable.')
+        setDebugError(full)
       }
     }
     start()
@@ -1343,7 +1361,7 @@ function ScannerModal({ onClose, onDetected }) {
       stopActiveMedia()
       if (typeof cleanupFn === 'function') cleanupFn()
     }
-  }, [onDetected, facingMode, preferredDeviceId])
+  }, [onDetected, facingMode])
 
   const handleSwitchCamera = async () => {
     const nextMode = facingMode === 'environment' ? 'user' : 'environment'
@@ -1374,6 +1392,12 @@ function ScannerModal({ onClose, onDetected }) {
           )}
           {err && <div className="text-sm text-red-600">{err}</div>}
           <div className="text-xs text-gray-500">Tip: Point the camera at the QR/Barcode on the student card.</div>
+          <div className="text-[11px] text-slate-600 border rounded bg-slate-50 p-2 break-all">
+            <div><span className="font-medium">Debug mode:</span> {lastTriedMode}</div>
+            <div><span className="font-medium">Active camera:</span> {activeCameraLabel || '-'}</div>
+            <div><span className="font-medium">Device ID:</span> {activeCameraId || '-'}</div>
+            <div><span className="font-medium">Last media error:</span> {debugError || '-'}</div>
+          </div>
         </div>
         <div className="px-3 py-2 border-t flex items-center justify-between gap-2">
           <button
