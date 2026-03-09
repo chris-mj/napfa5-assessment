@@ -2218,6 +2218,9 @@ export default function SessionDetail({ user }) {
                                     <div className="text-xs text-gray-500 mt-1">
                                         Used only in Setup B/C. Default OFF for A/D/E, SOFT for B/C.
                                     </div>
+                                    <div className="text-xs text-gray-500">OFF: ignore missing checkpoints.</div>
+                                    <div className="text-xs text-gray-500">SOFT: allow but flag.</div>
+                                    <div className="text-xs text-gray-500">STRICT: block lap if checkpoints missing.</div>
                                 </div>
                                 <div>
                                     <label className="block text-sm mb-1">Time Between Scans</label>
@@ -2337,6 +2340,9 @@ export default function SessionDetail({ user }) {
                                                         <div className="text-xs text-gray-500 mt-1">
                                                             Used only in Setup B/C.
                                                         </div>
+                                                        <div className="text-xs text-gray-500">OFF: ignore missing checkpoints.</div>
+                                                        <div className="text-xs text-gray-500">SOFT: allow but flag.</div>
+                                                        <div className="text-xs text-gray-500">STRICT: block lap if checkpoints missing.</div>
                                                     </div>
                                                     <div>
                                                         <label className="block text-xs mb-1">Time Between Scans</label>

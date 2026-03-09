@@ -223,3 +223,57 @@ export async function fetchRunHealth(input: {
     matchesRunConfig: Boolean(body.matchesRunConfig)
   };
 }
+
+export async function fetchRunServerTime(input: { pairingToken: string }) {
+  const fetchTimeFromHealthDate = async (url: string, context: string) => {
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${input.pairingToken}` },
+      cache: 'no-store'
+    });
+    const body = await parseJsonOrThrow(response, `${context}-health`);
+    if (!response.ok) {
+      throw new Error(body.error || `${context}-health failed (${response.status})`);
+    }
+    const dateHeader = response.headers.get('date') || '';
+    const headerMs = new Date(dateHeader).getTime();
+    if (!Number.isFinite(headerMs)) {
+      throw new Error(`${context}-health: missing valid Date header`);
+    }
+    return { serverNowMs: headerMs };
+  };
+
+  const fetchTime = async (url: string, context: string) => {
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${input.pairingToken}` },
+      cache: 'no-store'
+    });
+    const body = await parseJsonOrThrow(response, context);
+    if (!response.ok) {
+      throw new Error(body.error || `${context} failed (${response.status})`);
+    }
+    const serverNowMs = Number(body.serverNowMs);
+    if (!Number.isFinite(serverNowMs)) {
+      throw new Error(`${context}: invalid serverNowMs`);
+    }
+    return { serverNowMs };
+  };
+
+  // In local run-app dev, do not hit localhost /api routes (they may not exist).
+  if (import.meta.env.DEV && !getRunApiBaseUrl()) {
+    const healthFallbackUrl = new URL(runApiUrl('/api/run/health'), window.location.origin).toString();
+    try {
+      return await fetchTimeFromHealthDate(healthFallbackUrl, 'time-fallback');
+    } catch {
+      const fallbackUrl = new URL(runApiUrl('/api/run/time'), window.location.origin).toString();
+      return fetchTime(fallbackUrl, 'time-fallback');
+    }
+  }
+
+  const primaryUrl = new URL(runApiUrl('/api/run/time'), window.location.origin).toString();
+  try {
+    return await fetchTime(primaryUrl, 'time');
+  } catch {
+    const healthUrl = new URL(runApiUrl('/api/run/health'), window.location.origin).toString();
+    return fetchTimeFromHealthDate(healthUrl, 'time');
+  }
+}

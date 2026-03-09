@@ -7,6 +7,7 @@ import {
   exportCsv,
   getSession,
   listEventsForSession,
+  listUnsyncedEvents,
   upsertRemoteEvents,
   updateSessionGlobalEnd,
   updateSessionGlobalPaused,
@@ -20,10 +21,14 @@ import { postValidateToken } from '../lib/runApi';
 import { fetchRunEvents } from '../lib/runApi';
 import { runApiUrl } from '../lib/runApi';
 import { fetchRunHealth } from '../lib/runApi';
+import { fetchRunServerTime } from '../lib/runApi';
 
 const GLOBAL_START_TEMPLATES = new Set(['A', 'B', 'C', 'D', 'E']);
 const CHECKPOINT_TEMPLATES = new Set(['B', 'C']);
 const SYNC_INTERVAL_MS = 5000;
+const TIME_SYNC_INTERVAL_MS = 60000;
+const TIME_SYNC_PING_COUNT = 5;
+const CONTROL_EVENT_TYPES = new Set(['START_SET', 'RESUME_SET', 'PAUSE_SET', 'END_SET', 'CLEAR_ALL']);
 const STATIONS_BY_TEMPLATE: Record<string, string[]> = {
   A: ['LAP_END'],
   B: ['LAP_END', 'A'],
@@ -75,6 +80,10 @@ type RunConfigForm = {
 
 function stationStorageKey(sessionId: string) {
   return `napfa5-run:station:${sessionId}`;
+}
+
+function connectionStatusStorageKey(sessionId: string) {
+  return `napfa5-run:connection:${sessionId}`;
 }
 
 function stationLabel(templateKey: string | undefined, stationId: string) {
@@ -374,6 +383,20 @@ function decodeConfigRef(ref?: string | null) {
   }
 }
 
+function median(values: number[]) {
+  if (!values.length) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  if (sorted.length % 2) return sorted[mid];
+  return (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+function formatOffsetSeconds(offsetMs: number) {
+  const seconds = Math.abs(offsetMs) / 1000;
+  const text = seconds.toFixed(2);
+  return `${offsetMs >= 0 ? '+' : '-'}${text}s`;
+}
+
 export default function CaptureScreen() {
   const [params] = useSearchParams();
   const sessionId = params.get('sessionId') ?? '';
@@ -397,6 +420,11 @@ export default function CaptureScreen() {
   const [healthError, setHealthError] = useState('');
   const [healthCheckedAtMs, setHealthCheckedAtMs] = useState<number | null>(null);
   const [healthSummary, setHealthSummary] = useState('');
+  const [timeSyncStatus, setTimeSyncStatus] = useState<'idle' | 'checking' | 'ok' | 'warn' | 'error'>('idle');
+  const [timeSyncError, setTimeSyncError] = useState('');
+  const [timeSyncOffsetMs, setTimeSyncOffsetMs] = useState(0);
+  const [timeSyncRttMs, setTimeSyncRttMs] = useState<number | null>(null);
+  const [timeSyncCheckedAtMs, setTimeSyncCheckedAtMs] = useState<number | null>(null);
   const [showTechDetails, setShowTechDetails] = useState(false);
   const [showOverrideModal, setShowOverrideModal] = useState(false);
   const [overrideForm, setOverrideForm] = useState<OverrideForm>(() => toOverrideForm(null));
@@ -412,8 +440,60 @@ export default function CaptureScreen() {
   const lastClearAllRef = useRef<number>(0);
   const remoteSinceRef = useRef<number>(0);
   const syncInFlightRef = useRef(false);
+  const timeSyncInFlightRef = useRef(false);
   const projectorRef = useRef<Window | null>(null);
   const channelRef = useRef<BroadcastChannel | null>(null);
+
+  const normalizedNowMs = () => Date.now() + timeSyncOffsetMs;
+
+  const runTimeSyncCheck = async () => {
+    if (!session?.pairingToken || timeSyncInFlightRef.current) return;
+    timeSyncInFlightRef.current = true;
+    setTimeSyncStatus('checking');
+    setTimeSyncError('');
+    try {
+      const samples: Array<{ offset: number; rtt: number }> = [];
+      for (let i = 0; i < TIME_SYNC_PING_COUNT; i += 1) {
+        const t0 = Date.now();
+        const { serverNowMs } = await fetchRunServerTime({ pairingToken: session.pairingToken });
+        const t1 = Date.now();
+        const rtt = t1 - t0;
+        const midpoint = t0 + rtt / 2;
+        const offset = serverNowMs - midpoint;
+        samples.push({ offset, rtt });
+        if (i < TIME_SYNC_PING_COUNT - 1) {
+          await new Promise((resolve) => window.setTimeout(resolve, 200));
+        }
+      }
+
+      if (!samples.length) throw new Error('No time samples.');
+
+      const best = [...samples].sort((a, b) => a.rtt - b.rtt).slice(0, Math.min(3, samples.length));
+      const offsetMs = Math.round(median(best.map((x) => x.offset)));
+      const rttMs = Math.round(median(best.map((x) => x.rtt)));
+      const jitterMs = Math.round(Math.max(...best.map((x) => x.rtt)) - Math.min(...best.map((x) => x.rtt)));
+      const status = rttMs <= 150 && jitterMs <= 120 ? 'ok' : 'warn';
+
+      setTimeSyncOffsetMs(offsetMs);
+      setTimeSyncRttMs(rttMs);
+      setTimeSyncStatus(status);
+      setTimeSyncError('');
+      setTimeSyncCheckedAtMs(Date.now());
+    } catch (err: any) {
+      setTimeSyncStatus('error');
+      setTimeSyncError(err?.message || 'Time sync failed.');
+      setTimeSyncCheckedAtMs(Date.now());
+    } finally {
+      timeSyncInFlightRef.current = false;
+    }
+  };
+
+  const ensureFreshTimeSync = async () => {
+    const stale = !timeSyncCheckedAtMs || Date.now() - timeSyncCheckedAtMs > TIME_SYNC_INTERVAL_MS;
+    if (stale) {
+      await runTimeSyncCheck();
+    }
+  };
 
   const filterUndoneEvents = (events: EventRow[]) => {
     const undone = new Set(
@@ -475,18 +555,61 @@ export default function CaptureScreen() {
     : hasSyncIssue
       ? 'Needs attention'
       : syncIsStale
-        ? 'Delayed'
+        ? 'Stale'
         : 'Connected';
   const connectionTone = hasSyncIssue
     ? 'danger'
     : (!session?.pairingToken || !session?.remoteSessionId || syncIsStale)
       ? 'warn'
       : 'ok';
+  const connectionHint = !session?.pairingToken || !session?.remoteSessionId
+    ? 'Offline (not linked): no run token linked for this session. Do not use for official recording until linked.'
+    : hasSyncIssue
+      ? 'Needs attention: token/sync issue detected. Do not use for official recording until resolved. Check technical details.'
+      : syncIsStale
+        ? 'Delayed: no recent sync activity (or network delay). If recording is active, check signal and pending uploads.'
+        : 'Connected: linked and syncing recently.';
+  const timeSyncLabel = timeSyncStatus === 'checking'
+    ? 'Time sync: checking'
+    : timeSyncStatus === 'ok'
+      ? 'Time sync: synced'
+      : timeSyncStatus === 'warn'
+        ? 'Time sync: unstable'
+        : timeSyncStatus === 'error'
+          ? 'Time sync: error'
+          : 'Time sync: idle';
+  const timeSyncTone = timeSyncStatus === 'error'
+    ? 'danger'
+    : timeSyncStatus === 'warn'
+      ? 'warn'
+      : timeSyncStatus === 'ok'
+        ? 'ok'
+        : 'warn';
+  const timeSyncHint = timeSyncStatus === 'checking'
+    ? 'Checking device clock against server time.'
+    : timeSyncStatus === 'ok'
+      ? 'Synced: device clock is aligned well enough for run timing.'
+    : timeSyncStatus === 'warn'
+        ? 'Unstable: high latency/jitter detected. Find stronger signal. App is still usable, but cross-device timing may be less accurate.'
+    : timeSyncStatus === 'error'
+          ? 'Error: time check failed. Do not use for official timing until fixed. Verify internet/API link, then tap to retry.'
+          : 'Idle: no recent time check yet. Tap to check now.';
 
   const runConfigSummary = useMemo(() => {
     const name = session?.name ? `"${session.name}"` : '(unnamed)';
     return `${name} | Setup ${session?.templateKey ?? '-'} | Laps ${session?.lapsRequired ?? '-'} | Enforcement ${session?.enforcement || 'OFF'} | Scan gap ${Math.round((session?.scanGapMs || 10000) / 1000)}s`;
   }, [session?.name, session?.templateKey, session?.lapsRequired, session?.enforcement, session?.scanGapMs]);
+
+  useEffect(() => {
+    if (!sessionId) return;
+    const payload = {
+      label: connectionLabel,
+      tone: connectionTone,
+      hint: connectionHint,
+      atMs: Date.now()
+    };
+    localStorage.setItem(connectionStatusStorageKey(sessionId), JSON.stringify(payload));
+  }, [sessionId, connectionLabel, connectionTone, connectionHint]);
 
 
   const buildSummaries = (events: EventRow[]) => {
@@ -590,6 +713,21 @@ export default function CaptureScreen() {
   useEffect(() => {
     setRunConfigForm(toRunConfigForm(session));
   }, [session]);
+
+  useEffect(() => {
+    if (!session?.pairingToken || !stationId) return;
+    let active = true;
+    const run = async () => {
+      if (!active) return;
+      await runTimeSyncCheck();
+    };
+    run();
+    const timer = window.setInterval(run, TIME_SYNC_INTERVAL_MS);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [session?.pairingToken, stationId]);
 
   useEffect(() => {
     if (!sessionId || !session?.pairingToken || !session?.remoteSessionId) return;
@@ -710,32 +848,39 @@ export default function CaptureScreen() {
             }
           }
 
-          const latestStartOrResume = Math.max(latestStartSet, latestResumeSet);
-          const latestControl = Math.max(latestStartSet, latestResumeSet, latestPauseSet, latestEndSet, latestClearAll);
+          const unsyncedControls = (await listUnsyncedEvents(sessionId)).filter((event) =>
+            CONTROL_EVENT_TYPES.has(String(event.type || ''))
+          );
+          const shouldHoldRemoteControlState = unsyncedControls.length > 0;
 
-          if (latestControl === latestClearAll && latestClearAll > 0) {
-            await clearSessionEvents(sessionId);
-            await updateSessionGlobalStart(sessionId, undefined);
-            await updateSessionGlobalPaused(sessionId, false);
-            await updateSessionGlobalEnd(sessionId, undefined);
-            if (active) {
-              setSession((prev) => (prev ? { ...prev, globalStartMs: undefined, globalPaused: false, globalEndMs: undefined } : prev));
-            }
-          } else if (latestControl > 0) {
-            const paused = latestPauseSet > latestStartOrResume && latestPauseSet > latestEndSet;
-            const ended = latestEndSet > latestStartOrResume && latestEndSet >= latestPauseSet;
-            if (latestStartOrResume > 0) {
-              await updateSessionGlobalStart(sessionId, latestStartOrResume);
-            }
-            await updateSessionGlobalPaused(sessionId, paused);
-            await updateSessionGlobalEnd(sessionId, ended ? latestEndSet : undefined);
-            if (active) {
-              setSession((prev) => (prev ? {
-                ...prev,
-                globalStartMs: latestStartOrResume || prev.globalStartMs,
-                globalPaused: paused,
-                globalEndMs: ended ? latestEndSet : undefined
-              } : prev));
+          if (!shouldHoldRemoteControlState) {
+            const latestStartOrResume = Math.max(latestStartSet, latestResumeSet);
+            const latestControl = Math.max(latestStartSet, latestResumeSet, latestPauseSet, latestEndSet, latestClearAll);
+
+            if (latestControl === latestClearAll && latestClearAll > 0) {
+              await clearSessionEvents(sessionId);
+              await updateSessionGlobalStart(sessionId, undefined);
+              await updateSessionGlobalPaused(sessionId, false);
+              await updateSessionGlobalEnd(sessionId, undefined);
+              if (active) {
+                setSession((prev) => (prev ? { ...prev, globalStartMs: undefined, globalPaused: false, globalEndMs: undefined } : prev));
+              }
+            } else if (latestControl > 0) {
+              const paused = latestPauseSet > latestStartOrResume && latestPauseSet > latestEndSet;
+              const ended = latestEndSet > latestStartOrResume && latestEndSet >= latestPauseSet;
+              if (latestStartOrResume > 0) {
+                await updateSessionGlobalStart(sessionId, latestStartOrResume);
+              }
+              await updateSessionGlobalPaused(sessionId, paused);
+              await updateSessionGlobalEnd(sessionId, ended ? latestEndSet : undefined);
+              if (active) {
+                setSession((prev) => (prev ? {
+                  ...prev,
+                  globalStartMs: latestStartOrResume || prev.globalStartMs,
+                  globalPaused: paused,
+                  globalEndMs: ended ? latestEndSet : undefined
+                } : prev));
+              }
             }
           }
 
@@ -951,7 +1096,7 @@ export default function CaptureScreen() {
       runnerId: targetId,
       stationId,
       type: 'CLEAR',
-      capturedAtMs: Date.now()
+      capturedAtMs: normalizedNowMs()
     });
     await refreshEvents();
   }
@@ -978,7 +1123,7 @@ export default function CaptureScreen() {
       runnerId: targetId,
       stationId: last.stationId,
       type: 'UNDO',
-      capturedAtMs: Date.now(),
+      capturedAtMs: normalizedNowMs(),
       refEventId: last.id
     });
     setToast(`Undo: ${targetId}`);
@@ -1059,6 +1204,7 @@ export default function CaptureScreen() {
       return;
     }
     const force = overridePending || (event as unknown as React.KeyboardEvent).shiftKey === true;
+    await ensureFreshTimeSync();
 
     const sessionEvents = await listEventsForSession(sessionId);
     const clearAllEvents = sessionEvents.filter((event) => event.type === 'CLEAR_ALL');
@@ -1073,7 +1219,7 @@ export default function CaptureScreen() {
       runnerState = applyEvent(runnerState, mapDbEventToRunEvent(entry), templateConfig);
     }
 
-    const nowMs = Date.now();
+    const nowMs = normalizedNowMs();
     const lastSeen = runnerState.lastSeenMsAtStation[stationId as any];
     const gapMs = templateConfig.minScanGapMsByStation[stationId as any] ?? 0;
     if (!force && lastSeen != null && nowMs - lastSeen < gapMs) {
@@ -1130,12 +1276,13 @@ export default function CaptureScreen() {
 
   async function handleResetSession() {
     if (!sessionId) return;
+    await ensureFreshTimeSync();
     await clearSessionEvents(sessionId);
     await updateSessionGlobalStart(sessionId, undefined);
     await updateSessionGlobalPaused(sessionId, false);
     await updateSessionGlobalEnd(sessionId, undefined);
     setSession((prev) => (prev ? { ...prev, globalStartMs: undefined, globalPaused: false, globalEndMs: undefined } : prev));
-    const nowMs = Date.now();
+    const nowMs = normalizedNowMs();
     lastClearAllRef.current = nowMs;
     await addEvent({
       sessionId,
@@ -1190,7 +1337,7 @@ export default function CaptureScreen() {
       runnerId: 'GLOBAL',
       stationId: stationId || startStationId || 'LAP_END',
       type: 'RUNIDCFG_SET',
-      capturedAtMs: Date.now(),
+      capturedAtMs: normalizedNowMs(),
       refEventId: encodeConfigRef({ ...idPatch }),
       payload: {
         ...idPatch
@@ -1231,7 +1378,7 @@ export default function CaptureScreen() {
       runnerId: 'GLOBAL',
       stationId: stationId || startStationId || 'LAP_END',
       type: 'RUNIDCFG_SET',
-      capturedAtMs: Date.now(),
+      capturedAtMs: normalizedNowMs(),
       refEventId: encodeConfigRef({ ...idPatch }),
       payload: {
         ...idPatch
@@ -1284,7 +1431,7 @@ export default function CaptureScreen() {
       runnerId: 'GLOBAL',
       stationId: stationId || startStationId || 'LAP_END',
       type: 'RUNCFG_SET',
-      capturedAtMs: Date.now(),
+      capturedAtMs: normalizedNowMs(),
       refEventId: encodeConfigRef({
         lapsRequired: patch.lapsRequired,
         enforcement: patch.enforcement,
@@ -1343,7 +1490,7 @@ export default function CaptureScreen() {
       runnerId: 'GLOBAL',
       stationId: stationId || startStationId || 'LAP_END',
       type: 'RUNCFG_SET',
-      capturedAtMs: Date.now(),
+      capturedAtMs: normalizedNowMs(),
       refEventId: encodeConfigRef({
         lapsRequired: patch.lapsRequired,
         enforcement: patch.enforcement,
@@ -1367,7 +1514,8 @@ export default function CaptureScreen() {
 
   async function handleGlobalStart() {
     if (!sessionId) return;
-    const startMs = Date.now();
+    await ensureFreshTimeSync();
+    const startMs = normalizedNowMs();
     const eventType = runStarted ? 'RESUME_SET' : 'START_SET';
     await addEvent({
       sessionId,
@@ -1385,7 +1533,8 @@ export default function CaptureScreen() {
 
   async function handleGlobalPause() {
     if (!sessionId || !runStarted || runEnded) return;
-    const pauseMs = Date.now();
+    await ensureFreshTimeSync();
+    const pauseMs = normalizedNowMs();
     await addEvent({
       sessionId,
       runnerId: 'GLOBAL',
@@ -1400,7 +1549,8 @@ export default function CaptureScreen() {
 
   async function handleGlobalEnd() {
     if (!sessionId || !runStarted || !runPaused) return;
-    const endMs = Date.now();
+    await ensureFreshTimeSync();
+    const endMs = normalizedNowMs();
     await addEvent({
       sessionId,
       runnerId: 'GLOBAL',
@@ -1451,7 +1601,15 @@ export default function CaptureScreen() {
               {stationId ? stationLabel(session?.templateKey, stationId) : 'Station not set'}
             </div>
             <div className="capture-status-right">
-              <div className={`capture-status-badge ${connectionTone}`}>{connectionLabel}</div>
+              <button
+                type="button"
+                className={`capture-status-badge ${timeSyncTone} capture-status-sync-btn`}
+                onClick={runTimeSyncCheck}
+                disabled={!session?.pairingToken || timeSyncStatus === 'checking'}
+                title={`${timeSyncHint}${timeSyncRttMs != null ? ` Ping ${timeSyncRttMs}ms.` : ''}${Number.isFinite(timeSyncOffsetMs) ? ` Offset ${formatOffsetSeconds(timeSyncOffsetMs)}.` : ''}`}
+              >
+                {timeSyncLabel}
+              </button>
               <div className="capture-status-clock">{new Date(clockMs).toLocaleTimeString()}</div>
             </div>
           </div>
@@ -1741,6 +1899,13 @@ export default function CaptureScreen() {
               </div>
               {!!healthSummary && <div className="note">Health: {healthSummary}</div>}
               {!!healthError && <div className="error">Health error: {healthError}</div>}
+              <div className="note">
+                Clock sync: {timeSyncStatus}
+                {timeSyncCheckedAtMs ? ` @ ${new Date(timeSyncCheckedAtMs).toLocaleTimeString()}` : ''}
+                {Number.isFinite(timeSyncOffsetMs) ? ` | offset ${formatOffsetSeconds(timeSyncOffsetMs)}` : ''}
+                {timeSyncRttMs != null ? ` | ping ${timeSyncRttMs}ms` : ''}
+              </div>
+              {!!timeSyncError && <div className="error">Clock sync error: {timeSyncError}</div>}
               <div className="note">
                 Sync stats: attempted {lastSyncStats?.attempted ?? 0} | accepted {lastSyncStats?.synced ?? 0} | failed {lastSyncStats?.failed ?? 0} | pending {syncPending}
               </div>
