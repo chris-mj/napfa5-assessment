@@ -1230,23 +1230,77 @@ function ScannerModal({ onClose, onDetected }) {
   const controlsRef = useRef(null)
   const [supported, setSupported] = useState(true)
   const [err, setErr] = useState('')
-  const [facingMode, setFacingMode] = useState('environment')
+  const [facingMode, setFacingMode] = useState('user')
+  const [preferredDeviceId, setPreferredDeviceId] = useState('')
+
+  const stopActiveMedia = () => {
+    if (controlsRef.current) {
+      try { controlsRef.current.stop() } catch {}
+      controlsRef.current = null
+    }
+    if (streamRef.current) {
+      try { streamRef.current.getTracks().forEach(t => t.stop()) } catch {}
+      streamRef.current = null
+    }
+    if (videoRef.current) {
+      try { videoRef.current.pause(); videoRef.current.srcObject = null } catch {}
+    }
+  }
+
+  const pickDeviceForMode = (devices, mode, currentId) => {
+    if (!Array.isArray(devices) || devices.length === 0) return null
+    const list = devices.filter(d => d && d.kind === 'videoinput')
+    if (!list.length) return null
+    const norm = (s) => String(s || '').toLowerCase()
+    const backWords = ['back', 'rear', 'environment', 'world']
+    const frontWords = ['front', 'user', 'facetime']
+    const wanted = mode === 'user' ? frontWords : backWords
+    const match = list.find(d => wanted.some(w => norm(d.label).includes(w)))
+    if (match) return match
+    const other = list.find(d => d.deviceId && d.deviceId !== currentId)
+    if (other) return other
+    return list[0]
+  }
+
   useEffect(() => {
     let cleanupFn = null
     const hasBarcode = 'BarcodeDetector' in window
+    let cancelled = false
     const start = async () => {
       try {
         setErr('')
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode } })
+        stopActiveMedia()
+        // iOS Safari can throw AbortError when switching camera too quickly.
+        await new Promise((resolve) => setTimeout(resolve, 120))
+        const candidates = []
+        if (preferredDeviceId) candidates.push({ deviceId: { exact: preferredDeviceId } })
+        candidates.push({ facingMode: { exact: facingMode } })
+        candidates.push({ facingMode })
+        candidates.push(true)
+        let stream = null
+        for (const video of candidates) {
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({ video })
+            break
+          } catch {}
+        }
+        if (!stream) throw new Error('Camera unavailable.')
+        if (cancelled) {
+          try { stream.getTracks().forEach(t => t.stop()) } catch {}
+          return
+        }
         streamRef.current = stream
         if (videoRef.current) {
           videoRef.current.srcObject = stream
           await videoRef.current.play()
         }
+        try {
+          const activeId = stream.getVideoTracks?.()[0]?.getSettings?.()?.deviceId
+          if (activeId) setPreferredDeviceId(activeId)
+        } catch {}
         if (hasBarcode) {
           setSupported(true)
           const detector = new window.BarcodeDetector({ formats: ['qr_code','code_128','code_39'] })
-          let cancelled = false
           const tick = async () => {
             if (cancelled) return
             try {
@@ -1285,20 +1339,23 @@ function ScannerModal({ onClose, onDetected }) {
     }
     start()
     return () => {
-      // Stop ZXing controls if active
-      if (controlsRef.current) { try { controlsRef.current.stop() } catch {} controlsRef.current = null }
-      // Stop camera tracks
-      if (streamRef.current) {
-        try { streamRef.current.getTracks().forEach(t => t.stop()) } catch {}
-        streamRef.current = null
-      }
-      // Clear video element
-      if (videoRef.current) {
-        try { videoRef.current.pause(); videoRef.current.srcObject = null } catch {}
-      }
+      cancelled = true
+      stopActiveMedia()
       if (typeof cleanupFn === 'function') cleanupFn()
     }
-  }, [onDetected, facingMode])
+  }, [onDetected, facingMode, preferredDeviceId])
+
+  const handleSwitchCamera = async () => {
+    const nextMode = facingMode === 'environment' ? 'user' : 'environment'
+    try {
+      if (navigator.mediaDevices?.enumerateDevices) {
+        const devices = await navigator.mediaDevices.enumerateDevices()
+        const target = pickDeviceForMode(devices, nextMode, preferredDeviceId)
+        if (target?.deviceId) setPreferredDeviceId(target.deviceId)
+      }
+    } catch {}
+    setFacingMode(nextMode)
+  }
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
@@ -1321,7 +1378,7 @@ function ScannerModal({ onClose, onDetected }) {
         <div className="px-3 py-2 border-t flex items-center justify-between gap-2">
           <button
             type="button"
-            onClick={() => setFacingMode(prev => (prev === 'environment' ? 'user' : 'environment'))}
+            onClick={handleSwitchCamera}
             className="px-3 py-1.5 border rounded hover:bg-gray-50"
           >
             Switch Camera
