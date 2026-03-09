@@ -394,10 +394,12 @@ export default function SessionSetup() {
                 );
               })}
             </div>
-            <div className="note">Setup A can start immediately. Setups B-E need a Napfa5 token.</div>
-            <button type="button" className="btn-lg" onClick={() => setShowTokenModal(true)}>
-              Enter/Scan Napfa5 Token
-            </button>
+            <div className="setup-token-row">
+              <div className="note setup-token-note">Setup A can start immediately. Setups B-E need a Napfa5 token.</div>
+              <button type="button" className="btn-lg" onClick={() => setShowTokenModal(true)}>
+                Enter/Scan Napfa5 Token
+              </button>
+            </div>
           </div>
 
           <div className="inline-row">
@@ -440,9 +442,9 @@ export default function SessionSetup() {
                   </option>
                 ))}
               </select>
-              <div className="note">
-                OFF: ignore missing checkpoints. SOFT: allow but flag. STRICT: block lap if checkpoints missing.
-              </div>
+              <div className="note">OFF: ignore missing checkpoints.</div>
+              <div className="note">SOFT: allow but flag.</div>
+              <div className="note">STRICT: block lap if checkpoints missing.</div>
             </div>
           </div>
             <div>

@@ -75,6 +75,11 @@ body {
   color: #fca5a5;
 }
 
+.status.warn {
+  background: rgba(250, 204, 21, 0.16);
+  color: #fde68a;
+}
+
 .status-button {
   border: none;
   cursor: pointer;
@@ -195,6 +200,16 @@ main {
   font-size: 28px;
   font-weight: 800;
   letter-spacing: 0.5px;
+}
+
+.capture-status-sync-btn {
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.capture-status-sync-btn:disabled {
+  cursor: default;
+  opacity: 0.7;
 }
 
 .capture-control-btn {
@@ -636,6 +651,18 @@ button:disabled {
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
 }
 
+.setup-token-row {
+  margin-top: 4px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.setup-token-note {
+  margin: 0;
+}
+
 .template-card {
   background: #0b1222;
   border: 1px solid #334155;
@@ -713,6 +740,13 @@ button:disabled {
   display: grid;
   gap: 16px;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+@media (max-width: 760px) {
+  .setup-token-row {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
 }
 
 .btn-link {
