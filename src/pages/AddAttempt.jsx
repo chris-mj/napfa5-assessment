@@ -1225,19 +1225,42 @@ function StationToolsDrawer({
 }
 
 function ScannerModal({ onClose, onDetected }) {
+  const CAMERA_PREF_KEY = 'scanner_camera_pref_addattempt'
   const videoRef = useRef(null)
   const streamRef = useRef(null)
   const controlsRef = useRef(null)
   const onDetectedRef = useRef(onDetected)
   const [supported, setSupported] = useState(true)
   const [err, setErr] = useState('')
-  const [facingMode, setFacingMode] = useState('user')
-  const [preferredDeviceId, setPreferredDeviceId] = useState('')
+  const [facingMode, setFacingMode] = useState(() => {
+    try {
+      const raw = localStorage.getItem(CAMERA_PREF_KEY)
+      const saved = raw ? JSON.parse(raw) : null
+      if (saved?.mode === 'user' || saved?.mode === 'environment') return saved.mode
+    } catch {}
+    const ua = String(navigator?.userAgent || '').toLowerCase()
+    const coarse = typeof window?.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches
+    return (coarse || /android|iphone|ipad|ipod|mobile/.test(ua)) ? 'environment' : 'user'
+  })
+  const [preferredDeviceId, setPreferredDeviceId] = useState(() => {
+    try {
+      const raw = localStorage.getItem(CAMERA_PREF_KEY)
+      const saved = raw ? JSON.parse(raw) : null
+      return saved?.deviceId || ''
+    } catch {}
+    return ''
+  })
   const [activeCameraId, setActiveCameraId] = useState('')
 
   useEffect(() => {
     onDetectedRef.current = onDetected
   }, [onDetected])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(CAMERA_PREF_KEY, JSON.stringify({ mode: facingMode, deviceId: preferredDeviceId || '' }))
+    } catch {}
+  }, [facingMode, preferredDeviceId])
 
   const stopActiveMedia = () => {
     if (controlsRef.current) {
@@ -1314,6 +1337,9 @@ function ScannerModal({ onClose, onDetected }) {
           if (activeId) {
             setPreferredDeviceId(activeId)
             resolvedDeviceId = activeId
+            try {
+              localStorage.setItem(CAMERA_PREF_KEY, JSON.stringify({ mode: facingMode, deviceId: activeId }))
+            } catch {}
           }
         } catch {}
         if (hasBarcode) {
