@@ -255,26 +255,161 @@ function escapeCsv(value: string | number | undefined): string {
   return text;
 }
 
+function formatMmssFromSeconds(seconds: number | undefined): string {
+  if (seconds == null || !Number.isFinite(seconds) || seconds < 0) return '';
+  const total = Math.round(seconds);
+  const mm = Math.floor(total / 60);
+  const ss = total % 60;
+  return `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
+}
+
+function deriveRunSummaryRows(session: SessionRow | undefined, events: EventRow[]) {
+  const template = String(session?.templateKey || 'A').toUpperCase();
+  const lapsRequired = Math.max(1, Number(session?.lapsRequired || 1));
+  const checkpoints = template === 'B' ? ['A'] : template === 'C' ? ['A', 'B'] : [];
+
+  const sorted = [...events].sort((a, b) => a.capturedAtMs - b.capturedAtMs);
+  const latestClear = sorted
+    .filter((e) => e.type === 'CLEAR_ALL')
+    .reduce((m, e) => Math.max(m, e.capturedAtMs || 0), 0);
+  const scoped = latestClear ? sorted.filter((e) => (e.capturedAtMs || 0) >= latestClear) : sorted;
+  const passEvents = scoped.filter((e) => e.type === 'PASS' && e.runnerId);
+
+  const byRunner = new Map<string, EventRow[]>();
+  for (const e of passEvents) {
+    const key = String(e.runnerId || '').trim();
+    if (!key) continue;
+    if (!byRunner.has(key)) byRunner.set(key, []);
+    byRunner.get(key)!.push(e);
+  }
+
+  const rows: Array<{
+    tagId: string;
+    checkpointFlag: string;
+    totalMmss: string;
+    intervalsText: string;
+    intervalSteps: Array<{ station: string; mmss: string }>;
+  }> = [];
+  for (const [tagId, list] of byRunner.entries()) {
+    const scans = [...list].sort((a, b) => a.capturedAtMs - b.capturedAtMs);
+    let startedAt: number | null = null;
+    let finishedAt: number | null = null;
+    let lapCount = 0;
+    const checkpointsSeen: Record<string, boolean> = {};
+    const timeline: Array<{ station: string; t: number }> = [];
+
+    for (const e of scans) {
+      const station = String(e.stationId || '');
+      const t = Number(e.capturedAtMs || 0);
+      if (!t || finishedAt != null) continue;
+
+      if (template === 'D' && station === 'START' && startedAt == null) {
+        startedAt = t;
+        timeline.push({ station, t });
+        continue;
+      }
+
+      if (station === 'A' || station === 'B') {
+        if (checkpoints.includes(station)) checkpointsSeen[station] = true;
+        continue;
+      }
+
+      if (station === 'LAP_END') {
+        if (startedAt == null) {
+          startedAt = t;
+          timeline.push({ station, t });
+          continue;
+        }
+        timeline.push({ station, t });
+        lapCount += 1;
+        if (template !== 'E' && lapCount >= lapsRequired) {
+          finishedAt = t;
+        }
+        continue;
+      }
+
+      if (station === 'FINISH' && template === 'E' && startedAt != null) {
+        timeline.push({ station, t });
+        if (lapCount >= lapsRequired) finishedAt = t;
+      }
+    }
+
+    const totalSec = startedAt != null && finishedAt != null && finishedAt > startedAt
+      ? Math.round((finishedAt - startedAt) / 1000)
+      : undefined;
+    const intervals: string[] = [];
+    const intervalSteps: Array<{ station: string; mmss: string }> = [];
+    for (let i = 1; i < timeline.length; i += 1) {
+      const prev = timeline[i - 1];
+      const curr = timeline[i];
+      const sec = Math.max(0, Math.round((curr.t - prev.t) / 1000));
+      const mmss = formatMmssFromSeconds(sec);
+      intervals.push(`${prev.station}->${curr.station} ${mmss}`);
+      intervalSteps.push({ station: curr.station, mmss });
+    }
+
+    rows.push({
+      tagId,
+      checkpointFlag: checkpoints.length
+        ? (checkpoints.some((cp) => !checkpointsSeen[cp]) ? 'Missing checkpoint' : 'OK')
+        : '',
+      totalMmss: formatMmssFromSeconds(totalSec),
+      intervalsText: intervals.join(' | '),
+      intervalSteps
+    });
+  }
+
+  rows.sort((a, b) => a.tagId.localeCompare(b.tagId, undefined, { numeric: true, sensitivity: 'base' }));
+  return rows;
+}
+
 export async function exportCsv(sessionId: string): Promise<string> {
+  const session = await db.sessions.get(sessionId);
   const events = await db.events
     .where('[sessionId+capturedAtMs]')
     .between([sessionId, Dexie.minKey], [sessionId, Dexie.maxKey])
     .sortBy('capturedAtMs');
 
-  const header = ['id', 'sessionId', 'runnerId', 'stationId', 'type', 'capturedAtMs', 'refEventId'];
-  const rows = events.map((event) =>
+  const summaryRows = deriveRunSummaryRows(session, events);
+  const maxSteps = summaryRows.reduce((m, r) => Math.max(m, r.intervalSteps.length), 0);
+  const intervalHeaders: string[] = [];
+  for (let i = 0; i < maxSteps; i += 1) {
+    const station = summaryRows.find((r) => r.intervalSteps[i]?.station)?.intervalSteps[i]?.station;
+    intervalHeaders.push(station || `Scan ${i + 2}`);
+  }
+  const metaRows = [
+    ['Run Session Name', session?.name || ''],
+    ['Run Config ID', session?.runConfigId || session?.id || sessionId],
+    ['Setup Type', session?.templateKey || ''],
+    ['Laps Required', session?.lapsRequired ?? ''],
+    ['Checkpoint Enforcement', session?.enforcement || 'OFF'],
+    ['Time Between Scans (s)', session?.scanGapMs ? Math.round(session.scanGapMs / 1000) : 10],
+    ['Exported At', new Date().toISOString()],
+    []
+  ].map((row) => row.map((v) => escapeCsv(v as any)).join(','));
+
+  const header = [
+    'Tag ID',
+    'Tag Mapping',
+    'Student ID',
+    'Student Name',
+    'Class',
+    'Checkpoint Flag',
+    'Total Run Time',
+    ...intervalHeaders
+  ];
+  const rows = summaryRows.map((row) =>
     [
-      event.id,
-      event.sessionId,
-      event.runnerId,
-      event.stationId,
-      event.type,
-      event.capturedAtMs,
-      event.refEventId ?? ''
-    ]
-      .map(escapeCsv)
-      .join(',')
+      row.tagId,
+      '',
+      '',
+      '',
+      '',
+      row.checkpointFlag,
+      row.totalMmss,
+      ...intervalHeaders.map((_, idx) => row.intervalSteps[idx]?.mmss || '')
+    ].map(escapeCsv).join(',')
   );
 
-  return [header.join(','), ...rows].join('\n');
+  return [...metaRows, header.join(','), ...rows].join('\n');
 }

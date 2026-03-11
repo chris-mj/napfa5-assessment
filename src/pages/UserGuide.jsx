@@ -41,6 +41,7 @@ export default function UserGuide({ user }) {
   const [howToTitle, setHowToTitle] = useState("");
   const [howToSteps, setHowToSteps] = useState([]);
   const [howToEntered, setHowToEntered] = useState(false);
+  const [howToTab, setHowToTab] = useState("quick");
 
   useEffect(() => {
     let ignore = false;
@@ -73,6 +74,11 @@ export default function UserGuide({ user }) {
       setHowToEntered(false);
     }
   }, [howToOpen]);
+
+  useEffect(() => {
+    if (!howToOpen) return;
+    setHowToTab("quick");
+  }, [howToOpen, howToTitle]);
 
   const closeHowTo = () => {
     // animate out then unmount
@@ -197,13 +203,46 @@ export default function UserGuide({ user }) {
                 ]}
                 onHowTo={(t, s) => { setHowToTitle(t); setHowToSteps(s); setHowToOpen(true); }}
                 howToSteps={[
-                  "Open Sessions, choose the session, and open Run Setup in Session Detail.",
-                  "Create the run session configuration: set Config Name, Setup Type, Laps Required, Checkpoint Enforcement, and Time Between Scans.",
-                  "Generate token and pair all run stations in the RUN app.",
-                  "SECTION: Recommended run session configuration model",
-                  "Use 1 run session configuration for each conducted run (for example one class per token).",
-                  "For the next class or a new run, create another run session configuration/token even if setup values are the same.",
-                  "Use Reset Session Data only to restart the same run; do not use one active run session configuration across different runs."
+                  "TAB: Quick Start",
+                  "SECTION: Quick start workflow",
+                  "Create run session config -> pair stations -> run scans -> verify sync -> map tags -> lock mapping -> import timings -> export/download -> reset local data for next run.",
+                  "Open Sessions, choose your session, then open Session Detail -> Run Setup.",
+                  "Create a Run Session Config and set: Config Name, Setup Type, Laps Required, Checkpoint Enforcement, and Time Between Scans.",
+                  "Generate the token and use it to pair RUN stations.",
+                  "Open RUN app on each station device and enter/scan the pairing token.",
+                  "Choose station role (START, LAP START / END, CHECKPOINT, FINISH) according to your setup.",
+                  "If prompted, choose to load existing local+cloud data or reset local data for a clean restart.",
+                  "After scanning, open Tag Mapping in Run Setup to map Tag IDs to students.",
+                  "Use manual mapping or AutoTag, then save mappings.",
+                  "Lock tag mapping when finalized so it cannot be edited accidentally.",
+                  "Use Import Run Timings to write run timings into scores.",
+                  "TAB: Full System Specs",
+                  "SECTION: What StepWise2 is for",
+                  "StepWise2 controls station-based running operations: station flow, laps required, checkpoint enforcement, and time between scans.",
+                  "It creates one Run Session Config that run stations can link to using a pairing token.",
+                  "SECTION: Setup in main NAPFA-5 app",
+                  "Open Sessions, choose your session, then open Session Detail -> Run Setup.",
+                  "Create a Run Session Config and set: Config Name, Setup Type, Laps Required, Checkpoint Enforcement, and Time Between Scans.",
+                  "Generate the token and use it to pair RUN stations.",
+                  "SECTION: Setup in RUN app",
+                  "Open RUN app on each station device and enter/scan the pairing token.",
+                  "Choose station role (START, LAP START / END, CHECKPOINT, FINISH) according to your setup.",
+                  "If prompted, choose to load existing local+cloud data or reset local data for a clean restart.",
+                  "SECTION: During run operations",
+                  "Stations record scans locally first, then sync to cloud in the background.",
+                  "Use Start/Pause/End controls on control stations to coordinate recording state.",
+                  "If the app shows '>1 scanner on same station; dedupe active', multiple scanners are active and server dedupe is protecting against duplicates.",
+                  "Watch Last received / Last sent / Pending upload to confirm data flow.",
+                  "SECTION: Tag mapping and score import",
+                  "After scanning, open Tag Mapping in Run Setup to map Tag IDs to students.",
+                  "Use manual mapping or AutoTag, then save mappings.",
+                  "Lock tag mapping when finalized so it cannot be edited accidentally.",
+                  "Use Import Run Timings to write run timings into scores.",
+                  "SECTION: Data handling and reset rules",
+                  "Reset Session Data in RUN app clears local browser data only; cloud data is not deleted.",
+                  "Delete cloud run data must be done from main NAPFA-5 app Run Setup actions.",
+                  "For multi-class operations, use one Run Session Config per class run (one token per run).",
+                  "Duplicate setup values for the next class instead of reusing one active run config across classes."
                 ]}
               />
             )}
@@ -443,17 +482,44 @@ export default function UserGuide({ user }) {
       {howToOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className={`absolute inset-0 bg-black/40 transition-opacity duration-150 ${howToEntered ? 'opacity-100' : 'opacity-0'}`} onClick={closeHowTo} />
-          <div className={`relative bg-white border rounded-lg shadow-lg max-w-md w-full mx-4 p-5 transform transition-all duration-150 ${howToEntered ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}>
+          <div className={`relative bg-white border rounded-lg shadow-lg ${howToTitle === "StepWise2" ? "max-w-4xl max-h-[85vh]" : "max-w-md"} w-full mx-4 p-5 transform transition-all duration-150 ${howToEntered ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}>
             <div className="flex items-start justify-between gap-3">
               <div>
                 <h3 className="text-lg font-semibold">{howToTitle}: Step-by-step</h3>
               </div>
               <button className="text-sm px-2 py-1 border rounded hover:bg-gray-50" onClick={closeHowTo}>Close</button>
             </div>
-            <div className="mt-3 space-y-2 text-sm text-gray-800">
+            {howToTitle === "StepWise2" && (
+              <div className="mt-3 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setHowToTab("quick")}
+                  className={`text-sm px-3 py-1.5 border rounded ${howToTab === "quick" ? "bg-blue-600 text-white border-blue-600" : "bg-white hover:bg-gray-50"}`}
+                >
+                  Quick Start
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHowToTab("full")}
+                  className={`text-sm px-3 py-1.5 border rounded ${howToTab === "full" ? "bg-blue-600 text-white border-blue-600" : "bg-white hover:bg-gray-50"}`}
+                >
+                  Full System Specs
+                </button>
+              </div>
+            )}
+            <div className={`mt-3 space-y-2 text-sm text-gray-800 ${howToTitle === "StepWise2" ? "overflow-y-auto pr-1 max-h-[70vh]" : ""}`}>
               {(() => {
                 let stepNo = 0;
+                let activeTab = "quick";
                 return howToSteps.map((s, i) => {
+                  if (howToTitle === "StepWise2" && String(s).startsWith("TAB:")) {
+                    const label = String(s).replace("TAB:", "").trim().toLowerCase();
+                    activeTab = label.includes("full") ? "full" : "quick";
+                    return null;
+                  }
+                  if (howToTitle === "StepWise2" && activeTab !== howToTab) {
+                    return null;
+                  }
                   if (String(s).startsWith("SECTION:")) {
                     const heading = String(s).replace("SECTION:", "").trim();
                     return <div key={i} className="pt-1 font-semibold text-gray-900">{heading}</div>;

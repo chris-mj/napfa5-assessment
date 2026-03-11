@@ -35,7 +35,11 @@ export default function StationSelect() {
         setStationId(stored);
       } else {
         const stations = STATIONS_BY_TEMPLATE[template] ?? [];
-        setStationId(stations[0] ?? '');
+        const fallback = stations[0] ?? '';
+        setStationId(fallback);
+        if (fallback) {
+          localStorage.setItem(storage, fallback);
+        }
       }
     });
   }, [sessionId]);
@@ -61,6 +65,7 @@ export default function StationSelect() {
 
   function handleContinue() {
     if (!sessionId || !stationId) return;
+    localStorage.setItem(stationStorageKey(sessionId), stationId);
     navigate(`/capture?sessionId=${encodeURIComponent(sessionId)}`);
   }
 

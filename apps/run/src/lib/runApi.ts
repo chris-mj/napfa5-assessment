@@ -277,3 +277,34 @@ export async function fetchRunServerTime(input: { pairingToken: string }) {
     return fetchTimeFromHealthDate(healthUrl, 'time');
   }
 }
+
+export async function touchStationPresence(input: {
+  pairingToken: string;
+  stationId: string;
+  deviceId: string;
+  activeWithinSec?: number;
+}) {
+  const url = new URL(runApiUrl('/api/run/stationPresence'), window.location.origin);
+  if (input.activeWithinSec && Number.isFinite(input.activeWithinSec)) {
+    url.searchParams.set('activeWithinSec', String(input.activeWithinSec));
+  }
+  const response = await fetch(url.toString(), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${input.pairingToken}`
+    },
+    cache: 'no-store',
+    body: JSON.stringify({
+      stationId: input.stationId,
+      deviceId: input.deviceId
+    })
+  });
+  const body = await parseJsonOrThrow(response, 'stationPresence');
+  if (!response.ok) {
+    throw new Error(body.error || `stationPresence failed (${response.status})`);
+  }
+  return {
+    activeDevices: Number(body.activeDevices) || 0
+  };
+}

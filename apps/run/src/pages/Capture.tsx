@@ -22,12 +22,15 @@ import { fetchRunEvents } from '../lib/runApi';
 import { runApiUrl } from '../lib/runApi';
 import { fetchRunHealth } from '../lib/runApi';
 import { fetchRunServerTime } from '../lib/runApi';
+import { touchStationPresence } from '../lib/runApi';
 
 const GLOBAL_START_TEMPLATES = new Set(['A', 'B', 'C', 'D', 'E']);
 const CHECKPOINT_TEMPLATES = new Set(['B', 'C']);
 const SYNC_INTERVAL_MS = 5000;
+const SYNC_STALE_MS = 60000;
 const TIME_SYNC_INTERVAL_MS = 60000;
 const TIME_SYNC_PING_COUNT = 5;
+const STATION_PRESENCE_INTERVAL_MS = 10000;
 const CONTROL_EVENT_TYPES = new Set(['START_SET', 'RESUME_SET', 'PAUSE_SET', 'END_SET', 'CLEAR_ALL']);
 const STATIONS_BY_TEMPLATE: Record<string, string[]> = {
   A: ['LAP_END'],
@@ -80,6 +83,10 @@ type RunConfigForm = {
 
 function stationStorageKey(sessionId: string) {
   return `napfa5-run:station:${sessionId}`;
+}
+
+function deviceIdStorageKey() {
+  return 'napfa5-run:device-id';
 }
 
 function connectionStatusStorageKey(sessionId: string) {
@@ -425,6 +432,7 @@ export default function CaptureScreen() {
   const [timeSyncOffsetMs, setTimeSyncOffsetMs] = useState(0);
   const [timeSyncRttMs, setTimeSyncRttMs] = useState<number | null>(null);
   const [timeSyncCheckedAtMs, setTimeSyncCheckedAtMs] = useState<number | null>(null);
+  const [activeStationDevices, setActiveStationDevices] = useState<number>(0);
   const [showTechDetails, setShowTechDetails] = useState(false);
   const [showOverrideModal, setShowOverrideModal] = useState(false);
   const [overrideForm, setOverrideForm] = useState<OverrideForm>(() => toOverrideForm(null));
@@ -441,6 +449,7 @@ export default function CaptureScreen() {
   const remoteSinceRef = useRef<number>(0);
   const syncInFlightRef = useRef(false);
   const timeSyncInFlightRef = useRef(false);
+  const deviceIdRef = useRef<string>('');
   const projectorRef = useRef<Window | null>(null);
   const channelRef = useRef<BroadcastChannel | null>(null);
 
@@ -546,8 +555,24 @@ export default function CaptureScreen() {
   const runStarted = Boolean(session?.globalStartMs);
   const runPaused = Boolean(session?.globalPaused);
   const runEnded = Boolean(session?.globalEndMs);
+  const canControlRun = showGlobalStart && stationId === startStationId;
+  const runStateLabel = !runStarted
+    ? 'Run: Not started'
+    : runEnded
+      ? 'Run: Ended'
+      : runPaused
+        ? 'Run: Paused'
+        : 'Run: Running';
+  const runStateTone = !runStarted
+    ? 'warn'
+    : runEnded
+      ? 'danger'
+      : runPaused
+        ? 'warn'
+        : 'ok';
+  const showScannerWarning = activeStationDevices >= 2;
   const syncIsStale = session?.pairingToken && session?.remoteSessionId
-    ? (!lastPullAtMs || !lastPushAtMs || Date.now() - lastPullAtMs > 15000 || Date.now() - lastPushAtMs > 15000)
+    ? (!lastPullAtMs || !lastPushAtMs || Date.now() - lastPullAtMs > SYNC_STALE_MS || Date.now() - lastPushAtMs > SYNC_STALE_MS)
     : false;
   const hasSyncIssue = Boolean(lastPullError || lastPushError || tokenStatus === 'invalid' || healthStatus === 'error');
   const connectionLabel = !session?.pairingToken || !session?.remoteSessionId
@@ -723,6 +748,47 @@ export default function CaptureScreen() {
     };
     run();
     const timer = window.setInterval(run, TIME_SYNC_INTERVAL_MS);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [session?.pairingToken, stationId]);
+
+  useEffect(() => {
+    if (!deviceIdRef.current) {
+      const key = deviceIdStorageKey();
+      const existing = localStorage.getItem(key);
+      if (existing) {
+        deviceIdRef.current = existing;
+      } else {
+        const next = (typeof crypto !== 'undefined' && crypto.randomUUID)
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+        localStorage.setItem(key, next);
+        deviceIdRef.current = next;
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!session?.pairingToken || !stationId || !deviceIdRef.current) return;
+    let active = true;
+    const tick = async () => {
+      try {
+        const result = await touchStationPresence({
+          pairingToken: session.pairingToken,
+          stationId,
+          deviceId: deviceIdRef.current,
+          activeWithinSec: 30
+        });
+        if (!active) return;
+        setActiveStationDevices(result.activeDevices);
+      } catch {
+        if (!active) return;
+      }
+    };
+    tick();
+    const timer = window.setInterval(tick, STATION_PRESENCE_INTERVAL_MS);
     return () => {
       active = false;
       window.clearInterval(timer);
@@ -1615,7 +1681,7 @@ export default function CaptureScreen() {
           </div>
           <div className="capture-status-controls-meta">
             <div className="capture-status-controls">
-              {showGlobalStart && stationId === startStationId && (
+              {canControlRun && (
                 <>
                   <button
                     type="button"
@@ -1642,13 +1708,22 @@ export default function CaptureScreen() {
                 )}
                 </>
               )}
+              {!canControlRun && (
+                <div className={`capture-status-badge capture-run-state-pill ${runStateTone}`}>{runStateLabel}</div>
+              )}
             </div>
             <div className="capture-status-meta">
               <div>Last received: {lastPullAtMs ? new Date(lastPullAtMs).toLocaleTimeString() : 'never'}</div>
               <div>Last sent: {lastPushAtMs ? new Date(lastPushAtMs).toLocaleTimeString() : 'never'}</div>
               <div>Pending upload: {syncPending}</div>
+              <div>Scanners: {activeStationDevices}</div>
             </div>
           </div>
+          {showScannerWarning && (
+            <div className="note" style={{ color: '#f59e0b' }}>
+              {'>1 scanner on same station; dedupe active'}
+            </div>
+          )}
         </section>
 
         <div className="capture-workspace">

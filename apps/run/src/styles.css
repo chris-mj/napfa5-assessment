@@ -186,6 +186,16 @@ main {
   border-color: rgba(239, 68, 68, 0.4);
 }
 
+.capture-run-state-pill {
+  min-width: 120px;
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 16px;
+  font-size: 14px;
+}
+
 .capture-status-meta {
   display: flex;
   gap: 12px;

@@ -41,7 +41,7 @@ export default async function handler(req, res) {
 
   const { data: config, error: configError } = await supabase
     .from('run_configs')
-    .select('id, session_id, pairing_token')
+    .select('id, session_id, pairing_token, scan_gap_ms')
     .eq('pairing_token', pairingToken)
     .maybeSingle();
 
@@ -60,33 +60,87 @@ export default async function handler(req, res) {
     return;
   }
 
-  const payload = events.map((event) => ({
-    event_id: event.id,
-    run_config_id: config.id,
-    session_id: config.session_id,
-    station_id: event.stationId || null,
-    event_type: event.type,
-    occurred_at: new Date(event.capturedAtMs).toISOString(),
-    payload: {
-      runner_id: event.runnerId || null,
-      ref_event_id: event.refEventId || null,
-      client_payload: event.payload || null
-    }
-  }));
+  const dedupeWindowMsRaw = Number(config.scan_gap_ms);
+  const dedupeWindowMs = Number.isFinite(dedupeWindowMsRaw)
+    ? Math.max(1000, Math.min(60000, dedupeWindowMsRaw))
+    : 10000;
+  const sinceIso = new Date(Date.now() - dedupeWindowMs).toISOString();
 
-  const { error: bulkError } = await supabase.from('run_events').upsert(payload, { onConflict: 'event_id' });
-  if (!bulkError) {
-    res.status(200).json({ acceptedIds: events.map((e) => e.id), failedIds: [] });
+  const { data: recentPasses, error: recentErr } = await supabase
+    .from('run_events')
+    .select('station_id, payload, created_at')
+    .eq('run_config_id', config.id)
+    .eq('event_type', 'PASS')
+    .gt('created_at', sinceIso)
+    .order('created_at', { ascending: false })
+    .limit(2000);
+
+  if (recentErr) {
+    res.status(500).json({ error: 'Failed to load recent events for dedupe' });
     return;
+  }
+
+  const dedupeKeys = new Set();
+  for (const row of recentPasses || []) {
+    const tag = String(row?.payload?.runner_id || '').trim();
+    const station = String(row?.station_id || '').trim();
+    if (!tag || !station) continue;
+    dedupeKeys.add(`${station}::${tag}`);
   }
 
   const acceptedIds = [];
   const failedIds = [];
-  for (const event of payload) {
-    const { error } = await supabase.from('run_events').upsert([event], { onConflict: 'event_id' });
-    if (error) failedIds.push(event.event_id);
-    else acceptedIds.push(event.event_id);
+  const toInsert = [];
+  const batchPassKeys = new Set();
+
+  for (const event of events) {
+    const type = String(event.type || '');
+    const station = String(event.stationId || '').trim();
+    const tag = String(event.runnerId || '').trim();
+    const passKey = type === 'PASS' && station && tag ? `${station}::${tag}` : '';
+
+    if (passKey && (dedupeKeys.has(passKey) || batchPassKeys.has(passKey))) {
+      // Cross-device duplicate within dedupe window: treat as accepted to prevent resend loops.
+      acceptedIds.push(event.id);
+      continue;
+    }
+
+    if (passKey) {
+      batchPassKeys.add(passKey);
+      dedupeKeys.add(passKey);
+    }
+
+    toInsert.push({
+      event_id: event.id,
+      run_config_id: config.id,
+      session_id: config.session_id,
+      station_id: event.stationId || null,
+      event_type: event.type,
+      occurred_at: new Date(event.capturedAtMs).toISOString(),
+      payload: {
+        runner_id: event.runnerId || null,
+        ref_event_id: event.refEventId || null,
+        client_payload: event.payload || null
+      }
+    });
   }
 
-  res.status(207).json({ acceptedIds, failedIds, error: failedIds.length ? 'Partial failure' : undefined });
+  if (toInsert.length) {
+    const { error: bulkError } = await supabase.from('run_events').upsert(toInsert, { onConflict: 'event_id' });
+    if (!bulkError) {
+      acceptedIds.push(...toInsert.map((e) => e.event_id));
+    } else {
+      for (const event of toInsert) {
+        const { error } = await supabase.from('run_events').upsert([event], { onConflict: 'event_id' });
+        if (error) failedIds.push(event.event_id);
+        else acceptedIds.push(event.event_id);
+      }
+    }
+  }
+
+  if (failedIds.length) {
+    res.status(207).json({ acceptedIds, failedIds, error: 'Partial failure' });
+    return;
+  }
+  res.status(200).json({ acceptedIds, failedIds: [] });
 }

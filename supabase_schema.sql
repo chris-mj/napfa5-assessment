@@ -194,12 +194,18 @@ create table if not exists run_configs (
   session_id uuid not null references sessions(id) on delete cascade,
   name text,
   template_key text not null,
+  run_distance_m integer,
   laps_required integer not null,
   enforcement text,
   scan_gap_ms integer,
   pairing_token text,
   pairing_qr_data_url text,
   pairing_barcode_data_url text,
+  timings_locked_at timestamptz,
+  timings_locked_by uuid,
+  timings_applied_at timestamptz,
+  timings_applied_by uuid,
+  timings_apply_summary jsonb,
   created_at timestamptz default now()
 );
 create index if not exists idx_run_configs_session on run_configs (session_id);
@@ -218,6 +224,36 @@ create table if not exists run_events (
 );
 create index if not exists idx_run_events_run_config_time on run_events (run_config_id, occurred_at);
 create index if not exists idx_run_events_session_time on run_events (session_id, occurred_at);
+
+-- Run station presence: active scanner heartbeat by run config + station + device.
+create table if not exists run_station_presence (
+  id uuid primary key default gen_random_uuid(),
+  run_config_id uuid not null references run_configs(id) on delete cascade,
+  session_id uuid not null references sessions(id) on delete cascade,
+  station_id text not null,
+  device_id text not null,
+  last_seen_at timestamptz not null default now(),
+  created_at timestamptz not null default now(),
+  unique (run_config_id, station_id, device_id)
+);
+create index if not exists idx_run_station_presence_recent
+  on run_station_presence (run_config_id, station_id, last_seen_at desc);
+
+-- Run tag mappings: map scanner tags to session roster students per run config.
+create table if not exists run_tag_mappings (
+  id uuid primary key default gen_random_uuid(),
+  run_config_id uuid not null references run_configs(id) on delete cascade,
+  session_id uuid not null references sessions(id) on delete cascade,
+  student_id uuid not null references students(id) on delete cascade,
+  tag_id text not null,
+  source text default 'manual',
+  created_at timestamptz default now(),
+  updated_at timestamptz default now(),
+  unique (run_config_id, student_id),
+  unique (run_config_id, tag_id)
+);
+create index if not exists idx_run_tag_mappings_config on run_tag_mappings (run_config_id);
+create index if not exists idx_run_tag_mappings_session on run_tag_mappings (session_id);
 
 -- Session roster: link students to a session
 create table if not exists session_roster (
@@ -358,6 +394,28 @@ exception when others then null; end $$;
 -- Session roster: optional house assignment per session
 alter table if exists session_roster add column if not exists house text;
 
+-- Run configs: timing lock/apply metadata columns
+alter table if exists run_configs add column if not exists timings_locked_at timestamptz;
+alter table if exists run_configs add column if not exists timings_locked_by uuid;
+alter table if exists run_configs add column if not exists timings_applied_at timestamptz;
+alter table if exists run_configs add column if not exists timings_applied_by uuid;
+alter table if exists run_configs add column if not exists timings_apply_summary jsonb;
+alter table if exists run_configs add column if not exists run_distance_m integer;
+
+-- Run station presence table may be added after initial deployment.
+create table if not exists run_station_presence (
+  id uuid primary key default gen_random_uuid(),
+  run_config_id uuid not null references run_configs(id) on delete cascade,
+  session_id uuid not null references sessions(id) on delete cascade,
+  station_id text not null,
+  device_id text not null,
+  last_seen_at timestamptz not null default now(),
+  created_at timestamptz not null default now(),
+  unique (run_config_id, station_id, device_id)
+);
+create index if not exists idx_run_station_presence_recent
+  on run_station_presence (run_config_id, station_id, last_seen_at desc);
+
 -- =========================
 -- Row Level Security (RLS)
 -- =========================
@@ -368,6 +426,7 @@ alter table if exists enrollments enable row level security;
 alter table if exists sessions enable row level security;
 alter table if exists run_configs enable row level security;
 alter table if exists run_events enable row level security;
+alter table if exists run_tag_mappings enable row level security;
 alter table if exists session_roster enable row level security;
 alter table if exists scores enable row level security;
 alter table if exists memberships enable row level security;
@@ -583,6 +642,42 @@ do $$ begin
       select 1 from sessions s
       join memberships m on m.school_id = s.school_id
       where s.id = run_configs.session_id
+        and m.user_id = auth.uid()
+        and m.role in ('admin','superadmin')
+    )
+  );
+exception when duplicate_object then null; end $$;
+
+-- Run tag mappings: select by membership; CUD by admin/superadmin in same school.
+do $$ begin
+  create policy run_tag_mappings_select_by_membership
+  on run_tag_mappings for select
+  using (
+    exists (
+      select 1 from sessions s
+      join memberships m on m.school_id = s.school_id
+      where s.id = run_tag_mappings.session_id
+        and m.user_id = auth.uid()
+    )
+  );
+exception when duplicate_object then null; end $$;
+
+do $$ begin
+  create policy run_tag_mappings_admin_cud
+  on run_tag_mappings for all
+  using (
+    exists (
+      select 1 from sessions s
+      join memberships m on m.school_id = s.school_id
+      where s.id = run_tag_mappings.session_id
+        and m.user_id = auth.uid()
+        and m.role in ('admin','superadmin')
+    )
+  ) with check (
+    exists (
+      select 1 from sessions s
+      join memberships m on m.school_id = s.school_id
+      where s.id = run_tag_mappings.session_id
         and m.user_id = auth.uid()
         and m.role in ('admin','superadmin')
     )
