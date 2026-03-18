@@ -128,6 +128,33 @@ create table if not exists memberships (
 create index if not exists idx_memberships_user on memberships (user_id);
 create index if not exists idx_memberships_school on memberships (school_id);
 
+-- Reusable QR login credentials for low-privilege staff accounts
+do $$ begin
+  alter table if exists memberships
+    add column if not exists qr_login_token text;
+exception when others then null; end $$;
+
+do $$ begin
+  alter table if exists memberships
+    add column if not exists qr_login_pin_hash text;
+exception when others then null; end $$;
+
+do $$ begin
+  alter table if exists memberships
+    add column if not exists qr_login_enabled boolean not null default false;
+exception when others then null; end $$;
+
+do $$ begin
+  alter table if exists memberships
+    add column if not exists qr_login_updated_at timestamptz;
+exception when others then null; end $$;
+
+do $$ begin
+  create unique index idx_memberships_qr_login_token
+    on memberships (qr_login_token)
+    where qr_login_token is not null;
+exception when others then null; end $$;
+
 -- Optional FK to profiles for convenience
 do $$ begin
   alter table if exists memberships
