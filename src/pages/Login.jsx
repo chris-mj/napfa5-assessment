@@ -1,6 +1,7 @@
 ﻿import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
+import { useRef } from "react";
 
 export default function Login({ onLogin }) {
     const [email, setEmail] = useState("");
@@ -8,6 +9,7 @@ export default function Login({ onLogin }) {
     const [useMagic, setUseMagic] = useState(false);
     const [loading, setLoading] = useState(false);
     const [message, setMessage] = useState("");
+    const [scannerOpen, setScannerOpen] = useState(false);
     const navigate = useNavigate();
 
     // Detect magic-link sessions automatically
@@ -60,79 +62,376 @@ export default function Login({ onLogin }) {
         }
     };
 
+    const handleQrDetected = (rawCode) => {
+        const link = parseQrLoginLink(rawCode);
+        if (!link) {
+            setMessage("Error: Invalid QR login code.");
+            setScannerOpen(false);
+            return;
+        }
+        setMessage("Opening QR login link...");
+        setScannerOpen(false);
+        window.location.assign(link);
+    };
+
     return (
-        <div className="flex justify-center items-center h-[80vh]">
-            <form
-                onSubmit={handleSubmit}
-                className="p-6 w-[360px] bg-white border rounded shadow space-y-4"
-            >
-                <div className="flex flex-col items-center gap-2 mb-1">
-                    <img src="/iconsmall.png" alt="NAPFA5" className="w-10 h-10" />
-                    <h1 className="text-xl font-bold text-center">NAPFA5 Login</h1>
-                </div>
+        <>
+            <div className="flex justify-center items-center h-[80vh]">
+                <form
+                    onSubmit={handleSubmit}
+                    className="p-6 w-[360px] bg-white border rounded shadow space-y-4"
+                >
+                    <div className="flex flex-col items-center gap-2 mb-1">
+                        <img src="/iconsmall.png" alt="NAPFA5" className="w-10 h-10" />
+                        <h1 className="text-xl font-bold text-center">NAPFA5 Login</h1>
+                    </div>
 
-                <input
-                    type="email"
-                    required
-                    placeholder="Email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="border rounded w-full p-2"
-                />
-
-                {!useMagic && (
                     <input
-                        type="password"
+                        type="email"
                         required
-                        placeholder="Password"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
+                        placeholder="Email"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
                         className="border rounded w-full p-2"
                     />
-                )}
 
-                <button
-                    type="submit"
-                    disabled={loading}
-                    className="bg-blue-600 text-white rounded w-full py-2 hover:bg-blue-700"
-                >
-                    {loading
-                        ? "Please wait..."
-                        : useMagic
-                            ? "Send Magic Link"
-                            : "Sign In"}
-                </button>
+                    {!useMagic && (
+                        <input
+                            type="password"
+                            required
+                            placeholder="Password"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            className="border rounded w-full p-2"
+                        />
+                    )}
 
-                <button
-                    type="button"
-                    onClick={() => setUseMagic(!useMagic)}
-                    className="text-sm text-blue-700 underline w-full"
-                >
-                    {useMagic ? "Use password login" : "Use magic link instead"}
-                </button>
+                    <button
+                        type="submit"
+                        disabled={loading}
+                        className="bg-blue-600 text-white rounded w-full py-2 hover:bg-blue-700"
+                    >
+                        {loading
+                            ? "Please wait..."
+                            : useMagic
+                                ? "Send Magic Link"
+                                : "Sign In"}
+                    </button>
 
-                <button
-                    type="button"
-                    onClick={async () => {
-                        if (!email) return setMessage("Please enter your email first.");
-                        const { error } = await supabase.auth.resetPasswordForEmail(email, {
-                            redirectTo: `${window.location.origin}/change-password`,
+                    <button
+                        type="button"
+                        onClick={() => setScannerOpen(true)}
+                        className="border rounded w-full py-2 hover:bg-slate-50"
+                    >
+                        Scan QR Login
+                    </button>
+
+                    <div className="text-xs text-center text-gray-500">
+                        QR login is intended for score_taker and viewer accounts generated by an admin.
+                    </div>
+
+                    <button
+                        type="button"
+                        onClick={() => setUseMagic(!useMagic)}
+                        className="text-sm text-blue-700 underline w-full"
+                    >
+                        {useMagic ? "Use password login" : "Use magic link instead"}
+                    </button>
+
+                    <button
+                        type="button"
+                        onClick={async () => {
+                            if (!email) return setMessage("Please enter your email first.");
+                            const { error } = await supabase.auth.resetPasswordForEmail(email, {
+                                redirectTo: `${window.location.origin}/change-password`,
+                            });
+                            if (error) setMessage("Error: " + error.message);
+                            else setMessage("Password reset link sent to your email.");
+                        }}
+                        className="text-sm text-blue-700 underline w-full"
+                    >
+                        Forgot password?
+                    </button>
+
+                    {message && (
+                        <p className="text-sm text-center text-gray-700 whitespace-pre-wrap">
+                            {message}
+                        </p>
+                    )}
+                </form>
+            </div>
+
+            {scannerOpen && (
+                <ScannerModal
+                    onClose={() => setScannerOpen(false)}
+                    onDetected={handleQrDetected}
+                />
+            )}
+        </>
+    );
+}
+
+function parseQrLoginLink(rawCode) {
+    const value = String(rawCode || "").trim();
+    if (!value) return "";
+
+    try {
+        const url = new URL(value);
+        if (url.protocol === "http:" || url.protocol === "https:") return url.toString();
+        if (url.protocol === "napfa5-login:") {
+            const nested = url.searchParams.get("link");
+            if (!nested) return "";
+            const nestedUrl = new URL(nested);
+            if (nestedUrl.protocol === "http:" || nestedUrl.protocol === "https:") return nestedUrl.toString();
+        }
+    } catch {}
+
+    return "";
+}
+
+function ScannerModal({ onClose, onDetected }) {
+    const CAMERA_PREF_KEY = "scanner_camera_pref_login";
+    const videoRef = useRef(null);
+    const streamRef = useRef(null);
+    const controlsRef = useRef(null);
+    const onDetectedRef = useRef(onDetected);
+    const [supported, setSupported] = useState(true);
+    const [err, setErr] = useState("");
+    const [facingMode, setFacingMode] = useState(() => {
+        try {
+            const raw = localStorage.getItem(CAMERA_PREF_KEY);
+            const saved = raw ? JSON.parse(raw) : null;
+            if (saved?.mode === "user" || saved?.mode === "environment") return saved.mode;
+        } catch {}
+        const ua = String(navigator?.userAgent || "").toLowerCase();
+        const coarse = typeof window?.matchMedia === "function" && window.matchMedia("(pointer: coarse)").matches;
+        return (coarse || /android|iphone|ipad|ipod|mobile/.test(ua)) ? "environment" : "user";
+    });
+    const [preferredDeviceId, setPreferredDeviceId] = useState(() => {
+        try {
+            const raw = localStorage.getItem(CAMERA_PREF_KEY);
+            const saved = raw ? JSON.parse(raw) : null;
+            return saved?.deviceId || "";
+        } catch {}
+        return "";
+    });
+    const [activeCameraId, setActiveCameraId] = useState("");
+
+    useEffect(() => {
+        onDetectedRef.current = onDetected;
+    }, [onDetected]);
+
+    useEffect(() => {
+        try {
+            localStorage.setItem(CAMERA_PREF_KEY, JSON.stringify({ mode: facingMode, deviceId: preferredDeviceId || "" }));
+        } catch {}
+    }, [facingMode]);
+
+    const stopActiveMedia = () => {
+        if (controlsRef.current) {
+            try { controlsRef.current.stop(); } catch {}
+            controlsRef.current = null;
+        }
+        if (streamRef.current) {
+            try { streamRef.current.getTracks().forEach((track) => track.stop()); } catch {}
+            streamRef.current = null;
+        }
+        if (videoRef.current) {
+            try { videoRef.current.pause(); videoRef.current.srcObject = null; } catch {}
+        }
+    };
+
+    const pickDeviceForMode = (devices, mode, currentId) => {
+        if (!Array.isArray(devices) || devices.length === 0) return null;
+        const list = devices.filter((device) => device && device.kind === "videoinput");
+        if (!list.length) return null;
+        const norm = (text) => String(text || "").toLowerCase();
+        const backWords = ["back", "rear", "environment", "world"];
+        const frontWords = ["front", "user", "facetime"];
+        const wanted = mode === "user" ? frontWords : backWords;
+        const match = list.find((device) => wanted.some((word) => norm(device.label).includes(word)));
+        if (match) return match;
+        const other = list.find((device) => device.deviceId && device.deviceId !== currentId);
+        if (other) return other;
+        return list[0];
+    };
+
+    useEffect(() => {
+        let cleanupFn = null;
+        let cancelled = false;
+        const hasBarcode = "BarcodeDetector" in window;
+
+        const start = async () => {
+            try {
+                setErr("");
+                stopActiveMedia();
+                await new Promise((resolve) => setTimeout(resolve, 120));
+
+                const candidates = [];
+                if (preferredDeviceId) candidates.push({ deviceId: { exact: preferredDeviceId } });
+                candidates.push({ facingMode: { exact: facingMode } });
+                candidates.push({ facingMode });
+                candidates.push(true);
+
+                let stream = null;
+                let resolvedDeviceId = preferredDeviceId || "";
+                const candidateErrors = [];
+                for (const video of candidates) {
+                    try {
+                        stream = await navigator.mediaDevices.getUserMedia({ video });
+                        break;
+                    } catch (openErr) {
+                        const hint = typeof video === "boolean"
+                            ? "default"
+                            : (video?.deviceId ? "deviceId" : (video?.facingMode ? "facingMode" : "video"));
+                        candidateErrors.push(`${hint}: ${openErr?.name || "Error"} ${openErr?.message || ""}`.trim());
+                    }
+                }
+
+                if (!stream) throw new Error(candidateErrors.join(" | ") || "Camera unavailable.");
+                if (cancelled) {
+                    try { stream.getTracks().forEach((track) => track.stop()); } catch {}
+                    return;
+                }
+
+                streamRef.current = stream;
+                if (videoRef.current) {
+                    videoRef.current.srcObject = stream;
+                    await videoRef.current.play();
+                }
+
+                try {
+                    const track = stream.getVideoTracks?.()[0];
+                    const activeId = track?.getSettings?.()?.deviceId;
+                    setActiveCameraId(activeId || "");
+                    if (activeId) {
+                        setPreferredDeviceId(activeId);
+                        resolvedDeviceId = activeId;
+                        try {
+                            localStorage.setItem(CAMERA_PREF_KEY, JSON.stringify({ mode: facingMode, deviceId: activeId }));
+                        } catch {}
+                    }
+                } catch {}
+
+                if (hasBarcode) {
+                    setSupported(true);
+                    const detector = new window.BarcodeDetector({ formats: ["qr_code", "code_128", "code_39"] });
+                    const tick = async () => {
+                        if (cancelled) return;
+                        try {
+                            const frame = await detector.detect(videoRef.current);
+                            if (frame && frame.length > 0) {
+                                const value = frame[0].rawValue;
+                                if (value) onDetectedRef.current?.(value);
+                                return;
+                            }
+                        } catch {}
+                        requestAnimationFrame(tick);
+                    };
+                    requestAnimationFrame(tick);
+                    cleanupFn = () => { cancelled = true; };
+                } else {
+                    try {
+                        const { BrowserMultiFormatReader } = await import("@zxing/browser");
+                        setSupported(true);
+                        const codeReader = new BrowserMultiFormatReader();
+                        const controls = await codeReader.decodeFromVideoDevice(resolvedDeviceId || null, videoRef.current, (result, _err, ctrl) => {
+                            if (result) {
+                                const value = result.getText();
+                                if (value) {
+                                    ctrl.stop();
+                                    onDetectedRef.current?.(value);
+                                }
+                            }
                         });
-                        if (error) setMessage("Error: " + error.message);
-                        else setMessage("Password reset link sent to your email.");
-                    }}
-                    className="text-sm text-blue-700 underline w-full"
-                >
-                    Forgot password?
-                </button>
+                        controlsRef.current = controls;
+                        cleanupFn = () => { try { controls.stop(); codeReader.reset(); } catch {} };
+                    } catch {
+                        setSupported(false);
+                    }
+                }
+            } catch (e) {
+                setErr(e?.message || "Camera unavailable.");
+            }
+        };
 
+        start();
+        return () => {
+            cancelled = true;
+            stopActiveMedia();
+            if (typeof cleanupFn === "function") cleanupFn();
+        };
+    }, [facingMode]);
 
-                {message && (
-                    <p className="text-sm text-center text-gray-700 whitespace-pre-wrap">
-                        {message}
-                    </p>
-                )}
-            </form>
+    const handleSwitchCamera = async () => {
+        const nextMode = facingMode === "environment" ? "user" : "environment";
+        try {
+            if (navigator.mediaDevices?.enumerateDevices) {
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const target = pickDeviceForMode(devices, nextMode, activeCameraId || preferredDeviceId);
+                if (target?.deviceId) setPreferredDeviceId(target.deviceId);
+            }
+        } catch {}
+        setFacingMode(nextMode);
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
+            <div className="bg-white rounded-lg shadow-lg w-full max-w-md overflow-hidden">
+                <div className="flex items-center justify-between px-3 py-2 border-b">
+                    <div className="text-sm font-medium">Scan QR Login</div>
+                    <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded" aria-label="Close scanner">
+                        <X className="h-4 w-4" />
+                    </button>
+                </div>
+                <div className="p-3 space-y-2">
+                    {supported ? (
+                        <div className="aspect-video bg-black rounded overflow-hidden">
+                            <video ref={videoRef} className="w-full h-full object-cover" muted playsInline />
+                        </div>
+                    ) : (
+                        <div className="text-sm text-gray-600">This browser does not support in-page barcode scanning. Please use Chrome or Edge.</div>
+                    )}
+                    {err && <div className="text-sm text-red-600">{err}</div>}
+                    <div className="text-xs text-gray-500">Tip: Point the camera at the QR login code from Manage Users.</div>
+                </div>
+                <div className="px-3 py-2 border-t flex items-center justify-between gap-2">
+                    <button
+                        type="button"
+                        onClick={handleSwitchCamera}
+                        className="px-3 py-1.5 border rounded hover:bg-gray-50"
+                    >
+                        Switch Camera
+                    </button>
+                    <button onClick={onClose} className="px-3 py-1.5 border rounded hover:bg-gray-50">Close</button>
+                </div>
+            </div>
         </div>
+    );
+}
+
+function IconBase({ children, className, ...rest }) {
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={className}
+            {...rest}
+        >
+            {children}
+        </svg>
+    );
+}
+
+function X(props) {
+    return (
+        <IconBase {...props}>
+            <path d="M18 6L6 18M6 6l12 12" />
+        </IconBase>
     );
 }

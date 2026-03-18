@@ -2042,9 +2042,10 @@ function ScannerModal({ onClose, onDetected }) {
         await new Promise((resolve) => setTimeout(resolve, 120))
 
         const candidates = []
+        // Prefer an explicitly chosen device when reopening or switching cameras.
+        if (preferredDeviceId) candidates.push({ deviceId: { exact: preferredDeviceId } })
         candidates.push({ facingMode: { exact: facingMode } })
         candidates.push({ facingMode })
-        if (preferredDeviceId) candidates.push({ deviceId: { exact: preferredDeviceId } })
         candidates.push(true)
 
         let stream = null
