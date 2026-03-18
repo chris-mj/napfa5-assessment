@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
@@ -13,19 +14,77 @@ function readJsonBody(req) {
   return {};
 }
 
-function resolveLoginRedirect(req, body) {
-  const rawOrigin = req.headers.origin || body.origin || '';
-  if (!rawOrigin) return null;
-  try {
-    const url = new URL(rawOrigin);
-    if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
-    url.pathname = '/login';
-    url.search = '';
-    url.hash = '';
-    return url.toString();
-  } catch {
-    return null;
+function normalizePin(value) {
+  return String(value || '').replace(/\D/g, '').slice(0, 6);
+}
+
+function hashPin(pin) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const derived = crypto.scryptSync(String(pin), salt, 32).toString('hex');
+  return `scrypt:${salt}:${derived}`;
+}
+
+function createReusableToken() {
+  return `napfa5qr_${crypto.randomBytes(24).toString('hex')}`;
+}
+
+async function getAuthorizedTarget(req, supabase, membershipId) {
+  const authHeader = req.headers.authorization || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+  if (!token) return { error: { status: 401, error: 'Missing auth token' } };
+
+  const { data: requesterData, error: requesterError } = await supabase.auth.getUser(token);
+  if (requesterError || !requesterData?.user) {
+    return { error: { status: 401, error: 'Invalid auth token' } };
   }
+
+  const requester = requesterData.user;
+  const requesterEmail = String(requester.email || '').toLowerCase();
+  const isPlatformOwner = requesterEmail === PLATFORM_OWNER_EMAIL.toLowerCase();
+
+  const { data: targetMembership, error: membershipError } = await supabase
+    .from('memberships')
+    .select('id, user_id, school_id, role, qr_login_token, qr_login_pin_hash, qr_login_enabled')
+    .eq('id', membershipId)
+    .maybeSingle();
+
+  if (membershipError || !targetMembership?.id) {
+    return { error: { status: 404, error: 'Target membership not found' } };
+  }
+
+  const targetRole = String(targetMembership.role || '').toLowerCase();
+  if (!QR_LOGIN_ROLES.has(targetRole)) {
+    return { error: { status: 403, error: 'QR login is only available for score_taker or viewer roles' } };
+  }
+
+  if (!isPlatformOwner) {
+    const { data: requesterMemberships, error: requesterMembershipError } = await supabase
+      .from('memberships')
+      .select('role')
+      .eq('user_id', requester.id)
+      .eq('school_id', targetMembership.school_id);
+
+    if (requesterMembershipError) {
+      return { error: { status: 500, error: 'Failed to verify requester access' } };
+    }
+
+    const requesterRoles = new Set((requesterMemberships || []).map((row) => String(row.role || '').toLowerCase()));
+    if (!(requesterRoles.has('admin') || requesterRoles.has('superadmin'))) {
+      return { error: { status: 403, error: 'Not authorized to manage QR login for this user' } };
+    }
+  }
+
+  const { data: authUserData, error: authUserError } = await supabase.auth.admin.getUserById(targetMembership.user_id);
+  const authUser = authUserData?.user;
+  if (authUserError || !authUser) {
+    return { error: { status: 404, error: 'Target auth user not found' } };
+  }
+
+  return {
+    authUser,
+    targetMembership,
+    targetRole: targetRole === 'score_viewer' ? 'viewer' : targetRole,
+  };
 }
 
 export default async function handler(req, res) {
@@ -48,109 +107,70 @@ export default async function handler(req, res) {
     return;
   }
 
-  const authHeader = req.headers.authorization || '';
-  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
-  if (!token) {
-    res.status(401).json({ error: 'Missing auth token' });
-    return;
-  }
-
   const body = readJsonBody(req);
   const membershipId = String(body.membershipId || '').trim();
+  const regenerate = body.regenerate === true;
   if (!membershipId) {
     res.status(400).json({ error: 'Missing membershipId' });
     return;
   }
 
-  const redirectTo = resolveLoginRedirect(req, body);
-  if (!redirectTo) {
-    res.status(400).json({ error: 'Missing or invalid origin' });
-    return;
-  }
-
   const supabase = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
-  const { data: requesterData, error: requesterError } = await supabase.auth.getUser(token);
-  if (requesterError || !requesterData?.user) {
-    res.status(401).json({ error: 'Invalid auth token' });
+  const resolved = await getAuthorizedTarget(req, supabase, membershipId);
+  if (resolved.error) {
+    res.status(resolved.error.status).json({ error: resolved.error.error, code: resolved.error.code || null });
     return;
   }
 
-  const requester = requesterData.user;
-  const requesterEmail = String(requester.email || '').toLowerCase();
-  const isPlatformOwner = requesterEmail === PLATFORM_OWNER_EMAIL.toLowerCase();
+  const { authUser, targetMembership, targetRole } = resolved;
+  const normalizedPin = normalizePin(body.pin);
+  if (normalizedPin && normalizedPin.length !== 6) {
+    res.status(400).json({ error: 'PIN must be exactly 6 digits.', code: 'INVALID_PIN_FORMAT' });
+    return;
+  }
 
-  const { data: targetMembership, error: membershipError } = await supabase
+  const hasExistingToken = !!targetMembership.qr_login_token && !!targetMembership.qr_login_enabled;
+  const existingPinHash = targetMembership.qr_login_pin_hash || null;
+  const isScoreTaker = targetRole === 'score_taker';
+
+  if (isScoreTaker && !hasExistingToken && !existingPinHash && !normalizedPin) {
+    res.status(400).json({
+      error: 'Score taker QR login requires a 6-digit PIN before first issue.',
+      code: 'PIN_REQUIRED',
+    });
+    return;
+  }
+
+  const nextToken = (hasExistingToken && !regenerate) ? targetMembership.qr_login_token : createReusableToken();
+  const nextPinHash = isScoreTaker
+    ? (normalizedPin ? hashPin(normalizedPin) : existingPinHash)
+    : null;
+
+  const { error: updateError } = await supabase
     .from('memberships')
-    .select('id, user_id, school_id, role')
-    .eq('id', membershipId)
-    .maybeSingle();
+    .update({
+      qr_login_token: nextToken,
+      qr_login_pin_hash: nextPinHash,
+      qr_login_enabled: true,
+      qr_login_updated_at: new Date().toISOString(),
+    })
+    .eq('id', targetMembership.id);
 
-  if (membershipError || !targetMembership?.id) {
-    res.status(404).json({ error: 'Target membership not found' });
-    return;
-  }
-
-  const targetRole = String(targetMembership.role || '').toLowerCase();
-  if (!QR_LOGIN_ROLES.has(targetRole)) {
-    res.status(403).json({ error: 'QR login is only available for score_taker or viewer roles' });
-    return;
-  }
-
-  if (!isPlatformOwner) {
-    const { data: requesterMemberships, error: requesterMembershipError } = await supabase
-      .from('memberships')
-      .select('role')
-      .eq('user_id', requester.id)
-      .eq('school_id', targetMembership.school_id);
-
-    if (requesterMembershipError) {
-      res.status(500).json({ error: 'Failed to verify requester access' });
-      return;
-    }
-
-    const requesterRoles = new Set((requesterMemberships || []).map((row) => String(row.role || '').toLowerCase()));
-    if (!(requesterRoles.has('admin') || requesterRoles.has('superadmin'))) {
-      res.status(403).json({ error: 'Not authorized to generate QR login for this user' });
-      return;
-    }
-  }
-
-  const { data: authUserData, error: authUserError } = await supabase.auth.admin.getUserById(targetMembership.user_id);
-  const authUser = authUserData?.user;
-  if (authUserError || !authUser) {
-    res.status(404).json({ error: 'Target auth user not found' });
-    return;
-  }
-
-  const targetEmail = String(authUser.email || '').trim();
-  if (!targetEmail) {
-    res.status(400).json({ error: 'Target user has no email address' });
-    return;
-  }
-
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('full_name')
-    .eq('user_id', targetMembership.user_id)
-    .maybeSingle();
-
-  const { data: linkData, error: linkError } = await supabase.auth.admin.generateLink({
-    type: 'magiclink',
-    email: targetEmail,
-    options: { redirectTo },
-  });
-
-  if (linkError || !linkData?.properties?.action_link) {
-    res.status(500).json({ error: linkError?.message || 'Failed to generate QR login link' });
+  if (updateError) {
+    res.status(500).json({ error: updateError.message || 'Failed to save QR login settings' });
     return;
   }
 
   res.status(200).json({
     ok: true,
-    actionLink: linkData.properties.action_link,
-    email: targetEmail,
-    fullName: profile?.full_name || authUser.user_metadata?.full_name || '',
-    role: targetRole === 'score_viewer' ? 'viewer' : targetRole,
-    redirectTo,
+    membershipId: targetMembership.id,
+    email: String(authUser.email || '').trim(),
+    fullName: authUser.user_metadata?.full_name || '',
+    role: targetRole,
+    token: nextToken,
+    qrValue: `napfa5-login://access?token=${encodeURIComponent(nextToken)}`,
+    requiresPin: isScoreTaker,
+    regenerated: regenerate || !hasExistingToken,
+    pinConfigured: !!nextPinHash,
   });
 }

@@ -10,6 +10,10 @@ export default function Login({ onLogin }) {
     const [loading, setLoading] = useState(false);
     const [message, setMessage] = useState("");
     const [scannerOpen, setScannerOpen] = useState(false);
+    const [pendingQrToken, setPendingQrToken] = useState("");
+    const [qrPin, setQrPin] = useState("");
+    const [qrPinOpen, setQrPinOpen] = useState(false);
+    const [qrPinBusy, setQrPinBusy] = useState(false);
     const navigate = useNavigate();
 
     // Detect magic-link sessions automatically
@@ -62,16 +66,62 @@ export default function Login({ onLogin }) {
         }
     };
 
+    const redeemQrToken = async (token, pin = "") => {
+        setQrPinBusy(true);
+        try {
+            const response = await fetch('/api/redeemQrLogin', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    token,
+                    pin,
+                    origin: window.location.origin,
+                }),
+            });
+            const parsed = await readApiResponse(response);
+            const result = parsed.data || { rawText: parsed.text };
+            if (!response.ok) {
+                if (result?.code === 'PIN_REQUIRED') {
+                    setPendingQrToken(token);
+                    setQrPin("");
+                    setQrPinOpen(true);
+                    setMessage("PIN required for this score_taker QR login.");
+                    return;
+                }
+                if (result?.code === 'INVALID_PIN') {
+                    setPendingQrToken(token);
+                    setQrPinOpen(true);
+                    setMessage("Incorrect PIN. Try again.");
+                    return;
+                }
+                throw new Error(getApiErrorMessage(result, 'Failed to redeem QR login.'));
+            }
+            setMessage("Opening QR login link...");
+            setQrPinOpen(false);
+            setPendingQrToken("");
+            window.location.assign(result.actionLink);
+        } catch (err) {
+            setMessage("Error: " + (err?.message || 'Failed to redeem QR login.'));
+        } finally {
+            setQrPinBusy(false);
+        }
+    };
+
     const handleQrDetected = (rawCode) => {
-        const link = parseQrLoginLink(rawCode);
-        if (!link) {
+        const payload = parseQrLoginPayload(rawCode);
+        if (!payload) {
             setMessage("Error: Invalid QR login code.");
             setScannerOpen(false);
             return;
         }
-        setMessage("Opening QR login link...");
         setScannerOpen(false);
-        window.location.assign(link);
+        if (payload.kind === 'action_link') {
+            setMessage("Opening QR login link...");
+            window.location.assign(payload.value);
+            return;
+        }
+        setMessage("Checking QR login...");
+        redeemQrToken(payload.value);
     };
 
     return (
@@ -167,26 +217,83 @@ export default function Login({ onLogin }) {
                     onDetected={handleQrDetected}
                 />
             )}
+
+            {qrPinOpen && (
+                <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+                    <div className="bg-white rounded shadow-xl w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
+                        <div className="px-4 py-2 border-b flex items-center justify-between">
+                            <div className="font-medium">Enter PIN</div>
+                            <button className="px-2 py-1 border rounded" onClick={() => { setQrPinOpen(false); setPendingQrToken(""); setQrPin(""); }}>Close</button>
+                        </div>
+                        <form
+                            className="p-4 space-y-3"
+                            onSubmit={(e) => {
+                                e.preventDefault();
+                                redeemQrToken(pendingQrToken, qrPin);
+                            }}
+                        >
+                            <div className="text-sm text-gray-700">This reusable QR belongs to a score_taker account. Enter the 6-digit PIN to continue.</div>
+                            <input
+                                type="password"
+                                inputMode="numeric"
+                                pattern="[0-9]*"
+                                maxLength={6}
+                                value={qrPin}
+                                onChange={(e) => setQrPin(String(e.target.value || "").replace(/\D/g, "").slice(0, 6))}
+                                className="border rounded w-full p-2 tracking-[0.35em] text-center"
+                                placeholder="6-digit PIN"
+                                autoFocus
+                            />
+                            <div className="flex items-center justify-end gap-2">
+                                <button type="button" onClick={() => { setQrPinOpen(false); setPendingQrToken(""); setQrPin(""); }} className="px-3 py-2 border rounded hover:bg-gray-50">Cancel</button>
+                                <button type="submit" disabled={qrPinBusy || qrPin.length !== 6} className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50">
+                                    {qrPinBusy ? 'Checking...' : 'Continue'}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
         </>
     );
 }
 
-function parseQrLoginLink(rawCode) {
+async function readApiResponse(response) {
+    const text = await response.text();
+    try {
+        return { data: JSON.parse(text), text };
+    } catch {
+        return { data: null, text };
+    }
+}
+
+function getApiErrorMessage(payload, fallback) {
+    const apiMessage = payload?.error || payload?.message;
+    if (apiMessage) return apiMessage;
+    const text = String(payload?.rawText || "").trim();
+    if (text) return `${fallback} Server returned non-JSON content.`;
+    return fallback;
+}
+
+function parseQrLoginPayload(rawCode) {
     const value = String(rawCode || "").trim();
-    if (!value) return "";
+    if (!value) return null;
 
     try {
         const url = new URL(value);
-        if (url.protocol === "http:" || url.protocol === "https:") return url.toString();
+        if (url.protocol === "http:" || url.protocol === "https:") return { kind: "action_link", value: url.toString() };
         if (url.protocol === "napfa5-login:") {
+            const token = url.searchParams.get("token");
+            if (token) return { kind: "token", value: token };
             const nested = url.searchParams.get("link");
-            if (!nested) return "";
+            if (!nested) return null;
             const nestedUrl = new URL(nested);
-            if (nestedUrl.protocol === "http:" || nestedUrl.protocol === "https:") return nestedUrl.toString();
+            if (nestedUrl.protocol === "http:" || nestedUrl.protocol === "https:") return { kind: "action_link", value: nestedUrl.toString() };
         }
     } catch {}
 
-    return "";
+    if (/^napfa5qr_[a-f0-9]+$/i.test(value)) return { kind: "token", value };
+    return null;
 }
 
 function ScannerModal({ onClose, onDetected }) {

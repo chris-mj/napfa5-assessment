@@ -26,9 +26,13 @@ Scope: Main app workings only (`src/...`), not run app (`apps/run/...`).
 - Current uncommitted follow-up in working tree:
   - `AddAttempt`, `ScoreEntryGroup`, and `ViewScore` scanner modals now try saved/selected `deviceId` before loose `facingMode` requests, so iPad/Chrome-style switch-camera flows are more likely to reopen the intended camera instead of falling back to the same lens.
   - Added QR-login flow for low-privilege users:
-    - `ModifyUser` can now generate a QR magic link for `score_taker` and `viewer` memberships.
-    - `Login` can now scan that QR and open the generated sign-in link.
-    - `api/generateQrLogin.js` enforces same-school admin/superadmin or platform-owner access before generating the link.
+    - `ModifyUser` now issues reusable QR-login credentials for `score_taker` and `viewer` memberships.
+    - `score_taker` reusable QR login requires a 6-digit PIN; `viewer` does not.
+    - `score_taker` PINs are now stored as salted `scrypt` hashes, with legacy SHA-256 verification kept only as a compatibility fallback for any earlier local test rows.
+    - `Login` now scans reusable QR tokens, prompts for PIN only when required, and redeems them into a fresh sign-in link.
+    - `api/generateQrLogin.js` now creates or rotates reusable QR-login credentials on the membership.
+    - `api/redeemQrLogin.js` validates the reusable QR token and PIN, then mints a fresh sign-in link for that login attempt.
+    - Admin actions now separate `Reset QR` from `Change PIN`: resetting rotates the reusable token, while changing the PIN keeps the current QR code valid.
     - `Login` QR scanner now follows the same camera preference behavior as the other scanner modals: mobile defaults to back camera, saved device/mode are reused, and reopen/restart is driven by camera-mode switches rather than `preferredDeviceId` updates.
 
 ## Key commits (main app relevant)
@@ -46,9 +50,12 @@ Scope: Main app workings only (`src/...`), not run app (`apps/run/...`).
   - successful scan path in all three pages.
 - Confirm the new `deviceId`-first fallback resolves same-camera reopening when tapping `Switch Camera`.
 - Smoke-test QR login end to end:
-  - generate QR from `Manage Users` for a `score_taker` account,
-  - scan it on `Login`,
-  - confirm it signs into the dashboard,
+  - generate reusable QR from `Manage Users` for a `score_taker` account,
+  - confirm first issue prompts for PIN,
+  - scan it on `Login`, enter PIN, and confirm repeated scans still work,
+  - generate reusable QR for a `viewer` account and confirm repeated scans work without PIN,
+  - use `Reset QR` and confirm the old QR stops working,
+  - use `Change PIN` for `score_taker` and confirm the old PIN stops working,
   - confirm `admin`/`superadmin`/other ineligible roles do not get the QR action.
 - If available, rerun a full main-app build outside Codex timeout/sandbox limits; `npm run build` was attempted on 2026-03-18 but did not complete within the CLI time window here.
 - If stable, keep this as baseline and avoid re-adding debug UI unless needed.

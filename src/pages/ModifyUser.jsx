@@ -41,6 +41,14 @@ function getApiErrorMessage(response, payload, fallback) {
     return fallback;
 }
 
+function promptForSixDigitPin(message) {
+    const raw = window.prompt(message || 'Enter a 6-digit PIN.');
+    if (raw == null) return null;
+    const pin = String(raw).replace(/\D/g, '').slice(0, 6);
+    if (pin.length !== 6) return "";
+    return pin;
+}
+
 export default function difyUser({ user }) {
     const [schools, setSchools] = useState([]);
     const [schoolId, setSchoolId] = useState("");
@@ -420,7 +428,52 @@ export default function difyUser({ user }) {
         }
     };
 
-    const handleGenerateQrLogin = async (member) => {
+    const issueQrLogin = async (member, options = {}) => {
+        const { pin = '', regenerate = false } = options;
+        const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+        const accessToken = sessionData?.session?.access_token;
+        if (sessionError || !accessToken) {
+            throw new Error('Missing login session.');
+        }
+
+        const response = await fetch(`${API_BASE}/api/generateQrLogin`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${accessToken}`,
+            },
+            body: JSON.stringify({
+                membershipId: member.id,
+                origin: window.location.origin,
+                pin,
+                regenerate,
+            }),
+        });
+        const parsed = await readApiResponse(response);
+        const result = parsed.data || { rawText: parsed.text };
+        return { response, result };
+    };
+
+    const showQrLoginModal = async (member, result) => {
+        const qrPayload = String(result?.qrValue || result?.actionLink || '').trim();
+        if (!qrPayload) {
+            throw new Error('QR login response did not include QR data. Deploy the latest /api/generateQrLogin route and try again.');
+        }
+        const qrDataUrl = await drawQrDataUrl(qrPayload, 320, 'M', 1);
+        setQrLoginData({
+            membershipId: member.id,
+            fullName: result.fullName || member.fullName || '',
+            email: result.email || member.email || '',
+            role: result.role || member.role || '',
+            qrValue: qrPayload,
+            qrDataUrl,
+            requiresPin: !!result.requiresPin,
+            pinConfigured: !!result.pinConfigured,
+        });
+        setQrLoginOpen(true);
+    };
+
+    const handleGenerateQrLogin = async (member, options = {}) => {
         if (!member?.id) return;
         if (!isQrLoginRole(member.role)) {
             setFeedback({ type: 'error', text: 'QR login is only available for score_taker or viewer users.' });
@@ -431,39 +484,23 @@ export default function difyUser({ user }) {
         setFeedback(null);
         setQrLoginBusyId(member.id);
         try {
-            const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-            const accessToken = sessionData?.session?.access_token;
-            if (sessionError || !accessToken) {
-                throw new Error('Missing login session.');
+            let { response, result } = await issueQrLogin(member, options);
+            if (!response.ok && result?.code === 'PIN_REQUIRED' && String(member.role || '').toLowerCase() === 'score_taker') {
+                const pin = promptForSixDigitPin('Enter a 6-digit PIN for this score_taker QR login.');
+                if (pin == null) return;
+                if (!pin) throw new Error('PIN must be exactly 6 digits.');
+                ({ response, result } = await issueQrLogin(member, { ...options, pin }));
             }
 
-            const response = await fetch(`${API_BASE}/api/generateQrLogin`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Authorization: `Bearer ${accessToken}`,
-                },
-                body: JSON.stringify({
-                    membershipId: member.id,
-                    origin: window.location.origin,
-                }),
-            });
-            const parsed = await readApiResponse(response);
-            const result = parsed.data || { rawText: parsed.text };
             if (!response.ok) {
                 throw new Error(getApiErrorMessage(response, result, 'Failed to generate QR login.'));
             }
 
-            const qrDataUrl = await drawQrDataUrl(result.actionLink, 320, 'M', 1);
-            setQrLoginData({
-                fullName: result.fullName || member.fullName || '',
-                email: result.email || member.email || '',
-                role: result.role || member.role || '',
-                actionLink: result.actionLink,
-                qrDataUrl,
-            });
-            setQrLoginOpen(true);
-            showToast('success', 'QR login ready');
+            await showQrLoginModal(member, result);
+            const successMessage = options.regenerate
+                ? 'QR login reset'
+                : (options.pin ? 'QR PIN updated' : 'QR login ready');
+            showToast('success', successMessage);
         } catch (err) {
             const msg = err?.message || 'Failed to generate QR login.';
             setFeedback({ type: 'error', text: msg });
@@ -763,33 +800,60 @@ export default function difyUser({ user }) {
                       <img src={qrLoginData.qrDataUrl} alt="QR login code" className="w-72 h-72 object-contain" />
                     </div>
                     <div className="text-xs text-gray-600">
-                      Anyone who scans this QR can sign in as this user until the magic link expires or is used. Share it like a temporary credential.
+                      This QR is reusable until you reset it. {qrLoginData.requiresPin ? 'Score takers must enter the configured 6-digit PIN after scanning. Changing the PIN keeps this QR usable; resetting the QR rotates the token.' : 'Viewer QR login does not require a PIN.'}
                     </div>
                     <div className="rounded border bg-gray-50 p-2 text-xs text-gray-700 break-all">
-                      {qrLoginData.actionLink}
+                      {qrLoginData.qrValue}
                     </div>
-                    <div className="flex items-center justify-end gap-2">
+                    <div className="flex items-center justify-end gap-2 flex-wrap">
                       <button
                         type="button"
                         onClick={async () => {
                           try {
-                            await navigator.clipboard.writeText(qrLoginData.actionLink);
-                            showToast('success', 'QR login link copied');
+                            await navigator.clipboard.writeText(qrLoginData.qrValue);
+                            showToast('success', 'QR login data copied');
                           } catch {
-                            showToast('error', 'Unable to copy QR login link');
+                            showToast('error', 'Unable to copy QR login data');
                           }
                         }}
                         className="px-3 py-2 border rounded hover:bg-gray-50"
                       >
-                        Copy Link
+                        Copy QR Data
                       </button>
                       <button
                         type="button"
-                        onClick={() => window.open(qrLoginData.actionLink, '_blank', 'noopener,noreferrer')}
+                        onClick={() => handleGenerateQrLogin({
+                          id: qrLoginData.membershipId,
+                          fullName: qrLoginData.fullName,
+                          email: qrLoginData.email,
+                          role: qrLoginData.role,
+                        }, { regenerate: true })}
                         className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
                       >
-                        Open Link
+                        Reset QR
                       </button>
+                      {qrLoginData.requiresPin && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const pin = promptForSixDigitPin('Enter a new 6-digit PIN for this score_taker QR login.');
+                            if (pin == null) return;
+                            if (!pin) {
+                              showToast('error', 'PIN must be exactly 6 digits.');
+                              return;
+                            }
+                            handleGenerateQrLogin({
+                              id: qrLoginData.membershipId,
+                              fullName: qrLoginData.fullName,
+                              email: qrLoginData.email,
+                              role: qrLoginData.role,
+                            }, { pin });
+                          }}
+                          className="px-3 py-2 border rounded hover:bg-gray-50"
+                        >
+                          Change PIN
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
