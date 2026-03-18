@@ -20,6 +20,108 @@ const RESET_RUN_ENDPOINT = import.meta.env.DEV
     ? 'http://localhost:3000/api/run/resetConfig'
     : 'https://napfa5-assessment.vercel.app/api/run/resetConfig';
 
+function gradeToRank(g) {
+    if (!g) return 0;
+    const t = String(g).toUpperCase();
+    return t === 'A' ? 5 : t === 'B' ? 4 : t === 'C' ? 3 : t === 'D' ? 2 : t === 'E' ? 1 : 0;
+}
+
+function fiveCompleted(res) {
+    const st = res?.stations || {};
+    return !!(st.situps?.grade && st.broad_jump_cm?.grade && st.sit_and_reach_cm?.grade && st.pullups?.grade && st.shuttle_s?.grade);
+}
+
+function sixCompleted(res) {
+    const st = res?.stations || {};
+    return fiveCompleted(res) && !!st.run?.grade;
+}
+
+function sumFivePoints(res) {
+    const st = res?.stations || {};
+    return (st.situps?.points || 0)
+        + (st.broad_jump_cm?.points || 0)
+        + (st.sit_and_reach_cm?.points || 0)
+        + (st.pullups?.points || 0)
+        + (st.shuttle_s?.points || 0);
+}
+
+function worstGradeRank(keys, res) {
+    const st = res?.stations || {};
+    const ranks = keys.map((k) => st[k]?.grade).filter(Boolean).map(gradeToRank);
+    return ranks.length ? Math.min(...ranks) : 0;
+}
+
+function computeNapfaAward(res) {
+    const st = res?.stations || {};
+    const grades = [st.situps?.grade, st.broad_jump_cm?.grade, st.sit_and_reach_cm?.grade, st.pullups?.grade, st.shuttle_s?.grade, st.run?.grade];
+    if (grades.some((g) => !g)) return { label: 'No Award', reason: 'Incomplete results across all stations.' };
+
+    const total = res?.totalPoints || 0;
+    const minRank = Math.min(...grades.map(gradeToRank));
+
+    if (total >= 21 && minRank >= gradeToRank('C')) return { label: 'Gold', reason: `Total ${total} points and at least grade C in all stations.` };
+    if (total >= 15 && minRank >= gradeToRank('D')) return { label: 'Silver', reason: `Total ${total} points and at least grade D in all stations.` };
+    if (total >= 6 && minRank >= gradeToRank('E')) return { label: 'Bronze', reason: `Total ${total} points and at least grade E in all stations.` };
+    return { label: 'No Award', reason: `Total ${total} points or minimum grade conditions not met.` };
+}
+
+function computeNapfaProvisionalAward(res) {
+    const total = sumFivePoints(res);
+    const minRank = worstGradeRank(['situps', 'broad_jump_cm', 'sit_and_reach_cm', 'pullups', 'shuttle_s'], res);
+    if (total >= 21 && minRank >= gradeToRank('C')) return { label: 'Gold', reason: `Five-station subtotal ${total} points and all >= C.` };
+    if (total >= 15 && minRank >= gradeToRank('D')) return { label: 'Silver', reason: `Five-station subtotal ${total} points and all >= D.` };
+    if (total >= 6 && minRank >= gradeToRank('E')) return { label: 'Bronze', reason: `Five-station subtotal ${total} points and all >= E.` };
+    return { label: 'No Award', reason: `Five-station subtotal ${total} points or minimum grade conditions not met.` };
+}
+
+function getNapfaAwardDisplay(res) {
+    if (sixCompleted(res)) {
+        const currentAward = computeNapfaAward(res);
+        return { label: currentAward.label, reason: currentAward.reason, kind: 'final' };
+    }
+    if (fiveCompleted(res)) {
+        const provisional = computeNapfaProvisionalAward(res);
+        return {
+            label: provisional.label,
+            reason: provisional.reason,
+            kind: provisional.label === 'No Award' ? 'final' : 'provisional',
+        };
+    }
+    return { label: 'Incomplete', reason: 'Complete at least the five non-run stations to see an award.', kind: 'incomplete' };
+}
+
+function mapIppt3AwardDisplay(award) {
+    const label = String(award || '').trim();
+    if (!label) return { label: 'No Award', kind: 'none' };
+    if (label === 'Pass') return { label: 'Bronze', kind: 'mapped' };
+    return { label, kind: label === 'No Award' ? 'none' : 'final' };
+}
+
+function AwardBadge({ award }) {
+    const label = String(award?.label || '').trim() || 'No Award';
+    const kind = award?.kind || 'final';
+    const baseClass = label === 'Gold'
+        ? 'bg-amber-200 text-amber-950 border-amber-400'
+        : label === 'Silver'
+            ? 'bg-slate-200 text-slate-900 border-slate-400'
+            : label === 'Bronze'
+                ? 'bg-orange-100 text-orange-900 border-orange-300'
+                : label === 'Incomplete'
+                    ? 'bg-sky-100 text-sky-900 border-sky-200'
+                    : 'bg-slate-100 text-slate-700 border-slate-200';
+
+    return (
+        <div className="space-y-1">
+            <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${baseClass}`}>
+                {kind === 'provisional' ? `Provisional ${label}` : label}
+            </span>
+            {kind === 'mapped' && (
+                <div className="text-[11px] text-slate-500">IPPT Pass shown as Bronze</div>
+            )}
+        </div>
+    );
+}
+
 function toMillis(value) {
     const t = new Date(value || 0).getTime();
     return Number.isFinite(t) ? t : 0;
@@ -293,6 +395,9 @@ export default function SessionDetail({ user }) {
     const [massEdits, setMassEdits] = useState(new Map()); // studentId -> partial score object
     const [massEditCancelOpen, setMassEditCancelOpen] = useState(false);
     const [massEditSaveOpen, setMassEditSaveOpen] = useState(false);
+    const [completedScoresDialogOpen, setCompletedScoresDialogOpen] = useState(false);
+    const [statusCompleteConfirmOpen, setStatusCompleteConfirmOpen] = useState(false);
+    const [pendingStatusChange, setPendingStatusChange] = useState(null);
     const [filterClass, setFilterClass] = useState("");
     const [filterQuery, setFilterQuery] = useState("");
     const [showCompleted, setShowCompleted] = useState(true);
@@ -345,7 +450,8 @@ export default function SessionDetail({ user }) {
 
     const platformOwner = isPlatformOwner(user);
     const canManage = useMemo(() => platformOwner || ROLE_CAN_MANAGE.includes(membership?.role), [platformOwner, membership]);
-    const rosterEditable = canManage && session?.status !== 'completed';
+    const sessionCompleted = session?.status === 'completed';
+    const rosterEditable = canManage && !sessionCompleted;
     const checkpointTemplates = new Set(["B", "C"]);
     const defaultRunEnforcement = (templateKey) => (checkpointTemplates.has(templateKey) ? "SOFT" : "OFF");
     const normalizeRunConfigComparable = (cfg) => ({
@@ -555,7 +661,15 @@ export default function SessionDetail({ user }) {
         return { ok: true, value: Number.parseFloat(n.toFixed(dp)) };
     };
 
+    const openCompletedScoresDialog = () => {
+        setCompletedScoresDialogOpen(true);
+    };
+
     const saveMassEditVisible = async () => {
+        if (sessionCompleted) {
+            openCompletedScoresDialog();
+            return;
+        }
         const visible = pagedScoresRoster || [];
         if (!visible.length) return;
         setMassEditErr('');
@@ -1127,7 +1241,8 @@ export default function SessionDetail({ user }) {
                     ippt3: {
                         situpsPoints: res3?.stations?.situps?.points ?? null,
                         pushupsPoints: res3?.stations?.pushups?.points ?? null,
-                        runPoints: res3?.stations?.run?.points ?? null
+                        runPoints: res3?.stations?.run?.points ?? null,
+                        award: mapIppt3AwardDisplay(res3?.award),
                     }
                 });
                 return;
@@ -1155,7 +1270,8 @@ export default function SessionDetail({ user }) {
                     reach: res?.stations?.sit_and_reach_cm?.grade ?? null,
                     pullups: res?.stations?.pullups?.grade ?? null,
                     broad: res?.stations?.broad_jump_cm?.grade ?? null,
-                    run: res?.stations?.run?.grade ?? null
+                    run: res?.stations?.run?.grade ?? null,
+                    award: getNapfaAwardDisplay(res),
                 }
             });
         });
@@ -1955,12 +2071,8 @@ export default function SessionDetail({ user }) {
             } catch {}
         }
     };
-    const handleStatusChange = async (nextStatus) => {
+    const applyStatusChange = async (nextStatus) => {
         if (!session || session.status === nextStatus) return;
-        if (nextStatus === 'completed') {
-            const ok = window.confirm('Mark session as completed? Scores can no longer be recorded.');
-            if (!ok) return;
-        }
         setStatusUpdating(true);
         try {
             const { data, error: err } = await supabase
@@ -1971,12 +2083,30 @@ export default function SessionDetail({ user }) {
                 .single();
             if (err) throw err;
             setSession(data);
+            if (nextStatus === 'completed') {
+                setMassEditMode(false);
+                setMassEdits(new Map());
+                setMassEditErr('');
+                setMassEditNotice('');
+                setMassEditCancelOpen(false);
+                setMassEditSaveOpen(false);
+            }
             setFlash(`Status set to ${nextStatus}.`);
         } catch (err) {
             setFlash(err.message || 'Failed to update status.');
         } finally {
             setStatusUpdating(false);
         }
+    };
+
+    const handleStatusChange = async (nextStatus) => {
+        if (!session || session.status === nextStatus) return;
+        if (nextStatus === 'completed') {
+            setPendingStatusChange(nextStatus);
+            setStatusCompleteConfirmOpen(true);
+            return;
+        }
+        await applyStatusChange(nextStatus);
     };
 
     const downloadProfileCardsPdf = async (format = 'a4') => {
@@ -3304,7 +3434,15 @@ export default function SessionDetail({ user }) {
                                 <div className="flex gap-2">
                                     {!massEditMode ? (
                                         <button
-                                            onClick={() => { setMassEditMode(true); setMassEditErr(''); setMassEditNotice(''); }}
+                                            onClick={() => {
+                                                if (sessionCompleted) {
+                                                    openCompletedScoresDialog();
+                                                    return;
+                                                }
+                                                setMassEditMode(true);
+                                                setMassEditErr('');
+                                                setMassEditNotice('');
+                                            }}
                                             className="text-xs px-3 py-1.5 border rounded bg-white hover:bg-gray-50"
                                         >
                                             Mass Edit
@@ -3312,7 +3450,13 @@ export default function SessionDetail({ user }) {
                                     ) : (
                                         <>
                                             <button
-                                                onClick={() => setMassEditSaveOpen(true)}
+                                                onClick={() => {
+                                                    if (sessionCompleted) {
+                                                        openCompletedScoresDialog();
+                                                        return;
+                                                    }
+                                                    setMassEditSaveOpen(true);
+                                                }}
                                                 disabled={massEditBusy}
                                                 className="text-xs px-3 py-1.5 border rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
                                             >
@@ -3358,6 +3502,7 @@ export default function SessionDetail({ user }) {
                                     <th className="px-3 py-2 border">Sit-ups</th>
                                     <th className="px-3 py-2 border">Push-ups</th>
                                     <th className="px-3 py-2 border">2.4km Run (mm:ss)</th>
+                                    <th className="px-3 py-2 border">Award</th>
                                     <th className="px-3 py-2 border w-40">Actions</th>
                                 </tr>
                             ) : (
@@ -3371,6 +3516,7 @@ export default function SessionDetail({ user }) {
                                     <th className="px-3 py-2 border">Pull-ups</th>
                                     <th className="px-3 py-2 border">Broad Jump</th>
                                     <th className="px-3 py-2 border">Run (mm:ss)</th>
+                                    <th className="px-3 py-2 border">Award</th>
                                     <th className="px-3 py-2 border w-40">Actions</th>
                                 </tr>
                             )}
@@ -3378,8 +3524,9 @@ export default function SessionDetail({ user }) {
                             <tbody>
                             {(() => {
                                 const total = filteredSortedRoster.length;
+                                const emptyColSpan = ((session?.assessment_type || 'NAPFA5') === 'IPPT3') ? 8 : 11;
                                 if (total === 0) return (
-                                    <tr><td colSpan="10" className="px-3 py-4 text-center text-gray-500">No students in this session yet.</td></tr>
+                                    <tr><td colSpan={emptyColSpan} className="px-3 py-4 text-center text-gray-500">No students in this session yet.</td></tr>
                                 );
                                 const pageItems = pagedScoresRoster;
                                     return pageItems.flatMap((s) => {
@@ -3443,10 +3590,13 @@ export default function SessionDetail({ user }) {
                                                 ) : withPoints(row.run_2400, ippt3.runPoints, (v) => fmtRun(v) || '-')}
                                               </td>
                                               <td className="px-3 py-2 border align-top">
-                                                {massEditMode && canManage
-                                                    ? <span className="text-xs text-gray-400">-</span>
-                                                    : <ScoreRowActions student={s} canRecord={canRecord} onSaved={async () => { await loadScoresMap(); await loadScoresCount(); }} sessionId={id} isIppt3={isIppt3} />
-                                                }
+                                                <AwardBadge award={ippt3.award} />
+                                              </td>
+                                                <td className="px-3 py-2 border align-top">
+                                                    {massEditMode && canManage
+                                                        ? <span className="text-xs text-gray-400">-</span>
+                                                        : <ScoreRowActions student={s} canRecord={canRecord} sessionCompleted={sessionCompleted} onBlocked={openCompletedScoresDialog} onSaved={async () => { await loadScoresMap(); await loadScoresCount(); }} sessionId={id} isIppt3={isIppt3} />
+                                                    }
                                               </td>
                                             </tr>
                                           ];
@@ -3523,9 +3673,12 @@ export default function SessionDetail({ user }) {
                                                     ) : withGrade(row.run_2400, napfaGrades.run, (v) => fmtRun(v) || '-')}
                                                 </td>
                                                 <td className="px-3 py-2 border align-top">
+                                                    <AwardBadge award={napfaGrades.award} />
+                                                </td>
+                                                <td className="px-3 py-2 border align-top">
                                                     {massEditMode && canManage
                                                         ? <span className="text-xs text-gray-400">-</span>
-                                                        : <ScoreRowActions student={s} canRecord={canRecord} onSaved={async () => { await loadScoresMap(); await loadScoresCount(); }} sessionId={id} isIppt3={isIppt3} />
+                                                        : <ScoreRowActions student={s} canRecord={canRecord} sessionCompleted={sessionCompleted} onBlocked={openCompletedScoresDialog} onSaved={async () => { await loadScoresMap(); await loadScoresCount(); }} sessionId={id} isIppt3={isIppt3} />
                                                     }
                                                 </td>
                                             </tr>
@@ -3569,6 +3722,37 @@ export default function SessionDetail({ user }) {
                     setMassEdits(new Map());
                     setMassEditErr('');
                     setMassEditNotice('');
+                }}
+            />
+            <NoticeDialog
+                open={completedScoresDialogOpen}
+                title="Session Completed"
+                message="Scores cannot be changed after a session has been completed."
+                onClose={() => setCompletedScoresDialogOpen(false)}
+            />
+            <ConfirmDialog
+                open={statusCompleteConfirmOpen}
+                title="Mark Session Completed?"
+                message={(
+                    <div className="space-y-2">
+                        <p>After this session is marked completed, scores can no longer be changed.</p>
+                        {massEditMode && massEdits.size > 0 && (
+                            <p className="text-amber-700">Any unsaved mass edits on this page will be discarded.</p>
+                        )}
+                    </div>
+                )}
+                confirmText="Mark Completed"
+                cancelText="Keep Active"
+                tone="danger"
+                onCancel={() => {
+                    setStatusCompleteConfirmOpen(false);
+                    setPendingStatusChange(null);
+                }}
+                onConfirm={async () => {
+                    const nextStatus = pendingStatusChange;
+                    setStatusCompleteConfirmOpen(false);
+                    setPendingStatusChange(null);
+                    if (nextStatus) await applyStatusChange(nextStatus);
                 }}
             />
             {showRunTagMapModal && activeRunConfigForModal && (() => {
@@ -4038,11 +4222,22 @@ function ScoresPager({ total, page, pageSize, onPageChange }) {
     );
 }
 
-function ScoreRowActions({ student, sessionId, canRecord, onSaved, isIppt3 }) {
+function ScoreRowActions({ student, sessionId, canRecord, sessionCompleted, onBlocked, onSaved, isIppt3 }) {
     const [open, setOpen] = useState(false);
     return (
         <>
-            <button onClick={() => setOpen(true)} disabled={!canRecord} className="px-3 py-1.5 border rounded hover:bg-gray-100 text-sm">
+            <button
+                onClick={() => {
+                    if (sessionCompleted) {
+                        onBlocked && onBlocked();
+                        return;
+                    }
+                    if (!canRecord) return;
+                    setOpen(true);
+                }}
+                disabled={!canRecord && !sessionCompleted}
+                className="px-3 py-1.5 border rounded hover:bg-gray-100 text-sm disabled:opacity-60"
+            >
                 Edit
             </button>
             {open && (
@@ -4065,7 +4260,7 @@ function ScoreRowActions({ student, sessionId, canRecord, onSaved, isIppt3 }) {
     );
 }
 
-function ConfirmDialog({ open, title, message, confirmText, tone, onCancel, onConfirm }) {
+function ConfirmDialog({ open, title, message, confirmText, cancelText, tone, onCancel, onConfirm }) {
     if (!open) return null;
     const confirmClass = tone === "danger"
         ? "px-3 py-1.5 border rounded bg-red-600 text-white hover:bg-red-700"
@@ -4080,8 +4275,28 @@ function ConfirmDialog({ open, title, message, confirmText, tone, onCancel, onCo
                     </div>
                     <div className="p-4 text-sm text-gray-700">{message}</div>
                     <div className="px-4 py-3 border-t flex justify-end gap-2">
-                        <button type="button" onClick={onCancel} className="px-3 py-1.5 border rounded hover:bg-gray-50">Keep Editing</button>
+                        <button type="button" onClick={onCancel} className="px-3 py-1.5 border rounded hover:bg-gray-50">{cancelText || "Keep Editing"}</button>
                         <button type="button" onClick={onConfirm} className={confirmClass}>{confirmText || "Confirm"}</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function NoticeDialog({ open, title, message, onClose }) {
+    if (!open) return null;
+    return (
+        <div className="fixed inset-0 z-50">
+            <div className="absolute inset-0 bg-black/35" onClick={onClose} />
+            <div className="absolute inset-0 flex items-center justify-center p-4">
+                <div role="dialog" aria-modal="true" className="w-full max-w-md bg-white rounded-lg shadow-lg border">
+                    <div className="px-4 py-3 border-b">
+                        <div className="font-medium">{title}</div>
+                    </div>
+                    <div className="p-4 text-sm text-gray-700">{message}</div>
+                    <div className="px-4 py-3 border-t flex justify-end">
+                        <button type="button" onClick={onClose} className="px-3 py-1.5 border rounded bg-blue-600 text-white hover:bg-blue-700">OK</button>
                     </div>
                 </div>
             </div>

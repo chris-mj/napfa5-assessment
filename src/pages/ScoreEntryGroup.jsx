@@ -589,7 +589,6 @@ export default function ScoreEntryGroup({ user }) {
             counterValue={counterValue}
             setCounterValue={setCounterValue}
             countdownDefault={countdownDefault}
-            setCountdownDefault={setCountdownDefault}
             countdownLeft={countdownLeft}
             countdownRunning={countdownRunning}
             setCountdownRunning={setCountdownRunning}
@@ -702,7 +701,6 @@ function StationToolsDrawer({
   counterValue,
   setCounterValue,
   countdownDefault,
-  setCountdownDefault,
   countdownLeft,
   countdownRunning,
   setCountdownRunning,
@@ -763,24 +761,8 @@ function StationToolsDrawer({
         {isCountStation && (
           <>
             <div className="space-y-2">
-              <div className="text-sm font-medium">{station === "pullups" ? "Countdown (30s default)" : "Countdown (60s default)"}</div>
+              <div className="text-sm font-medium">{station === "pullups" ? "Countdown (30s)" : "Countdown (60s)"}</div>
               <div className="text-3xl font-mono tracking-wide">{formatClock(countdownLeft)}</div>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  min={5}
-                  max={120}
-                  step={1}
-                  value={countdownDefault}
-                  onChange={(e) => {
-                    const next = Math.max(5, Math.min(120, parseInt(e.target.value || "0", 10) || 0));
-                    setCountdownDefault(next);
-                  }}
-                  className="border rounded px-2 py-1 w-24"
-                  aria-label="Countdown default seconds"
-                />
-                <span className="text-xs text-gray-600">seconds default</span>
-              </div>
               <div className="flex gap-2">
                 <button
                   type="button"
@@ -792,16 +774,6 @@ function StationToolsDrawer({
                   {countdownRunning ? "Pause" : "Start"}
                 </button>
                 <button type="button" onClick={onResetCountdown} className="px-4 py-2 border rounded border-red-300 text-red-700 hover:bg-red-50 font-medium">Reset</button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCountdownRunning(false);
-                    onResetCountdown();
-                  }}
-                  className="px-4 py-2 border rounded border-slate-300 text-slate-700 hover:bg-slate-100 font-medium"
-                >
-                  Set Default
-                </button>
               </div>
               {endedNotice && (
                 <div className="text-sm text-green-700 bg-green-50 border border-green-200 rounded px-2 py-1">
