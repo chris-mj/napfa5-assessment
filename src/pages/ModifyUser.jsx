@@ -4,6 +4,7 @@ import { supabase } from "../lib/supabaseClient";
 import { isPlatformOwner } from "../lib/roles";
 import { useToast } from "../components/ToastProvider";
 import { drawQrDataUrl } from "../utils/qrcode";
+import { useRef } from "react";
 
 // (unused helper removed)
 
@@ -41,14 +42,6 @@ function getApiErrorMessage(response, payload, fallback) {
     return fallback;
 }
 
-function promptForSixDigitPin(message) {
-    const raw = window.prompt(message || 'Enter a 6-digit PIN.');
-    if (raw == null) return null;
-    const pin = String(raw).replace(/\D/g, '').slice(0, 6);
-    if (pin.length !== 6) return "";
-    return pin;
-}
-
 export default function difyUser({ user }) {
     const [schools, setSchools] = useState([]);
     const [schoolId, setSchoolId] = useState("");
@@ -70,9 +63,11 @@ export default function difyUser({ user }) {
     const [qrLoginOpen, setQrLoginOpen] = useState(false);
     const [qrLoginBusyId, setQrLoginBusyId] = useState(null);
     const [qrLoginData, setQrLoginData] = useState(null);
+    const [qrPinDialog, setQrPinDialog] = useState({ open: false, title: '', message: '', pin: '', error: '' });
     const [schoolCode, setSchoolCode] = useState("");
     const [schoolCodeSaving, setSchoolCodeSaving] = useState(false);
     const [schoolCodeFeedback, setSchoolCodeFeedback] = useState(null);
+    const qrPinResolverRef = useRef(null);
     
 
     const { showToast } = useToast();
@@ -83,6 +78,31 @@ export default function difyUser({ user }) {
         return trimmed ? trimmed.toUpperCase() : "";
     };
     const isQrLoginRole = (role) => QR_LOGIN_ROLES.has(String(role || '').toLowerCase());
+    const closeQrPinDialog = useCallback((value = null) => {
+        const resolve = qrPinResolverRef.current;
+        qrPinResolverRef.current = null;
+        setQrPinDialog({ open: false, title: '', message: '', pin: '', error: '' });
+        if (typeof resolve === 'function') resolve(value);
+    }, []);
+    const requestQrPin = useCallback(({ title, message }) => (
+        new Promise((resolve) => {
+            qrPinResolverRef.current = resolve;
+            setQrPinDialog({
+                open: true,
+                title: title || 'Set QR PIN',
+                message: message || 'Enter a 6-digit PIN.',
+                pin: '',
+                error: '',
+            });
+        })
+    ), []);
+
+    useEffect(() => () => {
+        if (typeof qrPinResolverRef.current === 'function') {
+            qrPinResolverRef.current(null);
+            qrPinResolverRef.current = null;
+        }
+    }, []);
 
     useEffect(() => {
         if (!user) return;
@@ -486,9 +506,11 @@ export default function difyUser({ user }) {
         try {
             let { response, result } = await issueQrLogin(member, options);
             if (!response.ok && result?.code === 'PIN_REQUIRED' && String(member.role || '').toLowerCase() === 'score_taker') {
-                const pin = promptForSixDigitPin('Enter a 6-digit PIN for this score_taker QR login.');
+                const pin = await requestQrPin({
+                    title: 'Set QR PIN',
+                    message: 'Enter a 6-digit PIN for this score_taker QR login.',
+                });
                 if (pin == null) return;
-                if (!pin) throw new Error('PIN must be exactly 6 digits.');
                 ({ response, result } = await issueQrLogin(member, { ...options, pin }));
             }
 
@@ -835,13 +857,12 @@ export default function difyUser({ user }) {
                       {qrLoginData.requiresPin && (
                         <button
                           type="button"
-                          onClick={() => {
-                            const pin = promptForSixDigitPin('Enter a new 6-digit PIN for this score_taker QR login.');
+                          onClick={async () => {
+                            const pin = await requestQrPin({
+                              title: 'Change QR PIN',
+                              message: 'Enter a new 6-digit PIN for this score_taker QR login.',
+                            });
                             if (pin == null) return;
-                            if (!pin) {
-                              showToast('error', 'PIN must be exactly 6 digits.');
-                              return;
-                            }
                             handleGenerateQrLogin({
                               id: qrLoginData.membershipId,
                               fullName: qrLoginData.fullName,
@@ -856,6 +877,77 @@ export default function difyUser({ user }) {
                       )}
                     </div>
                   </div>
+                </div>
+              </div>
+            )}
+
+            {qrPinDialog.open && (
+              <div className="fixed inset-0 z-[60] bg-slate-900/45 backdrop-blur-[1px] flex items-center justify-center p-4" role="dialog" aria-modal="true">
+                <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-2xl" onClick={(e)=>e.stopPropagation()}>
+                  <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">QR Login</div>
+                      <div className="text-lg font-semibold text-slate-900">{qrPinDialog.title}</div>
+                    </div>
+                    <button
+                      type="button"
+                      className="rounded-md border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50"
+                      onClick={() => closeQrPinDialog(null)}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                  <form
+                    className="space-y-4 px-5 py-5"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      const pin = String(qrPinDialog.pin || '').replace(/\D/g, '').slice(0, 6);
+                      if (pin.length !== 6) {
+                        setQrPinDialog((prev) => ({ ...prev, error: 'PIN must be exactly 6 digits.' }));
+                        return;
+                      }
+                      closeQrPinDialog(pin);
+                    }}
+                  >
+                    <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-slate-700">
+                      {qrPinDialog.message}
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-slate-700">6-digit PIN</label>
+                      <input
+                        type="password"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        maxLength={6}
+                        autoFocus
+                        value={qrPinDialog.pin}
+                        onChange={(e) => {
+                          const pin = String(e.target.value || '').replace(/\D/g, '').slice(0, 6);
+                          setQrPinDialog((prev) => ({ ...prev, pin, error: '' }));
+                        }}
+                        className="w-full rounded-xl border border-slate-300 px-4 py-3 text-center text-lg tracking-[0.35em] text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                        placeholder="000000"
+                      />
+                      {qrPinDialog.error && (
+                        <div className="mt-2 text-sm text-red-600">{qrPinDialog.error}</div>
+                      )}
+                    </div>
+                    <div className="flex items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+                        onClick={() => closeQrPinDialog(null)}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700"
+                      >
+                        Save PIN
+                      </button>
+                    </div>
+                  </form>
                 </div>
               </div>
             )}

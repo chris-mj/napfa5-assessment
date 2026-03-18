@@ -157,7 +157,15 @@ export default async function handler(req, res) {
     .eq('id', targetMembership.id);
 
   if (updateError) {
-    res.status(500).json({ error: updateError.message || 'Failed to save QR login settings' });
+    const updateMessage = String(updateError.message || '');
+    if (/permission denied for schema audit/i.test(updateMessage)) {
+      res.status(500).json({
+        error: 'Failed to save QR login settings because the memberships audit trigger cannot write to schema audit. Grant the server-side database role access to audit or adjust the trigger owner, then try again.',
+        code: 'AUDIT_SCHEMA_PERMISSION_DENIED',
+      });
+      return;
+    }
+    res.status(500).json({ error: updateMessage || 'Failed to save QR login settings' });
     return;
   }
 
