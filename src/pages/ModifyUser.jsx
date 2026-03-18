@@ -3,11 +3,14 @@ import { NavLink } from 'react-router-dom';
 import { supabase } from "../lib/supabaseClient";
 import { isPlatformOwner } from "../lib/roles";
 import { useToast } from "../components/ToastProvider";
+import { drawQrDataUrl } from "../utils/qrcode";
 
 // (unused helper removed)
 
 
 const ROLES = ["superadmin", "admin", "score_taker", "viewer"];
+const QR_LOGIN_ROLES = new Set(["score_taker", "viewer", "score_viewer"]);
+const API_BASE = '';
 
 const INITIAL_FORM = {
     fullName: "",
@@ -15,6 +18,28 @@ const INITIAL_FORM = {
     password: "",
     role: "admin",
 };
+
+async function readApiResponse(response) {
+    const text = await response.text();
+    try {
+        return { data: JSON.parse(text), text };
+    } catch {
+        return { data: null, text };
+    }
+}
+
+function getApiErrorMessage(response, payload, fallback) {
+    const apiMessage = payload?.error || payload?.message;
+    if (apiMessage) return apiMessage;
+    const text = String(payload?.rawText || '').trim();
+    if (/the page could not be found/i.test(text)) {
+        return 'API route not found on the current deployment. The hosted app likely does not have /api/generateQrLogin yet.';
+    }
+    if (text) {
+        return `${fallback} Server returned non-JSON content.`;
+    }
+    return fallback;
+}
 
 export default function difyUser({ user }) {
     const [schools, setSchools] = useState([]);
@@ -34,6 +59,9 @@ export default function difyUser({ user }) {
     const [profileSaving, setProfileSaving] = useState(false);
     const [profileForm, setProfileForm] = useState({ fullName: "", email: "" });
     const [profileFeedback, setProfileFeedback] = useState(null);
+    const [qrLoginOpen, setQrLoginOpen] = useState(false);
+    const [qrLoginBusyId, setQrLoginBusyId] = useState(null);
+    const [qrLoginData, setQrLoginData] = useState(null);
     const [schoolCode, setSchoolCode] = useState("");
     const [schoolCodeSaving, setSchoolCodeSaving] = useState(false);
     const [schoolCodeFeedback, setSchoolCodeFeedback] = useState(null);
@@ -46,6 +74,7 @@ export default function difyUser({ user }) {
         const trimmed = String(value || "").trim();
         return trimmed ? trimmed.toUpperCase() : "";
     };
+    const isQrLoginRole = (role) => QR_LOGIN_ROLES.has(String(role || '').toLowerCase());
 
     useEffect(() => {
         if (!user) return;
@@ -97,6 +126,7 @@ export default function difyUser({ user }) {
 
     const [currentRole, setCurrentRole] = useState("");
     const currentSchool = useMemo(() => (schools || []).find(s => s.id === schoolId) || null, [schools, schoolId]);
+    const canManageUsers = platformOwner || currentRole === 'superadmin' || currentRole === 'admin';
     const canEditSchoolCode = platformOwner || currentRole === 'superadmin' || currentRole === 'admin';
     const codeDirty = normalizeCode(schoolCode) !== normalizeCode(currentSchool?.code || "");
 
@@ -273,16 +303,17 @@ export default function difyUser({ user }) {
     });
     if (error?.code === 'P0002' || error?.message === 'AUTH_USER_MISSING') {
       setFeedback({ type: 'info', text: 'Creating new user...' });
-      const apiBase = import.meta.env.DEV ? 'https://napfa5-assessment.vercel.app' : '';
-      const response = await fetch(`${apiBase}/api/createUser`, {
+      const response = await fetch(`${API_BASE}/api/createUser`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: form.email, password: form.password || 'test1234', fullName: form.fullName }),
       });
-      const result = await response.json();
+      const parsed = await readApiResponse(response);
+      const result = parsed.data || { rawText: parsed.text };
       if (!response.ok) {
-        setFeedback({ type: 'error', text: 'User creation failed: ' + (result.error || '') });
-        showToast('error', 'User creation failed: ' + (result.error || ''));
+        const msg = getApiErrorMessage(response, result, 'User creation failed.');
+        setFeedback({ type: 'error', text: msg });
+        showToast('error', msg);
         return;
       }
       const { error: addErr } = await supabase.rpc('create_membership', {
@@ -389,6 +420,59 @@ export default function difyUser({ user }) {
         }
     };
 
+    const handleGenerateQrLogin = async (member) => {
+        if (!member?.id) return;
+        if (!isQrLoginRole(member.role)) {
+            setFeedback({ type: 'error', text: 'QR login is only available for score_taker or viewer users.' });
+            showToast('error', 'QR login is only available for score_taker or viewer users');
+            return;
+        }
+
+        setFeedback(null);
+        setQrLoginBusyId(member.id);
+        try {
+            const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+            const accessToken = sessionData?.session?.access_token;
+            if (sessionError || !accessToken) {
+                throw new Error('Missing login session.');
+            }
+
+            const response = await fetch(`${API_BASE}/api/generateQrLogin`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${accessToken}`,
+                },
+                body: JSON.stringify({
+                    membershipId: member.id,
+                    origin: window.location.origin,
+                }),
+            });
+            const parsed = await readApiResponse(response);
+            const result = parsed.data || { rawText: parsed.text };
+            if (!response.ok) {
+                throw new Error(getApiErrorMessage(response, result, 'Failed to generate QR login.'));
+            }
+
+            const qrDataUrl = await drawQrDataUrl(result.actionLink, 320, 'M', 1);
+            setQrLoginData({
+                fullName: result.fullName || member.fullName || '',
+                email: result.email || member.email || '',
+                role: result.role || member.role || '',
+                actionLink: result.actionLink,
+                qrDataUrl,
+            });
+            setQrLoginOpen(true);
+            showToast('success', 'QR login ready');
+        } catch (err) {
+            const msg = err?.message || 'Failed to generate QR login.';
+            setFeedback({ type: 'error', text: msg });
+            showToast('error', msg);
+        } finally {
+            setQrLoginBusyId(null);
+        }
+    };
+
     const canAccess = platformOwner || schools.length > 0; // schools pre-filtered to admin/superadmin for non-owner
 
     if (!user) return <div className="p-6">Please login.</div>;
@@ -459,6 +543,10 @@ export default function difyUser({ user }) {
       <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-800">score_taker</span>
       <span>Record scores when session is Active; cannot manage roster.</span>
     </div>
+    <div className="flex flex-wrap gap-3 mt-2">
+      <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-800">viewer</span>
+      <span>View scores and dashboards; admins can generate QR login for score_taker/viewer accounts.</span>
+    </div>
   </div>
 </div>            </section>
 
@@ -486,7 +574,7 @@ export default function difyUser({ user }) {
                                 <th className="border px-3 py-2">Name</th>
                                 <th className="border px-3 py-2">Email</th>
                                 <th className="border px-3 py-2">Role</th>
-                                <th className="border px-3 py-2 w-32">Actions</th>
+                                <th className="border px-3 py-2 w-44">Actions</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -526,14 +614,26 @@ export default function difyUser({ user }) {
                                         </select>
                                     </td>
                                     <td className="border px-3 py-2">
-                                        <button
-                                            type="button"
-                                            onClick={() => handleRemoveMember(member)}
-                                            className="text-red-600 hover:underline disabled:text-red-300"
-                                            disabled={pendingMemberId === member.id}
-                                        >
-                                            Remove
-                                        </button>
+                                        <div className="flex flex-wrap items-center gap-3">
+                                            {canManageUsers && isQrLoginRole(member.role) && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleGenerateQrLogin(member)}
+                                                    className="text-blue-700 hover:underline disabled:text-blue-300"
+                                                    disabled={qrLoginBusyId === member.id}
+                                                >
+                                                    {qrLoginBusyId === member.id ? 'Preparing QR...' : 'QR Login'}
+                                                </button>
+                                            )}
+                                            <button
+                                                type="button"
+                                                onClick={() => handleRemoveMember(member)}
+                                                className="text-red-600 hover:underline disabled:text-red-300"
+                                                disabled={pendingMemberId === member.id}
+                                            >
+                                                Remove
+                                            </button>
+                                        </div>
                                     </td>
                                 </tr>
                                 ))
@@ -642,6 +742,56 @@ export default function difyUser({ user }) {
                       </div>
                     </div>
                   </form>
+                </div>
+              </div>
+            )}
+
+            {qrLoginOpen && qrLoginData && (
+              <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+                <div className="bg-white rounded shadow-xl w-full max-w-md" onClick={(e)=>e.stopPropagation()}>
+                  <div className="px-4 py-2 border-b flex items-center justify-between">
+                    <div className="font-medium">QR Login</div>
+                    <button className="px-2 py-1 border rounded" onClick={()=>setQrLoginOpen(false)}>Close</button>
+                  </div>
+                  <div className="p-4 space-y-3">
+                    <div className="text-sm text-gray-700">
+                      <div><span className="font-medium">User:</span> {qrLoginData.fullName || '--'}</div>
+                      <div><span className="font-medium">Email:</span> {qrLoginData.email || '--'}</div>
+                      <div><span className="font-medium">Role:</span> {qrLoginData.role || '--'}</div>
+                    </div>
+                    <div className="rounded border bg-gray-50 p-3 flex justify-center">
+                      <img src={qrLoginData.qrDataUrl} alt="QR login code" className="w-72 h-72 object-contain" />
+                    </div>
+                    <div className="text-xs text-gray-600">
+                      Anyone who scans this QR can sign in as this user until the magic link expires or is used. Share it like a temporary credential.
+                    </div>
+                    <div className="rounded border bg-gray-50 p-2 text-xs text-gray-700 break-all">
+                      {qrLoginData.actionLink}
+                    </div>
+                    <div className="flex items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            await navigator.clipboard.writeText(qrLoginData.actionLink);
+                            showToast('success', 'QR login link copied');
+                          } catch {
+                            showToast('error', 'Unable to copy QR login link');
+                          }
+                        }}
+                        className="px-3 py-2 border rounded hover:bg-gray-50"
+                      >
+                        Copy Link
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => window.open(qrLoginData.actionLink, '_blank', 'noopener,noreferrer')}
+                        className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                      >
+                        Open Link
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
