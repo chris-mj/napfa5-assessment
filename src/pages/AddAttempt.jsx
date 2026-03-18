@@ -3,8 +3,8 @@ import { useMemo, useRef, useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 import { SCORE_SELECT_FIELDS, fetchScoreRow, fetchIppt3Row, fmtRun } from '../lib/scores'
-import { evaluateIppt3 } from '../utils/ippt3Standards'
-import { evaluateNapfa } from '../utils/napfaStandards'
+import { cohortRowsIppt3, evaluateIppt3 } from '../utils/ippt3Standards'
+import { evaluateNapfa, findRows, getAgeGroup, normalizeSex, secondsToMmss } from '../utils/napfaStandards'
 import { normalizeStudentId } from '../utils/ids'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '../components/ui/select'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '../components/ui/card'
@@ -14,6 +14,9 @@ import { Input } from '../components/ui/input'
 import { Button } from '../components/ui/button'
 import { useToast } from '../components/ToastProvider'
 import { SitupsIcon, BroadJumpIcon, ReachIcon, PullupsIcon, ShuttleIcon, PushupsIcon } from '../components/icons/StationIcons'
+
+const SAVED_SCORES_PREF_KEY = 'add_attempt_saved_scores_open_v1'
+const STATION_GUIDE_PREF_KEY = 'add_attempt_station_guide_open_v1'
 
 export default function AddAttempt({ user }) {
   const fmtDdMmYyyy = (iso) => {
@@ -49,6 +52,22 @@ export default function AddAttempt({ user }) {
   const [attempt1, setAttempt1] = useState('')
   const [attempt2, setAttempt2] = useState('')
   const [existing, setExisting] = useState(null)
+  const [savedScoresOpen, setSavedScoresOpen] = useState(() => {
+    try {
+      const raw = localStorage.getItem(SAVED_SCORES_PREF_KEY)
+      return raw == null ? true : raw === 'true'
+    } catch {
+      return true
+    }
+  })
+  const [stationGuideOpen, setStationGuideOpen] = useState(() => {
+    try {
+      const raw = localStorage.getItem(STATION_GUIDE_PREF_KEY)
+      return raw == null ? false : raw === 'true'
+    } catch {
+      return false
+    }
+  })
   const [revealKey, setRevealKey] = useState(0)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -71,6 +90,14 @@ export default function AddAttempt({ user }) {
   const active = useMemo(() => stations.find(s => s.key === activeStation), [stations, activeStation])
   const toolStationEnabled = activeStation === 'situps' || activeStation === 'pullups' || activeStation === 'shuttle_run'
   const { showToast } = useToast()
+
+  useEffect(() => {
+    try { localStorage.setItem(SAVED_SCORES_PREF_KEY, String(savedScoresOpen)) } catch {}
+  }, [savedScoresOpen])
+
+  useEffect(() => {
+    try { localStorage.setItem(STATION_GUIDE_PREF_KEY, String(stationGuideOpen)) } catch {}
+  }, [stationGuideOpen])
 
   const playBeep = () => {
     try {
@@ -136,6 +163,135 @@ export default function AddAttempt({ user }) {
     }
     return make(false, 'Select a station.')
   }, [activeStation, attempt1, attempt2, student, sessionId])
+
+  const stationGuide = useMemo(() => {
+    if (!student || !activeStation) return null
+
+    const sessionMeta = Array.isArray(sessions) ? sessions.find(s => s.id === sessionId) : null
+    const testDate = sessionMeta?.session_date ? new Date(sessionMeta.session_date) : new Date()
+    const levelLabel = String(schoolType || '').toLowerCase() === 'primary' ? 'Primary' : 'Secondary'
+    const sex = student?.gender
+    const age = calcAgeAt(student?.dob, testDate)
+    if (!sex || age == null) return null
+
+    const savedValue = (() => {
+      if (!existing) return null
+      if (activeStation === 'situps') return existing.situps ?? null
+      if (activeStation === 'pullups') return existing.pullups ?? null
+      if (activeStation === 'pushups') return existing.pushups ?? null
+      if (activeStation === 'broad_jump') return existing.broad_jump ?? null
+      if (activeStation === 'sit_and_reach') return existing.sit_and_reach ?? null
+      if (activeStation === 'shuttle_run') return existing.shuttle_run ?? null
+      if (activeStation === 'run') return existing.run_2400 ?? null
+      return null
+    })()
+
+    const formatSaved = (value) => {
+      if (value == null || value === '') return '-'
+      if (activeStation === 'shuttle_run') return `${Number(value).toFixed(1)} s`
+      if (activeStation === 'run') return fmtRun(value) || '-'
+      if (activeStation === 'broad_jump' || activeStation === 'sit_and_reach') return `${value} cm`
+      return `${value} reps`
+    }
+
+    if (isIppt3) {
+      const measures = {}
+      if (savedValue != null) {
+        if (activeStation === 'situps') measures.situps = Number(savedValue)
+        else if (activeStation === 'pushups') measures.pushups = Number(savedValue)
+        else if (activeStation === 'run') measures.run_seconds = Math.round(Number(savedValue) * 60)
+      }
+      const res3 = evaluateIppt3({ sex, age }, measures)
+      const stationKey = activeStation === 'run' ? 'run' : activeStation
+      const points = res3?.stations?.[stationKey]?.points ?? null
+      return {
+        title: `${active?.name || 'Selected station'} Guide`,
+        savedLabel: formatSaved(savedValue),
+        summaryLabel: points == null ? '-' : `${points} pts`,
+        summaryCaption: 'Saved score points',
+        highlightedGrade: null,
+        rows: [],
+        emptyMessage: 'IPPT-3 uses points instead of A-E grades on this page.',
+      }
+    }
+
+    const runKm = age >= 14 ? 2.4 : (levelLabel === 'Primary' ? 1.6 : 2.4)
+    const normSex = normalizeSex(sex)
+    const ageGroup = getAgeGroup(age)
+    const rows = findRows(levelLabel, normSex, ageGroup)
+    const gradeOrder = ['A', 'B', 'C', 'D', 'E']
+    const stationKey = (
+      activeStation === 'broad_jump' ? 'broad_jump_cm'
+        : activeStation === 'sit_and_reach' ? 'sit_and_reach_cm'
+          : activeStation === 'shuttle_run' ? 'shuttle_s'
+            : activeStation === 'run' ? 'run'
+              : activeStation
+    )
+
+    const bandRows = gradeOrder
+      .map((grade) => rows.find((row) => {
+        if (row.grade !== grade) return false
+        if (stationKey === 'run') {
+          const km = row?.stations?.run?.km
+          return km == null || runKm == null || km === runKm
+        }
+        return !!row?.stations?.[stationKey]
+      }))
+      .filter(Boolean)
+      .map((row) => {
+        const band = row.stations?.[stationKey]
+        const requirement = (() => {
+          if (!band) return '-'
+          if (stationKey === 'run') {
+            const min = Number.isFinite(band.min_s) ? secondsToMmss(band.min_s) : null
+            const max = Number.isFinite(band.max_s) ? secondsToMmss(band.max_s) : null
+            if (min && max) return `${min}-${max}`
+            if (max) return `<= ${max}`
+            if (min) return `>= ${min}`
+            return '-'
+          }
+          if (stationKey === 'shuttle_s') {
+            const min = Number.isFinite(band.min) ? Number(band.min).toFixed(1) : null
+            const max = Number.isFinite(band.max) ? Number(band.max).toFixed(1) : null
+            if (min && max) return `${min}-${max} s`
+            if (max) return `<= ${max} s`
+            if (min) return `>= ${min} s`
+            return '-'
+          }
+          const min = Number.isFinite(band.min) ? Number(band.min) : null
+          const max = Number.isFinite(band.max) ? Number(band.max) : null
+          const unit = (activeStation === 'broad_jump' || activeStation === 'sit_and_reach') ? ' cm' : ' reps'
+          if (min != null && max != null) return `${min}-${max}${unit}`
+          if (min != null) return `>= ${min}${unit}`
+          if (max != null) return `<= ${max}${unit}`
+          return '-'
+        })()
+        return { grade: row.grade, requirement, points: row.points }
+      })
+
+    let savedGrade = '-'
+    if (savedValue != null) {
+      const measures = {}
+      if (activeStation === 'situps') measures.situps = Number(savedValue)
+      else if (activeStation === 'pullups') measures.pullups = Number(savedValue)
+      else if (activeStation === 'broad_jump') measures.broad_jump_cm = Number(savedValue)
+      else if (activeStation === 'sit_and_reach') measures.sit_and_reach_cm = Number(savedValue)
+      else if (activeStation === 'shuttle_run') measures.shuttle_s = Number(savedValue)
+      else if (activeStation === 'run') measures.run_seconds = Math.round(Number(savedValue) * 60)
+      const res = evaluateNapfa({ level: levelLabel, sex, age, run_km: runKm }, measures)
+      savedGrade = res?.stations?.[stationKey]?.grade || '-'
+    }
+
+    return {
+      title: `${active?.name || 'Selected station'} Guide`,
+      savedLabel: formatSaved(savedValue),
+      summaryLabel: savedGrade,
+      summaryCaption: 'Saved grade',
+      highlightedGrade: savedGrade && savedGrade !== '-' ? savedGrade : null,
+      rows: bandRows,
+      emptyMessage: 'No grade ladder available for this station.',
+    }
+  }, [activeStation, active?.name, existing, isIppt3, schoolType, sessionId, sessions, student])
 
   // Load sessions belonging to the same school as the user
   useEffect(() => {
@@ -882,20 +1038,89 @@ async function saveScore() {
 
                   {/* Previous saved scores */}
                   {existing && (
-                    <div className="space-y-1 text-sm bg-gray-50 border border-gray-200 rounded p-2">
-                      <div className="font-medium">Previous saved scores</div>
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-1 text-xs">
-                        <div>Sit-ups: <span className="font-semibold">{existing.situps ?? '-'}</span></div>
-                        <div>Pull-ups: <span className="font-semibold">{existing.pullups ?? (existing.pushups ?? '-')}</span></div>
-                        {!isIppt3 && (
-                          <>
-                            <div>Broad Jump (cm): <span className="font-semibold">{existing.broad_jump ?? '-'}</span></div>
-                            <div>Sit & Reach (cm): <span className="font-semibold">{existing.sit_and_reach ?? '-'}</span></div>
-                            <div>Shuttle Run (s): <span className="font-semibold">{existing.shuttle_run ?? '-'}</span></div>
-                          </>
-                        )}
-                        <div>Run (mm:ss): <span className="font-semibold">{fmtRun(existing.run_2400) ?? '-'}</span></div>
-                      </div>
+                    <div className="rounded-lg border border-gray-200 bg-gray-50">
+                      <button
+                        type="button"
+                        onClick={() => setSavedScoresOpen((prev) => !prev)}
+                        className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left"
+                      >
+                        <div>
+                          <div className="font-medium text-sm text-slate-900">Previous saved scores</div>
+                          <div className="text-xs text-slate-500">Stored values across all stations</div>
+                        </div>
+                        <span className="text-xs font-medium text-blue-700">{savedScoresOpen ? 'Hide' : 'Show'}</span>
+                      </button>
+                      {savedScoresOpen && (
+                        <div className="border-t border-gray-200 px-3 py-2">
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-1 text-xs">
+                            <div>Sit-ups: <span className="font-semibold">{existing.situps ?? '-'}</span></div>
+                            <div>Pull-ups: <span className="font-semibold">{existing.pullups ?? (existing.pushups ?? '-')}</span></div>
+                            {!isIppt3 && (
+                              <>
+                                <div>Broad Jump (cm): <span className="font-semibold">{existing.broad_jump ?? '-'}</span></div>
+                                <div>Sit & Reach (cm): <span className="font-semibold">{existing.sit_and_reach ?? '-'}</span></div>
+                                <div>Shuttle Run (s): <span className="font-semibold">{existing.shuttle_run ?? '-'}</span></div>
+                              </>
+                            )}
+                            <div>Run (mm:ss): <span className="font-semibold">{fmtRun(existing.run_2400) ?? '-'}</span></div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {stationGuide && (
+                    <div className="rounded-lg border border-blue-200 bg-blue-50/60">
+                      <button
+                        type="button"
+                        onClick={() => setStationGuideOpen((prev) => !prev)}
+                        className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left"
+                      >
+                        <div>
+                          <div className="font-medium text-sm text-slate-900">{stationGuide.title}</div>
+                          <div className="text-xs text-slate-500">Saved result and standards for the selected station</div>
+                        </div>
+                        <span className="text-xs font-medium text-blue-700">{stationGuideOpen ? 'Hide' : 'Show'}</span>
+                      </button>
+                      {stationGuideOpen && (
+                        <div className="border-t border-blue-200 px-3 py-2.5 space-y-2">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                            <div className="rounded-md border border-white/80 bg-white px-2.5 py-2">
+                              <div className="uppercase tracking-wide text-slate-500">Saved score</div>
+                              <div className="mt-0.5 font-semibold text-sm text-slate-900">{stationGuide.savedLabel}</div>
+                            </div>
+                            <div className="rounded-md border border-white/80 bg-white px-2.5 py-2">
+                              <div className="uppercase tracking-wide text-slate-500">{stationGuide.summaryCaption}</div>
+                              <div className="mt-0.5 font-semibold text-sm text-slate-900">{stationGuide.summaryLabel}</div>
+                            </div>
+                          </div>
+
+                          {stationGuide.rows.length > 0 ? (
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-xs border border-blue-100 bg-white rounded-md overflow-hidden">
+                                <thead>
+                                  <tr className="bg-blue-100/70 text-left">
+                                    <th className="px-2.5 py-1.5 border-b border-blue-100">Grade</th>
+                                    <th className="px-2.5 py-1.5 border-b border-blue-100">Score Needed</th>
+                                    <th className="px-2.5 py-1.5 border-b border-blue-100">Points</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {stationGuide.rows.map((row) => (
+                                    <tr key={row.grade} className={stationGuide.highlightedGrade === row.grade ? 'bg-blue-50/80' : ''}>
+                                      <td className={`px-2.5 py-1.5 border-b border-blue-50 font-semibold text-slate-900 ${stationGuide.highlightedGrade === row.grade ? 'text-blue-900' : ''}`}>{row.grade}</td>
+                                      <td className={`px-2.5 py-1.5 border-b border-blue-50 ${stationGuide.highlightedGrade === row.grade ? 'font-medium text-blue-950' : ''}`}>{row.requirement}</td>
+                                      <td className={`px-2.5 py-1.5 border-b border-blue-50 ${stationGuide.highlightedGrade === row.grade ? 'font-medium text-blue-900' : ''}`}>{row.points}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          ) : (
+                            <div className="text-xs text-slate-600">{stationGuide.emptyMessage}</div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -979,7 +1204,6 @@ async function saveScore() {
             counterValue={counterValue}
             setCounterValue={setCounterValue}
             countdownDefault={countdownDefault}
-            setCountdownDefault={setCountdownDefault}
             countdownLeft={countdownLeft}
             countdownRunning={countdownRunning}
             setCountdownRunning={setCountdownRunning}
@@ -1048,7 +1272,6 @@ function StationToolsDrawer({
   counterValue,
   setCounterValue,
   countdownDefault,
-  setCountdownDefault,
   countdownLeft,
   countdownRunning,
   setCountdownRunning,
@@ -1106,24 +1329,8 @@ function StationToolsDrawer({
         {isCountStation && (
           <>
             <div className="space-y-2">
-              <div className="text-sm font-medium">{station === 'situps' ? 'Countdown (60s default)' : 'Countdown (30s default)'}</div>
+              <div className="text-sm font-medium">{station === 'situps' ? 'Countdown (60s)' : 'Countdown (30s)'}</div>
               <div className="text-3xl font-mono tracking-wide">{formatClock(countdownLeft)}</div>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  min={5}
-                  max={120}
-                  step={1}
-                  value={countdownDefault}
-                  onChange={(e) => {
-                    const next = Math.max(5, Math.min(120, parseInt(e.target.value || '0', 10) || 0))
-                    setCountdownDefault(next)
-                  }}
-                  className="border rounded px-2 py-1 w-24"
-                  aria-label="Countdown default seconds"
-                />
-                <span className="text-xs text-gray-600">seconds default</span>
-              </div>
               <div className="flex gap-2">
                 <button
                   type="button"
@@ -1135,16 +1342,6 @@ function StationToolsDrawer({
                   {countdownRunning ? 'Pause' : 'Start'}
                 </button>
                 <button type="button" onClick={onResetCountdown} className="px-4 py-2 border rounded border-red-300 text-red-700 hover:bg-red-50 font-medium">Reset</button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCountdownRunning(false)
-                    onResetCountdown()
-                  }}
-                  className="px-4 py-2 border rounded border-slate-300 text-slate-700 hover:bg-slate-100 font-medium"
-                >
-                  Set Default
-                </button>
               </div>
               {endedNotice && (
                 <div className="text-sm text-green-700 bg-green-50 border border-green-200 rounded px-2 py-1">

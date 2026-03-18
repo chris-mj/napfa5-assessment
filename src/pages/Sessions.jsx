@@ -16,6 +16,8 @@ export default function Sessions({ user }) {
   const [error, setError] = useState("");
   const [creating, setCreating] = useState(false);
   const [typeUpdating, setTypeUpdating] = useState(null);
+  const [statusConfirmOpen, setStatusConfirmOpen] = useState(false);
+  const [pendingStatusChange, setPendingStatusChange] = useState(null);
   // scroll behavior: default
 
   const formatDDMMYYYY = (isoDate) => {
@@ -90,13 +92,8 @@ export default function Sessions({ user }) {
     }
   };
 
-  const setStatus = async (sessionId, status) => {
+  const applyStatusChange = async (sessionId, status) => {
     try {
-      const current = sessions.find((s) => s.id === sessionId);
-      if (status === 'completed' && current?.status !== 'completed') {
-        const ok = window.confirm('Mark this session as completed? Scores and roster edits will be locked.');
-        if (!ok) return;
-      }
       const { data, error } = await supabase
         .from('sessions')
         .update({ status })
@@ -109,6 +106,17 @@ export default function Sessions({ user }) {
     } catch (err) {
       showToast?.('error', err.message || 'Failed to update status.');
     }
+  };
+
+  const setStatus = async (sessionId, status) => {
+    const current = sessions.find((s) => s.id === sessionId);
+    if (!current || current.status === status) return;
+    if (status === 'completed' && current.status !== 'completed') {
+      setPendingStatusChange({ sessionId, status, title: current.title });
+      setStatusConfirmOpen(true);
+      return;
+    }
+    await applyStatusChange(sessionId, status);
   };
 
   const countScoresForSession = async (sessionId) => {
@@ -265,6 +273,61 @@ export default function Sessions({ user }) {
           </div>
         )}
       </section>
+      <ConfirmDialog
+        open={statusConfirmOpen}
+        title="Mark Session Completed?"
+        message={(
+          <div className="space-y-2">
+            <p>After this session is marked completed, scores and roster edits will be locked.</p>
+            {pendingStatusChange?.title && (
+              <p className="text-slate-500">Session: {pendingStatusChange.title}</p>
+            )}
+          </div>
+        )}
+        confirmText="Mark Completed"
+        cancelText="Keep Current Status"
+        tone="danger"
+        onCancel={() => {
+          setStatusConfirmOpen(false);
+          setPendingStatusChange(null);
+        }}
+        onConfirm={async () => {
+          const next = pendingStatusChange;
+          setStatusConfirmOpen(false);
+          setPendingStatusChange(null);
+          if (next) {
+            await applyStatusChange(next.sessionId, next.status);
+          }
+        }}
+      />
+    </div>
+  );
+}
+
+function ConfirmDialog({ open, title, message, confirmText, cancelText, tone, onCancel, onConfirm }) {
+  if (!open) return null;
+  const confirmClass = tone === "danger"
+    ? "px-3 py-1.5 border rounded bg-red-600 text-white hover:bg-red-700"
+    : "px-3 py-1.5 border rounded bg-blue-600 text-white hover:bg-blue-700";
+  return (
+    <div className="fixed inset-0 z-50">
+      <div className="absolute inset-0 bg-black/35" onClick={onCancel} />
+      <div className="absolute inset-0 flex items-center justify-center p-4">
+        <div role="dialog" aria-modal="true" className="w-full max-w-md bg-white rounded-lg shadow-lg border">
+          <div className="px-4 py-3 border-b">
+            <div className="font-medium">{title}</div>
+          </div>
+          <div className="p-4 text-sm text-gray-700">{message}</div>
+          <div className="px-4 py-3 border-t flex justify-end gap-2">
+            <button type="button" onClick={onCancel} className="px-3 py-1.5 border rounded hover:bg-gray-50">
+              {cancelText || "Cancel"}
+            </button>
+            <button type="button" onClick={onConfirm} className={confirmClass}>
+              {confirmText || "Confirm"}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

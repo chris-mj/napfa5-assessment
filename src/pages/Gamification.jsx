@@ -37,6 +37,55 @@ function hasValue(v) {
   return v != null && Number.isFinite(Number(v));
 }
 
+function formatAverageValue(key, val) {
+  if (val == null || !Number.isFinite(Number(val))) return "-";
+  const n = Number(val);
+  if (key === "shuttle_run") return `${n.toFixed(1)}s`;
+  if (key === "broad_jump" || key === "sit_and_reach") return `${n.toFixed(1)} cm`;
+  if (key === "run_2400") return fmtRun(n) || "-";
+  return `${n.toFixed(1)} reps`;
+}
+
+function gradeToRank(g) {
+  if (!g) return 0;
+  const t = String(g).toUpperCase();
+  return t === "A" ? 5 : t === "B" ? 4 : t === "C" ? 3 : t === "D" ? 2 : t === "E" ? 1 : 0;
+}
+
+function computeNapfaAwardLabel(res) {
+  const st = res?.stations || {};
+  const grades = [st.situps?.grade, st.broad_jump_cm?.grade, st.sit_and_reach_cm?.grade, st.pullups?.grade, st.shuttle_s?.grade, st.run?.grade];
+  if (grades.some((g) => !g)) return "No Award";
+  const total = res?.totalPoints || 0;
+  const minRank = Math.min(...grades.map(gradeToRank));
+  if (total >= 21 && minRank >= gradeToRank("C")) return "Gold";
+  if (total >= 15 && minRank >= gradeToRank("D")) return "Silver";
+  if (total >= 6 && minRank >= gradeToRank("E")) return "Bronze";
+  return "No Award";
+}
+
+function computeNapfaProvisionalAwardLabel(res) {
+  const st = res?.stations || {};
+  const grades = [st.situps?.grade, st.broad_jump_cm?.grade, st.sit_and_reach_cm?.grade, st.pullups?.grade, st.shuttle_s?.grade];
+  if (grades.some((g) => !g)) return "No Award";
+  const total = (st.situps?.points || 0)
+    + (st.broad_jump_cm?.points || 0)
+    + (st.sit_and_reach_cm?.points || 0)
+    + (st.pullups?.points || 0)
+    + (st.shuttle_s?.points || 0);
+  const minRank = Math.min(...grades.map(gradeToRank));
+  if (total >= 21 && minRank >= gradeToRank("C")) return "Gold";
+  if (total >= 15 && minRank >= gradeToRank("D")) return "Silver";
+  if (total >= 6 && minRank >= gradeToRank("E")) return "Bronze";
+  return "No Award";
+}
+
+function normalizeAchievementAward(label) {
+  const raw = String(label || "").trim();
+  if (raw === "Pass") return "Bronze";
+  return raw || "No Award";
+}
+
 export default function Gamification({ user }) {
   const [membership, setMembership] = useState(null);
   const [schoolType, setSchoolType] = useState(null);
@@ -217,6 +266,7 @@ export default function Gamification({ user }) {
     const requiredFields = isIppt3
       ? ["situps", "pushups", "run_2400"]
       : ["situps", "broad_jump", "sit_and_reach", "pullups", "shuttle_run", "run_2400"];
+    const napfaCoreFields = ["situps", "broad_jump", "sit_and_reach", "pullups", "shuttle_run"];
     const testDate = session?.session_date ? new Date(session.session_date) : new Date();
     const level = String(schoolType || "").toLowerCase() === "primary" ? "Primary" : "Secondary";
     const byGroup = new Map();
@@ -273,6 +323,14 @@ export default function Gamification({ user }) {
           cls: key,
           buckets: { M: [], F: [], U: [] },
           totals: { M: 0, F: 0, U: 0, all: 0 },
+          awardEligibleCount: 0,
+          bronzePlusCount: 0,
+          silverPlusCount: 0,
+          goldCount: 0,
+          genderStationPoints: {
+            M: { sum: 0, count: 0 },
+            F: { sum: 0, count: 0 },
+          },
           members: 0,
           completionSum: 0,
           completedMembers: 0,
@@ -295,6 +353,80 @@ export default function Gamification({ user }) {
         entry.totalPointsSum += Number(total) || 0;
         entry.scoredCount += 1;
         studentTotals.push({ groupKey: key, total: Number(total) || 0 });
+      }
+
+      if (genderKey === "M" || genderKey === "F") {
+        if (isIppt3) {
+          const measures = {};
+          if (hasValue(row.situps)) measures.situps = Number(row.situps);
+          if (hasValue(row.pushups)) measures.pushups = Number(row.pushups);
+          if (hasValue(row.run_2400)) measures.run_seconds = Math.round(Number(row.run_2400) * 60);
+          const res = evaluateIppt3({ sex, age }, measures);
+          if (hasValue(row.situps)) {
+            entry.genderStationPoints[genderKey].sum += res?.stations?.situps?.points || 0;
+            entry.genderStationPoints[genderKey].count += 1;
+          }
+          if (hasValue(row.pushups)) {
+            entry.genderStationPoints[genderKey].sum += res?.stations?.pushups?.points || 0;
+            entry.genderStationPoints[genderKey].count += 1;
+          }
+          if (hasValue(row.run_2400)) {
+            entry.genderStationPoints[genderKey].sum += res?.stations?.run?.points || 0;
+            entry.genderStationPoints[genderKey].count += 1;
+          }
+        } else {
+          const runKm = age >= 14 ? 2.4 : (level === "Primary" ? 1.6 : 2.4);
+          const measures = {};
+          if (hasValue(row.situps)) measures.situps = Number(row.situps);
+          if (hasValue(row.broad_jump)) measures.broad_jump_cm = Number(row.broad_jump);
+          if (hasValue(row.sit_and_reach)) measures.sit_and_reach_cm = Number(row.sit_and_reach);
+          if (hasValue(row.pullups)) measures.pullups = Number(row.pullups);
+          if (hasValue(row.shuttle_run)) measures.shuttle_s = Number(row.shuttle_run);
+          if (hasValue(row.run_2400)) measures.run_seconds = Math.round(Number(row.run_2400) * 60);
+          const res = evaluateNapfa({ level, sex, age, run_km: runKm }, measures);
+          const stationKeys = ["situps", "broad_jump_cm", "sit_and_reach_cm", "pullups", "shuttle_s", "run"];
+          stationKeys.forEach((stationKey) => {
+            const pts = res?.stations?.[stationKey]?.points;
+            if (pts != null) {
+              entry.genderStationPoints[genderKey].sum += Number(pts) || 0;
+              entry.genderStationPoints[genderKey].count += 1;
+            }
+          });
+        }
+      }
+
+      const napfaCoreDoneCount = napfaCoreFields.reduce((acc, f) => acc + (hasValue(row[f]) ? 1 : 0), 0);
+      const qualifiesForAchievementAward = isIppt3
+        ? doneCount === requiredFields.length
+        : napfaCoreDoneCount === napfaCoreFields.length;
+
+      if (qualifiesForAchievementAward && sex && age != null) {
+        let awardLabel = "No Award";
+        if (isIppt3) {
+          const measures = {
+            situps: Number(row.situps),
+            pushups: Number(row.pushups),
+            run_seconds: Math.round(Number(row.run_2400) * 60),
+          };
+          const res = evaluateIppt3({ sex, age }, measures);
+          awardLabel = normalizeAchievementAward(res?.award);
+        } else {
+          const runKm = age >= 14 ? 2.4 : (level === "Primary" ? 1.6 : 2.4);
+          const measures = {
+            situps: Number(row.situps),
+            broad_jump_cm: Number(row.broad_jump),
+            sit_and_reach_cm: Number(row.sit_and_reach),
+            pullups: Number(row.pullups),
+            shuttle_s: Number(row.shuttle_run),
+          };
+          if (hasValue(row.run_2400)) measures.run_seconds = Math.round(Number(row.run_2400) * 60);
+          const res = evaluateNapfa({ level, sex, age, run_km: runKm }, measures);
+          awardLabel = hasValue(row.run_2400) ? computeNapfaAwardLabel(res) : computeNapfaProvisionalAwardLabel(res);
+        }
+        entry.awardEligibleCount += 1;
+        if (awardLabel === "Bronze" || awardLabel === "Silver" || awardLabel === "Gold") entry.bronzePlusCount += 1;
+        if (awardLabel === "Silver" || awardLabel === "Gold") entry.silverPlusCount += 1;
+        if (awardLabel === "Gold") entry.goldCount += 1;
       }
     });
     const top3 = [...studentTotals].sort((a, b) => b.total - a.total).slice(0, 3);
@@ -355,8 +487,79 @@ export default function Gamification({ user }) {
       .sort((a, b) => b.challengeScore - a.challengeScore || b.avgTotal - a.avgTotal);
   }, [groupBy, roster, scoresMap, session, schoolType, stations]);
 
+  const badgeShowcase = useMemo(() => {
+    const formatPct = (count, total) => total > 0 ? `${Math.round((count / total) * 100)}%` : "0%";
+    const avgStationPoints = (bucket) => (bucket?.count ? (bucket.sum / bucket.count) : null);
+    const items = [
+      {
+        key: "bronze-builders",
+        name: "Bronze Builders",
+        imageSrc: "/bronze-medal.png",
+        desc: `40% of ${groupLabel.toLowerCase()} students achieved Bronze or above.`,
+        qualifiers: groupStats
+          .filter((g) => g.awardEligibleCount > 0 && (g.bronzePlusCount / g.awardEligibleCount) >= 0.4)
+          .map((g) => ({
+            group: g.cls,
+            detail: `${g.bronzePlusCount}/${g.awardEligibleCount} students`,
+            metric: formatPct(g.bronzePlusCount, g.awardEligibleCount),
+          })),
+      },
+      {
+        key: "silver-surge",
+        name: "Silver Surge",
+        imageSrc: "/silver-medal.png",
+        desc: `20% of ${groupLabel.toLowerCase()} students achieved Silver or above.`,
+        qualifiers: groupStats
+          .filter((g) => g.awardEligibleCount > 0 && (g.silverPlusCount / g.awardEligibleCount) >= 0.2)
+          .map((g) => ({
+            group: g.cls,
+            detail: `${g.silverPlusCount}/${g.awardEligibleCount} students`,
+            metric: formatPct(g.silverPlusCount, g.awardEligibleCount),
+          })),
+      },
+      {
+        key: "gold-class",
+        name: "Gold Class",
+        imageSrc: "/gold-medal.png",
+        desc: `10% of ${groupLabel.toLowerCase()} students achieved Gold.`,
+        qualifiers: groupStats
+          .filter((g) => g.awardEligibleCount > 0 && (g.goldCount / g.awardEligibleCount) >= 0.1)
+          .map((g) => ({
+            group: g.cls,
+            detail: `${g.goldCount}/${g.awardEligibleCount} students`,
+            metric: formatPct(g.goldCount, g.awardEligibleCount),
+          })),
+      },
+      {
+        key: "balanced-squad",
+        name: "Balanced Squad",
+        imageSrc: "/balance.png",
+        desc: "Average boys and girls station points are both at least 2.5.",
+        qualifiers: groupStats
+          .filter((g) => {
+            const boysAvg = avgStationPoints(g.genderStationPoints?.M);
+            const girlsAvg = avgStationPoints(g.genderStationPoints?.F);
+            return Number.isFinite(boysAvg) && Number.isFinite(girlsAvg) && boysAvg >= 2.5 && girlsAvg >= 2.5;
+          })
+          .map((g) => ({
+            group: g.cls,
+            detail: `Boys ${avgStationPoints(g.genderStationPoints?.M)?.toFixed(1)} · Girls ${avgStationPoints(g.genderStationPoints?.F)?.toFixed(1)}`,
+            metric: "Unlocked",
+          })),
+      },
+    ];
+    return items;
+  }, [groupLabel, groupStats]);
+
   const classLeaderboards = useMemo(() => {
-    return groupStats.map(g => ({ cls: g.cls, buckets: g.buckets, totals: g.totals }));
+    return groupStats.map(g => ({
+      cls: g.cls,
+      buckets: g.buckets,
+      totals: g.totals,
+      avgCompletion: g.avgCompletion,
+      avgTotal: g.avgTotal,
+      stationLeads: g.stationLeads,
+    }));
   }, [groupStats]);
 
   return (
@@ -404,96 +607,112 @@ export default function Gamification({ user }) {
               <h2 className="text-lg font-semibold">Top Scorers</h2>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {pbCards.map(({ station, resByGender }) => (
-                  <div key={station.key} className="border rounded p-4 bg-white shadow-sm">
-                    <div className="text-xs text-gray-500 flex items-center gap-2">
+                  <div key={station.key} className="border rounded-xl p-3 bg-white shadow-sm space-y-2.5">
+                    <div className="flex items-center gap-2 text-xs text-gray-500">
                       {station.Icon ? <station.Icon className="w-4 h-4" aria-hidden="true" /> : null}
-                      <span>{station.label}</span>
+                      <span className="font-medium text-slate-700">{station.label}</span>
                     </div>
-                    {["M","F"].map((g) => {
-                      const label = g === "M" ? "Boys" : "Girls";
-                      const res = resByGender[g];
-                      return (
-                        <div key={g} className="mt-2">
-                          <div className="text-xs uppercase tracking-wide text-gray-500">{label}</div>
-                          {res ? (
-                            <>
-                              <div className="text-lg font-semibold">{formatValue(station.key, res.best.value)}</div>
-                              <div className="text-sm font-medium">
-                                {res.best.student?.name || "-"} ({groupBy === "house" ? (res.best.student?.house || "-") : (res.best.student?.class || "-")})
+                    <div className="space-y-2">
+                      {["M","F"].map((g) => {
+                        const label = g === "M" ? "Boys" : "Girls";
+                        const res = resByGender[g];
+                        const winnerGroup = groupBy === "house"
+                          ? (res?.best?.student?.house || "-")
+                          : (res?.best?.student?.class || "-");
+                        const runnerGroup = groupBy === "house"
+                          ? (res?.next?.student?.house || "-")
+                          : (res?.next?.student?.class || "-");
+                        return (
+                          <div key={g} className="rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2">
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">{label}</div>
+                              {res ? <div className="text-3xl font-bold leading-none tabular-nums text-slate-900">{formatValue(station.key, res.best.value)}</div> : null}
+                            </div>
+                            {res ? (
+                              <div className="mt-1 space-y-1">
+                                <div
+                                  className="truncate text-sm font-medium leading-tight text-slate-900"
+                                  title={res.best.student?.name || "-"}
+                                >
+                                  {res.best.student?.name || "-"}
+                                </div>
+                                <div className="text-[11px] text-slate-500">{groupLabel}: {winnerGroup}</div>
+                                <div
+                                  className="truncate text-[15px] text-slate-600"
+                                  title={res.next ? `Next: ${res.next.student?.name || "-"} · ${runnerGroup} · ${formatValue(station.key, res.next.value)}` : "Next: -"}
+                                >
+                                  Next: {res.next ? `${res.next.student?.name || "-"} · ${runnerGroup} · ${formatValue(station.key, res.next.value)}` : "-"}
+                                </div>
                               </div>
-                              <div className="text-xs text-gray-600">
-                                Next highest: {res.next ? formatValue(station.key, res.next.value) : "-"}
-                              </div>
-                            </>
-                          ) : (
-                            <div className="text-sm text-gray-500">No scores yet</div>
-                          )}
+                            ) : (
+                              <div className="mt-1 text-sm text-gray-500">No scores yet</div>
+                            )}
+                          </div>
+                        );
+                      })}
+                      {resByGender.U?.best && (
+                        <div className="rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Unspecified</div>
+                            <div className="text-3xl font-bold leading-none tabular-nums text-slate-900">{formatValue(station.key, resByGender.U.best.value)}</div>
+                          </div>
+                          <div className="mt-1 space-y-1">
+                            <div
+                              className="truncate text-sm font-medium leading-tight text-slate-900"
+                              title={resByGender.U.best.student?.name || "-"}
+                            >
+                              {resByGender.U.best.student?.name || "-"}
+                            </div>
+                            <div className="text-[11px] text-slate-500">
+                              {groupLabel}: {groupBy === "house" ? (resByGender.U.best.student?.house || "-") : (resByGender.U.best.student?.class || "-")}
+                            </div>
+                            <div
+                              className="truncate text-[15px] text-slate-600"
+                              title={resByGender.U.next ? `Next: ${resByGender.U.next.student?.name || "-"} · ${groupBy === "house" ? (resByGender.U.next.student?.house || "-") : (resByGender.U.next.student?.class || "-")} · ${formatValue(station.key, resByGender.U.next.value)}` : "Next: -"}
+                            >
+                              Next: {resByGender.U.next ? `${resByGender.U.next.student?.name || "-"} · ${groupBy === "house" ? (resByGender.U.next.student?.house || "-") : (resByGender.U.next.student?.class || "-")} · ${formatValue(station.key, resByGender.U.next.value)}` : "-"}
+                            </div>
+                          </div>
                         </div>
-                      );
-                    })}
-                    {resByGender.U && (
-                      <div className="mt-2">
-                        <div className="text-xs uppercase tracking-wide text-gray-500">Unspecified</div>
-                        <div className="text-sm font-medium">
-                          {resByGender.U.best?.student?.name || "-"} ({groupBy === "house" ? (resByGender.U.best?.student?.house || "-") : (resByGender.U.best?.student?.class || "-")})
-                        </div>
-                        <div className="text-xs text-gray-600">
-                          Next highest: {resByGender.U.next ? formatValue(station.key, resByGender.U.next.value) : "-"}
-                        </div>
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
             </section>
 
             <section className="space-y-3">
-              <h2 className="text-lg font-semibold">{groupLabel} Leaderboards</h2>
-              {classLeaderboards.length === 0 ? (
-                <div className="text-sm text-gray-500">No leaderboard data yet.</div>
+              <h2 className="text-lg font-semibold">Badge Showcase</h2>
+              {badgeShowcase.length === 0 ? (
+                <div className="text-sm text-gray-500">No badge data yet.</div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {classLeaderboards.map(group => (
-                    <div key={group.cls} className="border rounded p-4 bg-white shadow-sm">
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="font-semibold text-base">{group.cls}</div>
-                        <div className="text-sm font-medium text-gray-700">
-                          Total: {group.totals?.all ?? 0}
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+                  {badgeShowcase.map((badge) => (
+                    <div key={badge.key} className="border rounded-xl p-3 bg-white shadow-sm space-y-3">
+                      <div className="flex items-center gap-3">
+                        {badge.imageSrc ? (
+                          <div className="shrink-0 rounded-xl border border-slate-200 bg-slate-50 p-1">
+                            <img src={badge.imageSrc} alt="" className="h-11 w-11 object-contain" aria-hidden="true" />
+                          </div>
+                        ) : null}
+                        <div className="min-w-0">
+                          <div className="font-semibold text-base text-slate-900">{badge.name}</div>
+                          <div className="text-xs text-slate-500">{badge.desc}</div>
                         </div>
                       </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                        {[
-                          { key: "M", label: "Boys" },
-                          { key: "F", label: "Girls" },
-                        ].map(section => (
-                          <div key={section.key} className="space-y-2">
-                            <div className="text-sm font-semibold text-gray-700">{section.label}</div>
-                            <div className="flex items-center justify-between text-sm font-medium text-gray-700">
-                              <div>{section.label} total</div>
-                              <div>{group.totals?.[section.key] ?? 0}</div>
-                            </div>
-                            {(group.buckets?.[section.key] || []).length === 0 ? (
-                              <div className="text-sm text-gray-500">No scores yet</div>
-                            ) : (
-                              group.buckets[section.key].map((it, idx) => (
-                                <div key={it.student.id} className="flex items-center justify-between">
-                                  <div>{idx + 1}. {it.student.name || "Unknown"}</div>
-                                  <div className="text-gray-600">{it.total}</div>
-                                </div>
-                              ))
-                            )}
-                          </div>
-                        ))}
-                        {group.buckets?.U?.length > 0 && (
-                          <div className="space-y-1">
-                            <div className="text-xs uppercase tracking-wide text-gray-500">Unspecified</div>
-                            {group.buckets.U.map((it, idx) => (
-                              <div key={it.student.id} className="flex items-center justify-between">
-                                <div>{idx + 1}. {it.student.name || "Unknown"}</div>
-                                <div className="text-gray-600">{it.total}</div>
+                      <div className="rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2.5 space-y-2">
+                        {badge.qualifiers.length === 0 ? (
+                          <div className="text-sm text-slate-500">No {groupLabel.toLowerCase()} has unlocked this badge yet.</div>
+                        ) : (
+                          badge.qualifiers.map((item) => (
+                            <div key={item.group} className="flex items-center justify-between gap-3 text-sm">
+                              <div className="min-w-0 flex-1">
+                                <div className="truncate font-medium text-slate-900" title={item.group}>{item.group}</div>
+                                <div className="text-[11px] text-slate-500">{item.detail}</div>
                               </div>
-                            ))}
-                          </div>
+                              <div className="shrink-0 text-xs font-semibold text-slate-800">{item.metric}</div>
+                            </div>
+                          ))
                         )}
                       </div>
                     </div>
@@ -503,44 +722,72 @@ export default function Gamification({ user }) {
             </section>
 
             <section className="space-y-3">
-              <h2 className="text-lg font-semibold">{groupLabel} Challenges & Badges</h2>
-              {groupStats.length === 0 ? (
-                <div className="text-sm text-gray-500">No {groupLabel.toLowerCase()} challenge data yet.</div>
+              <h2 className="text-lg font-semibold">{groupLabel} Leaderboards</h2>
+              {classLeaderboards.length === 0 ? (
+                <div className="text-sm text-gray-500">No leaderboard data yet.</div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {groupStats.map(c => (
-                    <div key={c.cls} className="border rounded p-4 bg-white shadow-sm space-y-3">
-                      <div className="flex items-center justify-between">
-                        <div className="font-semibold text-base">{c.cls}</div>
-                        <div className="text-xs px-2 py-1 rounded-full bg-blue-50 text-blue-800 border border-blue-200">
-                          Challenge Score: {c.challengeScore}
+                  {classLeaderboards.map(group => (
+                    <div key={group.cls} className="border rounded-xl p-3 bg-white shadow-sm space-y-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="truncate font-semibold text-base text-slate-900" title={group.cls}>{group.cls}</div>
+                        <div className="rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-800">
+                          Total {group.totals?.all ?? 0}
                         </div>
                       </div>
-                      <div className="grid grid-cols-2 gap-2 text-sm">
-                        <div className="text-gray-600">Avg completion</div>
-                        <div className="text-right font-medium">{Math.round(c.avgCompletion * 100)}%</div>
-                        <div className="text-gray-600">Avg points</div>
-                        <div className="text-right font-medium">{c.avgTotal.toFixed(1)}</div>
-                        <div className="text-gray-600">Station leads</div>
-                        <div className="text-right font-medium">{c.stationLeads}</div>
-                      </div>
-
-                      <div className="space-y-1">
-                        <div className="text-xs uppercase tracking-wide text-gray-500">Active challenges</div>
-                        <div className="text-sm">Complete-the-Circuit: {Math.round(c.progress.completeCircuit * 100)}% / 90%</div>
-                        <div className="text-sm">Top-3 Push: {c.progress.top3Push} / {c.targets.top3Push}</div>
-                        <div className="text-sm">Station Sweep: {c.progress.stationSweep} / {c.targets.stationSweep}</div>
-                      </div>
-
-                      <div className="space-y-1">
-                        <div className="text-xs uppercase tracking-wide text-gray-500">Badges earned</div>
-                        <div className="flex flex-wrap gap-2">
-                          {c.badges.map(b => (
-                            <span key={b.key} className="text-xs px-2 py-1 rounded-full border bg-amber-50 border-amber-200 text-amber-900" title={b.desc}>
-                              {b.name}
-                            </span>
-                          ))}
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="rounded-lg border border-slate-200 bg-slate-50/80 px-2.5 py-2">
+                          <div className="text-[11px] uppercase tracking-[0.16em] text-slate-500">Completion</div>
+                          <div className="mt-1 text-sm font-semibold text-slate-900">{Math.round(group.avgCompletion * 100)}%</div>
                         </div>
+                        <div className="rounded-lg border border-slate-200 bg-slate-50/80 px-2.5 py-2">
+                          <div className="text-[11px] uppercase tracking-[0.16em] text-slate-500">Avg points</div>
+                          <div className="mt-1 text-sm font-semibold text-slate-900">{group.avgTotal.toFixed(1)}</div>
+                        </div>
+                        <div className="rounded-lg border border-slate-200 bg-slate-50/80 px-2.5 py-2">
+                          <div className="text-[11px] uppercase tracking-[0.16em] text-slate-500">Leads</div>
+                          <div className="mt-1 text-sm font-semibold text-slate-900">{group.stationLeads}</div>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                        {[
+                          { key: "M", label: "Boys" },
+                          { key: "F", label: "Girls" },
+                        ].map(section => (
+                          <div key={section.key} className="rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2.5 space-y-2">
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="text-xs uppercase tracking-[0.18em] text-slate-500">{section.label}</div>
+                              <div className="text-xs font-semibold text-slate-700">{group.totals?.[section.key] ?? 0} pts</div>
+                            </div>
+                            {(group.buckets?.[section.key] || []).length === 0 ? (
+                              <div className="text-sm text-gray-500">No scores yet</div>
+                            ) : (
+                              group.buckets[section.key].map((it, idx) => (
+                                <div key={it.student.id} className="flex items-center justify-between gap-3 text-sm">
+                                  <div className="min-w-0 flex flex-1 items-center gap-1.5">
+                                    <span className="shrink-0 text-slate-500">{idx + 1}.</span>
+                                    <span className="truncate text-slate-900" title={it.student.name || "Unknown"}>{it.student.name || "Unknown"}</span>
+                                  </div>
+                                  <div className="shrink-0 font-medium tabular-nums text-slate-700">{it.total}</div>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        ))}
+                        {group.buckets?.U?.length > 0 && (
+                          <div className="rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2.5 space-y-2">
+                            <div className="text-xs uppercase tracking-[0.18em] text-slate-500">Unspecified</div>
+                            {group.buckets.U.map((it, idx) => (
+                              <div key={it.student.id} className="flex items-center justify-between gap-3 text-sm">
+                                <div className="min-w-0 flex flex-1 items-center gap-1.5">
+                                  <span className="shrink-0 text-slate-500">{idx + 1}.</span>
+                                  <span className="truncate text-slate-900" title={it.student.name || "Unknown"}>{it.student.name || "Unknown"}</span>
+                                </div>
+                                <div className="shrink-0 font-medium tabular-nums text-slate-700">{it.total}</div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
                   ))}

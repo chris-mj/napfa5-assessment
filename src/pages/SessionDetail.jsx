@@ -15,9 +15,327 @@ import SessionHouses from "../components/SessionHouses";
 import SessionGroups from "../components/SessionGroups";
 
 const ROLE_CAN_MANAGE = ["superadmin", "admin"];
+const RUN_DISTANCE_PRESETS = [1600, 2400, 3200, 5000, 10000];
 const RESET_RUN_ENDPOINT = import.meta.env.DEV
     ? 'http://localhost:3000/api/run/resetConfig'
     : 'https://napfa5-assessment.vercel.app/api/run/resetConfig';
+
+function gradeToRank(g) {
+    if (!g) return 0;
+    const t = String(g).toUpperCase();
+    return t === 'A' ? 5 : t === 'B' ? 4 : t === 'C' ? 3 : t === 'D' ? 2 : t === 'E' ? 1 : 0;
+}
+
+function fiveCompleted(res) {
+    const st = res?.stations || {};
+    return !!(st.situps?.grade && st.broad_jump_cm?.grade && st.sit_and_reach_cm?.grade && st.pullups?.grade && st.shuttle_s?.grade);
+}
+
+function sixCompleted(res) {
+    const st = res?.stations || {};
+    return fiveCompleted(res) && !!st.run?.grade;
+}
+
+function sumFivePoints(res) {
+    const st = res?.stations || {};
+    return (st.situps?.points || 0)
+        + (st.broad_jump_cm?.points || 0)
+        + (st.sit_and_reach_cm?.points || 0)
+        + (st.pullups?.points || 0)
+        + (st.shuttle_s?.points || 0);
+}
+
+function worstGradeRank(keys, res) {
+    const st = res?.stations || {};
+    const ranks = keys.map((k) => st[k]?.grade).filter(Boolean).map(gradeToRank);
+    return ranks.length ? Math.min(...ranks) : 0;
+}
+
+function computeNapfaAward(res) {
+    const st = res?.stations || {};
+    const grades = [st.situps?.grade, st.broad_jump_cm?.grade, st.sit_and_reach_cm?.grade, st.pullups?.grade, st.shuttle_s?.grade, st.run?.grade];
+    if (grades.some((g) => !g)) return { label: 'No Award', reason: 'Incomplete results across all stations.' };
+
+    const total = res?.totalPoints || 0;
+    const minRank = Math.min(...grades.map(gradeToRank));
+
+    if (total >= 21 && minRank >= gradeToRank('C')) return { label: 'Gold', reason: `Total ${total} points and at least grade C in all stations.` };
+    if (total >= 15 && minRank >= gradeToRank('D')) return { label: 'Silver', reason: `Total ${total} points and at least grade D in all stations.` };
+    if (total >= 6 && minRank >= gradeToRank('E')) return { label: 'Bronze', reason: `Total ${total} points and at least grade E in all stations.` };
+    return { label: 'No Award', reason: `Total ${total} points or minimum grade conditions not met.` };
+}
+
+function computeNapfaProvisionalAward(res) {
+    const total = sumFivePoints(res);
+    const minRank = worstGradeRank(['situps', 'broad_jump_cm', 'sit_and_reach_cm', 'pullups', 'shuttle_s'], res);
+    if (total >= 21 && minRank >= gradeToRank('C')) return { label: 'Gold', reason: `Five-station subtotal ${total} points and all >= C.` };
+    if (total >= 15 && minRank >= gradeToRank('D')) return { label: 'Silver', reason: `Five-station subtotal ${total} points and all >= D.` };
+    if (total >= 6 && minRank >= gradeToRank('E')) return { label: 'Bronze', reason: `Five-station subtotal ${total} points and all >= E.` };
+    return { label: 'No Award', reason: `Five-station subtotal ${total} points or minimum grade conditions not met.` };
+}
+
+function getNapfaAwardDisplay(res) {
+    if (sixCompleted(res)) {
+        const currentAward = computeNapfaAward(res);
+        return { label: currentAward.label, reason: currentAward.reason, kind: 'final' };
+    }
+    if (fiveCompleted(res)) {
+        const provisional = computeNapfaProvisionalAward(res);
+        return {
+            label: provisional.label,
+            reason: provisional.reason,
+            kind: provisional.label === 'No Award' ? 'final' : 'provisional',
+        };
+    }
+    return { label: 'Incomplete', reason: 'Complete at least the five non-run stations to see an award.', kind: 'incomplete' };
+}
+
+function mapIppt3AwardDisplay(award) {
+    const label = String(award || '').trim();
+    if (!label) return { label: 'No Award', kind: 'none' };
+    if (label === 'Pass') return { label: 'Bronze', kind: 'mapped' };
+    return { label, kind: label === 'No Award' ? 'none' : 'final' };
+}
+
+function AwardBadge({ award }) {
+    const label = String(award?.label || '').trim() || 'No Award';
+    const kind = award?.kind || 'final';
+    const baseClass = label === 'Gold'
+        ? 'bg-amber-200 text-amber-950 border-amber-400'
+        : label === 'Silver'
+            ? 'bg-slate-200 text-slate-900 border-slate-400'
+            : label === 'Bronze'
+                ? 'bg-orange-100 text-orange-900 border-orange-300'
+                : label === 'Incomplete'
+                    ? 'bg-sky-100 text-sky-900 border-sky-200'
+                    : 'bg-slate-100 text-slate-700 border-slate-200';
+
+    return (
+        <div className="space-y-1">
+            <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${baseClass}`}>
+                {kind === 'provisional' ? `Provisional ${label}` : label}
+            </span>
+            {kind === 'mapped' && (
+                <div className="text-[11px] text-slate-500">IPPT Pass shown as Bronze</div>
+            )}
+        </div>
+    );
+}
+
+function toMillis(value) {
+    const t = new Date(value || 0).getTime();
+    return Number.isFinite(t) ? t : 0;
+}
+
+function eventRunnerId(event) {
+    return String(event?.payload?.runner_id || "").trim();
+}
+
+function deriveRunTagTimings(config, events) {
+    const template = String(config?.template_key || "A").toUpperCase();
+    const lapsRequired = Math.max(1, Number(config?.laps_required) || 1);
+    const enforcement = String(config?.enforcement || "OFF").toUpperCase();
+    const checkpoints = template === "B" ? ["A"] : template === "C" ? ["A", "B"] : [];
+    const scoped = [...(events || [])]
+        .sort((a, b) => toMillis(a.occurred_at) - toMillis(b.occurred_at));
+
+    const lastClearMs = scoped.reduce((m, e) => {
+        if (String(e.event_type) === "CLEAR_ALL") return Math.max(m, toMillis(e.occurred_at));
+        return m;
+    }, 0);
+    const activeEvents = lastClearMs
+        ? scoped.filter((e) => toMillis(e.occurred_at) >= lastClearMs)
+        : scoped;
+
+    const byTag = new Map();
+    const ensure = (tag) => {
+        if (!byTag.has(tag)) {
+            byTag.set(tag, {
+                startedAtMs: null,
+                finishedAtMs: null,
+                lapCount: 0,
+                checkpointsSeen: {},
+                scanTimeline: []
+            });
+        }
+        return byTag.get(tag);
+    };
+
+    for (const event of activeEvents) {
+        if (String(event.event_type) !== "PASS") continue;
+        const tag = eventRunnerId(event);
+        if (!tag) continue;
+        const station = String(event.station_id || "");
+        const t = toMillis(event.occurred_at);
+        const state = ensure(tag);
+        if (state.finishedAtMs) continue;
+
+        if (station === "START" && template === "D" && state.startedAtMs == null) {
+            state.startedAtMs = t;
+            state.scanTimeline.push({ station, t });
+            continue;
+        }
+
+        if (station === "A" || station === "B") {
+            if (checkpoints.includes(station)) state.checkpointsSeen[station] = true;
+            if (state.startedAtMs != null) state.scanTimeline.push({ station, t });
+            continue;
+        }
+
+        if (station === "LAP_END") {
+            if (template !== "D" && state.startedAtMs == null) {
+                state.startedAtMs = t;
+                state.scanTimeline.push({ station, t });
+                state.checkpointsSeen = {};
+                continue;
+            }
+            if (template === "D" && state.startedAtMs == null) {
+                continue;
+            }
+            state.scanTimeline.push({ station, t });
+            const missing = checkpoints.some((cp) => !state.checkpointsSeen[cp]);
+            if (missing && enforcement === "STRICT") {
+                state.checkpointsSeen = {};
+                continue;
+            }
+            state.lapCount += 1;
+            state.checkpointsSeen = {};
+            if (template !== "E" && state.lapCount >= lapsRequired) {
+                state.finishedAtMs = t;
+            }
+            continue;
+        }
+
+        if (station === "FINISH" && template === "E" && state.startedAtMs != null) {
+            state.scanTimeline.push({ station, t });
+            if (state.lapCount >= lapsRequired) {
+                state.finishedAtMs = t;
+            }
+        }
+    }
+
+    const out = [];
+    for (const [tag, state] of byTag.entries()) {
+        if (!state.startedAtMs || !state.finishedAtMs || state.finishedAtMs <= state.startedAtMs) continue;
+        const elapsedSec = Math.round((state.finishedAtMs - state.startedAtMs) / 1000);
+        if (elapsedSec <= 0) continue;
+        const intervals = [];
+        const interval_steps = [];
+        for (let i = 1; i < state.scanTimeline.length; i += 1) {
+            const prev = state.scanTimeline[i - 1];
+            const curr = state.scanTimeline[i];
+            const sec = Math.max(0, Math.round((curr.t - prev.t) / 1000));
+            const mmss = fmtRun(Number((sec / 60).toFixed(2))) || "-";
+            intervals.push(`${prev.station}->${curr.station} ${mmss}`);
+            interval_steps.push({
+                station: curr.station,
+                mmss
+            });
+        }
+        out.push({
+            tag_id: tag,
+            elapsed_seconds: elapsedSec,
+            run_2400: Number((elapsedSec / 60).toFixed(2)),
+            intervals_text: intervals.join(" | "),
+            interval_steps
+        });
+    }
+    return out;
+}
+
+function deriveRunTagTimingsForExport(config, events) {
+    const template = String(config?.template_key || "A").toUpperCase();
+    const lapsRequired = Math.max(1, Number(config?.laps_required) || 1);
+    const requiredCheckpoints = template === "B" ? ["A"] : template === "C" ? ["A", "B"] : [];
+
+    const sorted = [...(events || [])].sort((a, b) => toMillis(a.occurred_at) - toMillis(b.occurred_at));
+    const lastClearMs = sorted.reduce((m, e) => String(e.event_type) === "CLEAR_ALL" ? Math.max(m, toMillis(e.occurred_at)) : m, 0);
+    const active = lastClearMs ? sorted.filter((e) => toMillis(e.occurred_at) >= lastClearMs) : sorted;
+
+    const byTag = new Map();
+    const ensure = (tag) => {
+        if (!byTag.has(tag)) {
+            byTag.set(tag, {
+                startedAtMs: null,
+                finishedAtMs: null,
+                lapCount: 0,
+                timeline: [],
+                seenCheckpoints: {}
+            });
+        }
+        return byTag.get(tag);
+    };
+
+    for (const event of active) {
+        if (String(event.event_type) !== "PASS") continue;
+        const tag = eventRunnerId(event);
+        if (!tag) continue;
+        const station = String(event.station_id || "");
+        const t = toMillis(event.occurred_at);
+        const state = ensure(tag);
+        if (state.finishedAtMs) continue;
+
+        if ((station === "A" || station === "B") && requiredCheckpoints.includes(station)) {
+            state.seenCheckpoints[station] = true;
+            continue;
+        }
+
+        if (station === "START" && template === "D" && state.startedAtMs == null) {
+            state.startedAtMs = t;
+            state.timeline.push({ station, t });
+            continue;
+        }
+
+        if (station === "LAP_END") {
+            if (state.startedAtMs == null) {
+                state.startedAtMs = t;
+                state.timeline.push({ station, t });
+                continue;
+            }
+            state.timeline.push({ station, t });
+            state.lapCount += 1;
+            if (template !== "E" && state.lapCount >= lapsRequired) {
+                state.finishedAtMs = t;
+            }
+            continue;
+        }
+
+        if (station === "FINISH" && template === "E" && state.startedAtMs != null) {
+            state.timeline.push({ station, t });
+            if (state.lapCount >= lapsRequired) {
+                state.finishedAtMs = t;
+            }
+        }
+    }
+
+    const out = [];
+    for (const [tag, state] of byTag.entries()) {
+        if (!state.startedAtMs || !state.finishedAtMs || state.finishedAtMs <= state.startedAtMs) continue;
+        const elapsedSec = Math.round((state.finishedAtMs - state.startedAtMs) / 1000);
+        if (elapsedSec <= 0) continue;
+        const interval_steps = [];
+        for (let i = 1; i < state.timeline.length; i += 1) {
+            const prev = state.timeline[i - 1];
+            const curr = state.timeline[i];
+            const sec = Math.max(0, Math.round((curr.t - prev.t) / 1000));
+            interval_steps.push({
+                station: curr.station,
+                mmss: fmtRun(Number((sec / 60).toFixed(2))) || "-"
+            });
+        }
+        const missingCheckpoint = requiredCheckpoints.length
+            ? requiredCheckpoints.some((cp) => !state.seenCheckpoints[cp])
+            : false;
+        out.push({
+            tag_id: tag,
+            elapsed_seconds: elapsedSec,
+            run_2400: Number((elapsedSec / 60).toFixed(2)),
+            checkpoint_flag: requiredCheckpoints.length ? (missingCheckpoint ? "Missing checkpoint" : "OK") : "",
+            interval_steps
+        });
+    }
+    return out;
+}
 
 function RosterRow({ s, sessionId, canRecord, onSaved }) {
     const [open, setOpen] = useState(false);
@@ -77,6 +395,9 @@ export default function SessionDetail({ user }) {
     const [massEdits, setMassEdits] = useState(new Map()); // studentId -> partial score object
     const [massEditCancelOpen, setMassEditCancelOpen] = useState(false);
     const [massEditSaveOpen, setMassEditSaveOpen] = useState(false);
+    const [completedScoresDialogOpen, setCompletedScoresDialogOpen] = useState(false);
+    const [statusCompleteConfirmOpen, setStatusCompleteConfirmOpen] = useState(false);
+    const [pendingStatusChange, setPendingStatusChange] = useState(null);
     const [filterClass, setFilterClass] = useState("");
     const [filterQuery, setFilterQuery] = useState("");
     const [showCompleted, setShowCompleted] = useState(true);
@@ -88,6 +409,7 @@ export default function SessionDetail({ user }) {
     const [runConfigForm, setRunConfigForm] = useState({
         name: "",
         template_key: "A",
+        run_distance_m: 2400,
         laps_required: 3,
         enforcement: "OFF",
         scan_gap_ms: 10000
@@ -100,6 +422,18 @@ export default function SessionDetail({ user }) {
     const [showRunConfigDeleteModal, setShowRunConfigDeleteModal] = useState(false);
     const [pendingDeleteRunConfig, setPendingDeleteRunConfig] = useState(null);
     const [runConfigDeleteBusy, setRunConfigDeleteBusy] = useState(false);
+    const [runConfigBaselineById, setRunConfigBaselineById] = useState({});
+    const [runTagMappingsByConfig, setRunTagMappingsByConfig] = useState({});
+    const [runTagDraftByConfig, setRunTagDraftByConfig] = useState({});
+    const [runTagBusyByConfig, setRunTagBusyByConfig] = useState({});
+    const [runApplyPolicyByConfig, setRunApplyPolicyByConfig] = useState({});
+    const [runApplyPreviewByConfig, setRunApplyPreviewByConfig] = useState({});
+    const [showRunTagMapModal, setShowRunTagMapModal] = useState(false);
+    const [showRunLockModal, setShowRunLockModal] = useState(false);
+    const [activeRunConfigForModal, setActiveRunConfigForModal] = useState(null);
+    const [runTagClassFilter, setRunTagClassFilter] = useState("");
+    const [runTagRule, setRunTagRule] = useState("numeric");
+    const [runTagNumericStart, setRunTagNumericStart] = useState("1");
     const [showSessionDeleteModal, setShowSessionDeleteModal] = useState(false);
     const [sessionDeleteBusy, setSessionDeleteBusy] = useState(false);
     const [activeTab, setActiveTab] = useState(() => {
@@ -116,9 +450,25 @@ export default function SessionDetail({ user }) {
 
     const platformOwner = isPlatformOwner(user);
     const canManage = useMemo(() => platformOwner || ROLE_CAN_MANAGE.includes(membership?.role), [platformOwner, membership]);
-    const rosterEditable = canManage && session?.status !== 'completed';
+    const sessionCompleted = session?.status === 'completed';
+    const rosterEditable = canManage && !sessionCompleted;
     const checkpointTemplates = new Set(["B", "C"]);
     const defaultRunEnforcement = (templateKey) => (checkpointTemplates.has(templateKey) ? "SOFT" : "OFF");
+    const normalizeRunConfigComparable = (cfg) => ({
+        name: String(cfg?.name || "").trim(),
+        template_key: String(cfg?.template_key || "A"),
+        run_distance_m: Number(cfg?.run_distance_m) || 2400,
+        laps_required: Number(cfg?.laps_required) || 1,
+        enforcement: String(cfg?.enforcement || "OFF"),
+        scan_gap_ms: Number(cfg?.scan_gap_ms) || 10000
+    });
+    const hasUnsavedRunConfig = (cfg) => {
+        if (!cfg?.id) return false;
+        const baseline = runConfigBaselineById[cfg.id];
+        if (!baseline) return false;
+        const current = normalizeRunConfigComparable(cfg);
+        return JSON.stringify(current) !== JSON.stringify(baseline);
+    };
 
     const formatDDMMYYYY = (iso) => {
         if (!iso) return "";
@@ -213,8 +563,20 @@ export default function SessionDetail({ user }) {
     useEffect(() => {
         if (!id) return;
         loadRunConfigs();
+        loadRunTagMappings();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [id]);
+
+    useEffect(() => {
+        if (!expandedRunConfigId) return;
+        setRunTagDraftByConfig((prev) => {
+            if (prev[expandedRunConfigId]) return prev;
+            return {
+                ...prev,
+                [expandedRunConfigId]: buildTagDraftForConfig(expandedRunConfigId)
+            };
+        });
+    }, [expandedRunConfigId, runTagMappingsByConfig]);
 
     // Recompute counts whenever roster changes to keep progress in sync
     useEffect(() => {
@@ -299,7 +661,15 @@ export default function SessionDetail({ user }) {
         return { ok: true, value: Number.parseFloat(n.toFixed(dp)) };
     };
 
+    const openCompletedScoresDialog = () => {
+        setCompletedScoresDialogOpen(true);
+    };
+
     const saveMassEditVisible = async () => {
+        if (sessionCompleted) {
+            openCompletedScoresDialog();
+            return;
+        }
         const visible = pagedScoresRoster || [];
         if (!visible.length) return;
         setMassEditErr('');
@@ -432,7 +802,340 @@ export default function SessionDetail({ user }) {
             .eq('session_id', id)
             .order('created_at', { ascending: false });
         if (err) return;
-        setRunConfigs(data || []);
+        const rows = data || [];
+        setRunConfigs(rows);
+        const baseline = {};
+        for (const row of rows) baseline[row.id] = normalizeRunConfigComparable(row);
+        setRunConfigBaselineById(baseline);
+    };
+
+    const loadRunTagMappings = async () => {
+        if (!id) return;
+        const { data, error: err } = await supabase
+            .from("run_tag_mappings")
+            .select("id, run_config_id, session_id, student_id, tag_id, updated_at")
+            .eq("session_id", id);
+        if (err) return;
+        const grouped = {};
+        for (const row of (data || [])) {
+            const key = row.run_config_id;
+            if (!grouped[key]) grouped[key] = [];
+            grouped[key].push(row);
+        }
+        setRunTagMappingsByConfig(grouped);
+    };
+
+    const buildTagDraftForConfig = (configId) => {
+        const rows = runTagMappingsByConfig[configId] || [];
+        const next = {};
+        for (const row of rows) {
+            next[row.student_id] = row.tag_id || "";
+        }
+        return next;
+    };
+
+    const setRunTagBusy = (configId, value) => {
+        setRunTagBusyByConfig((prev) => ({ ...prev, [configId]: value }));
+    };
+
+    const handleRunTagDraftChange = (configId, studentId, value) => {
+        setRunTagDraftByConfig((prev) => ({
+            ...prev,
+            [configId]: {
+                ...(prev[configId] || {}),
+                [studentId]: value
+            }
+        }));
+    };
+
+    const getRosterForRunTagClassFilter = () => {
+        if (!runTagClassFilter) return sortedRoster || [];
+        return (sortedRoster || []).filter((s) => String(s.class || "") === runTagClassFilter);
+    };
+
+    const autoTagByRule = (configId) => {
+        if (!configId) return;
+        const target = getRosterForRunTagClassFilter();
+        if (!target.length) return;
+        const existing = { ...(runTagDraftByConfig[configId] || {}) };
+        const CLASS_BLOCK_SIZE = 40;
+        if (runTagRule === "numeric") {
+            let n = Math.max(1, Number.parseInt(runTagNumericStart || "1", 10) || 1);
+            for (const s of target) {
+                existing[s.id] = String(n);
+                n += 1;
+            }
+        } else if (runTagRule === "classIndex") {
+            for (let i = 0; i < target.length; i += 1) {
+                const s = target[i];
+                const classOffset = Math.floor(i / CLASS_BLOCK_SIZE);
+                const letterCode = 65 + (classOffset % 26);
+                const classPrefix = String.fromCharCode(letterCode);
+                const indexInClass = (i % CLASS_BLOCK_SIZE) + 1;
+                existing[s.id] = `${classPrefix}${String(indexInClass).padStart(2, "0")}`;
+            }
+        } else {
+            // LCII starts at 1101. We increment index 01..40, then class digit 1..9.
+            const level = 1;
+            for (let i = 0; i < target.length; i += 1) {
+                const s = target[i];
+                const classOffset = Math.floor(i / CLASS_BLOCK_SIZE);
+                const classDigit = 1 + (classOffset % 9);
+                const indexInClass = (i % CLASS_BLOCK_SIZE) + 1;
+                existing[s.id] = `${level}${classDigit}${String(indexInClass).padStart(2, "0")}`;
+            }
+        }
+        setRunTagDraftByConfig((prev) => ({ ...prev, [configId]: existing }));
+    };
+
+    const openRunTagMappingModal = (config) => {
+        if (!config?.id) return;
+        setActiveRunConfigForModal(config.id);
+        setRunTagClassFilter("");
+        setRunTagRule("numeric");
+        setRunTagNumericStart("1");
+        setRunTagDraftByConfig((prev) => ({
+            ...prev,
+            [config.id]: prev[config.id] || buildTagDraftForConfig(config.id)
+        }));
+        setShowRunTagMapModal(true);
+    };
+
+    const openRunLockModal = async (config) => {
+        if (!config?.id) return;
+        setActiveRunConfigForModal(config.id);
+        setRunApplyPolicyByConfig((prev) => ({ ...prev, [config.id]: prev[config.id] || "best" }));
+        setShowRunLockModal(true);
+        await handlePreviewRunToScores(config);
+    };
+
+    const handleSaveRunTagMappings = async (config) => {
+        const configId = config?.id;
+        if (!configId || !id) return;
+        setRunTagBusy(configId, true);
+        setRunConfigFlash("");
+        try {
+            const draft = runTagDraftByConfig[configId] || {};
+            const trimmedByStudent = {};
+            for (const student of roster || []) {
+                const raw = String(draft[student.id] ?? "").trim();
+                if (raw) trimmedByStudent[student.id] = raw;
+            }
+
+            const existingRows = runTagMappingsByConfig[configId] || [];
+            const toDeleteIds = existingRows
+                .filter((r) => !trimmedByStudent[r.student_id])
+                .map((r) => r.id);
+
+            const toUpsert = Object.entries(trimmedByStudent).map(([studentId, tagId]) => ({
+                run_config_id: configId,
+                session_id: id,
+                student_id: studentId,
+                tag_id: tagId,
+                source: "manual"
+            }));
+
+            if (toDeleteIds.length) {
+                const { error: delErr } = await supabase
+                    .from("run_tag_mappings")
+                    .delete()
+                    .in("id", toDeleteIds);
+                if (delErr) throw delErr;
+            }
+
+            if (toUpsert.length) {
+                const { error: upsertErr } = await supabase
+                    .from("run_tag_mappings")
+                    .upsert(toUpsert, { onConflict: "run_config_id,student_id" });
+                if (upsertErr) throw upsertErr;
+            }
+
+            await loadRunTagMappings();
+            setRunConfigFlash("Tag mappings saved.");
+        } catch (err) {
+            setRunConfigFlash(err.message || "Failed to save tag mappings.");
+        } finally {
+            setRunTagBusy(configId, false);
+        }
+    };
+
+    const buildRunApplyPreview = async (config) => {
+        const configId = config?.id;
+        if (!configId || !id) return null;
+        const { data: events, error: eventsErr } = await supabase
+            .from("run_events")
+            .select("station_id, event_type, occurred_at, payload")
+            .eq("run_config_id", configId)
+            .order("occurred_at", { ascending: true });
+        if (eventsErr) throw eventsErr;
+
+        const timingRows = deriveRunTagTimings(config, events || []);
+        const tagRows = runTagMappingsByConfig[configId] || [];
+        const tagToStudent = new Map(tagRows.map((r) => [String(r.tag_id || "").trim(), r.student_id]));
+        const rosterById = new Map((roster || []).map((s) => [s.id, s]));
+
+        const { data: existingScores, error: scoresErr } = await supabase
+            .from("scores")
+            .select("student_id, run_2400")
+            .eq("session_id", id);
+        if (scoresErr) throw scoresErr;
+        const existingByStudent = new Map((existingScores || []).map((r) => [r.student_id, r.run_2400]));
+
+        const rows = [];
+        let matched = 0;
+        let unmatchedTags = 0;
+        for (const t of timingRows) {
+            const studentId = tagToStudent.get(String(t.tag_id || "").trim()) || null;
+            if (!studentId) {
+                unmatchedTags += 1;
+                rows.push({
+                    tag_id: t.tag_id,
+                    student_id: null,
+                    student_name: null,
+                    new_run_2400: t.run_2400,
+                    existing_run_2400: null,
+                    comparison: "unmapped"
+                });
+                continue;
+            }
+            matched += 1;
+            const existing = existingByStudent.get(studentId);
+            const cmp = existing == null
+                ? "new"
+                : Number(t.run_2400) < Number(existing) ? "better"
+                : Number(t.run_2400) > Number(existing) ? "worse"
+                : "same";
+            rows.push({
+                tag_id: t.tag_id,
+                student_id: studentId,
+                student_name: rosterById.get(studentId)?.name || null,
+                new_run_2400: t.run_2400,
+                existing_run_2400: existing ?? null,
+                comparison: cmp
+            });
+        }
+        return {
+            configId,
+            totalTimings: timingRows.length,
+            mappedRows: tagRows.length,
+            matched,
+            unmatchedTags,
+            rows
+        };
+    };
+
+    const handlePreviewRunToScores = async (config) => {
+        const configId = config?.id;
+        if (!configId) return;
+        setRunTagBusy(configId, true);
+        setRunConfigFlash("");
+        try {
+            const preview = await buildRunApplyPreview(config);
+            setRunApplyPreviewByConfig((prev) => ({ ...prev, [configId]: preview }));
+            setRunConfigFlash("Preview generated.");
+        } catch (err) {
+            setRunConfigFlash(err.message || "Failed to build run preview.");
+        } finally {
+            setRunTagBusy(configId, false);
+        }
+    };
+
+    const handleLockTagMapping = async (config) => {
+        if (!config?.id || !user?.id) return;
+        setRunTagBusy(config.id, true);
+        setRunConfigFlash("");
+        try {
+            const nowIso = new Date().toISOString();
+            const { error: err } = await supabase
+                .from("run_configs")
+                .update({
+                    timings_locked_at: nowIso,
+                    timings_locked_by: user.id
+                })
+                .eq("id", config.id);
+            if (err) throw err;
+            setRunConfigFlash("Tag mapping locked permanently.");
+            await loadRunConfigs();
+            await loadRunTagMappings();
+        } catch (err) {
+            setRunConfigFlash(err.message || "Failed to lock tag mapping.");
+        } finally {
+            setRunTagBusy(config.id, false);
+        }
+    };
+
+    const handleApplyRunToScores = async (config) => {
+        const configId = config?.id;
+        if (!configId || !id) return;
+        if (!config?.timings_locked_at) {
+            setRunConfigFlash("Lock tag mapping first before importing run timings.");
+            return;
+        }
+        const policy = runApplyPolicyByConfig[configId] || "best";
+        setRunTagBusy(configId, true);
+        setRunConfigFlash("");
+        try {
+            const preview = await buildRunApplyPreview(config);
+            const rows = Array.isArray(preview?.rows) ? preview.rows : [];
+            const writeRows = [];
+            let skipped = 0;
+            for (const row of rows) {
+                if (!row.student_id || row.comparison === "unmapped") {
+                    skipped += 1;
+                    continue;
+                }
+                const existing = row.existing_run_2400;
+                const next = row.new_run_2400;
+                let shouldWrite = false;
+                if (policy === "overwrite") shouldWrite = true;
+                else if (policy === "fill-empty") shouldWrite = existing == null;
+                else shouldWrite = existing == null || Number(next) < Number(existing);
+                if (!shouldWrite) {
+                    skipped += 1;
+                    continue;
+                }
+                writeRows.push({
+                    session_id: id,
+                    student_id: row.student_id,
+                    run_2400: next
+                });
+            }
+
+            if (writeRows.length) {
+                const { error: upsertErr } = await supabase
+                    .from("scores")
+                    .upsert(writeRows, { onConflict: "session_id,student_id" });
+                if (upsertErr) throw upsertErr;
+            }
+
+            const summary = {
+                policy,
+                attempted: rows.length,
+                updated: writeRows.length,
+                skipped,
+                unmatched: preview?.unmatchedTags || 0
+            };
+            const { error: metaErr } = await supabase
+                .from("run_configs")
+                .update({
+                    timings_applied_at: new Date().toISOString(),
+                    timings_applied_by: user?.id || null,
+                    timings_apply_summary: summary
+                })
+                .eq("id", configId);
+            if (metaErr) throw metaErr;
+
+            setRunApplyPreviewByConfig((prev) => ({ ...prev, [configId]: preview }));
+            setRunConfigFlash(`Applied run timings to scores: ${writeRows.length} updated, ${skipped} skipped.`);
+            await loadRunConfigs();
+            await loadRunTagMappings();
+            await loadScoresMap();
+            await loadScoresCount();
+        } catch (err) {
+            setRunConfigFlash(err.message || "Failed to apply run timings to scores.");
+        } finally {
+            setRunTagBusy(configId, false);
+        }
     };
 
     // Reload roster when session year becomes available to compute class column
@@ -538,7 +1241,8 @@ export default function SessionDetail({ user }) {
                     ippt3: {
                         situpsPoints: res3?.stations?.situps?.points ?? null,
                         pushupsPoints: res3?.stations?.pushups?.points ?? null,
-                        runPoints: res3?.stations?.run?.points ?? null
+                        runPoints: res3?.stations?.run?.points ?? null,
+                        award: mapIppt3AwardDisplay(res3?.award),
                     }
                 });
                 return;
@@ -566,7 +1270,8 @@ export default function SessionDetail({ user }) {
                     reach: res?.stations?.sit_and_reach_cm?.grade ?? null,
                     pullups: res?.stations?.pullups?.grade ?? null,
                     broad: res?.stations?.broad_jump_cm?.grade ?? null,
-                    run: res?.stations?.run?.grade ?? null
+                    run: res?.stations?.run?.grade ?? null,
+                    award: getNapfaAwardDisplay(res),
                 }
             });
         });
@@ -733,32 +1438,66 @@ export default function SessionDetail({ user }) {
         try {
             const { data, error: err } = await supabase
                 .from("run_events")
-                .select("event_id, run_config_id, session_id, station_id, event_type, occurred_at, created_at, payload")
+                .select("run_config_id, session_id, station_id, event_type, occurred_at, payload")
                 .eq("run_config_id", config.id)
                 .order("occurred_at", { ascending: true });
             if (err) throw err;
-            const rows = data || [];
+            const events = data || [];
+
+            const { data: tagMaps, error: mapErr } = await supabase
+                .from("run_tag_mappings")
+                .select("tag_id, student_id")
+                .eq("run_config_id", config.id);
+            if (mapErr) throw mapErr;
+            const tagToStudent = new Map((tagMaps || []).map((r) => [String(r.tag_id || "").trim(), r.student_id]));
+            const rosterById = new Map((sortedRoster || []).map((s) => [s.id, s]));
+
+            const summaryRows = deriveRunTagTimingsForExport(config, events);
+            const intervalHeaders = [];
+            const maxSteps = summaryRows.reduce((m, r) => Math.max(m, Array.isArray(r.interval_steps) ? r.interval_steps.length : 0), 0);
+            for (let i = 0; i < maxSteps; i += 1) {
+                const station = summaryRows.find((r) => Array.isArray(r.interval_steps) && r.interval_steps[i]?.station)?.interval_steps?.[i]?.station;
+                intervalHeaders.push(station || `Scan ${i + 2}`);
+            }
+
             const header = [
-                "event_id",
-                "run_config_id",
-                "session_id",
-                "station_id",
-                "event_type",
-                "occurred_at",
-                "created_at",
-                "payload_json"
+                "Tag ID",
+                "Tag Mapping",
+                "Student ID",
+                "Student Name",
+                "Class",
+                "Checkpoint Flag",
+                "Total Run Time",
+                ...intervalHeaders
             ];
-            const csvRows = rows.map((row) => ([
-                row.event_id,
-                row.run_config_id,
-                row.session_id,
-                row.station_id,
-                row.event_type,
-                row.occurred_at,
-                row.created_at,
-                row.payload ? JSON.stringify(row.payload) : ""
-            ].map(escapeCsvCell).join(",")));
-            const csv = [header.join(","), ...csvRows].join("\n");
+
+            const metaRows = [
+                ["Run Session Name", config.name || ""],
+                ["Run Config ID", config.id || ""],
+                ["Setup Type", config.template_key || ""],
+                ["Run Distance (m)", config.run_distance_m ?? ""],
+                ["Laps Required", config.laps_required ?? ""],
+                ["Checkpoint Enforcement", config.enforcement || "OFF"],
+                ["Time Between Scans (s)", Number(config.scan_gap_ms || 10000) / 1000],
+                ["Exported At", new Date().toISOString()],
+                []
+            ].map((row) => row.map(escapeCsvCell).join(","));
+
+            const csvRows = summaryRows.map((row) => {
+                const studentId = tagToStudent.get(String(row.tag_id || "").trim()) || "";
+                const st = studentId ? rosterById.get(studentId) : null;
+                return [
+                    row.tag_id || "",
+                    studentId ? "Mapped" : "",
+                    studentId ? normalizeStudentId(st?.student_identifier || "") : "",
+                    st?.name || "",
+                    st?.class || "",
+                    row.checkpoint_flag || "",
+                    fmtRun(row.run_2400) || "",
+                    ...intervalHeaders.map((_, idx) => row.interval_steps?.[idx]?.mmss || "")
+                ].map(escapeCsvCell).join(",");
+            });
+            const csv = [...metaRows, header.join(","), ...csvRows].join("\n");
             const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
             const url = URL.createObjectURL(blob);
             const a = document.createElement("a");
@@ -770,7 +1509,7 @@ export default function SessionDetail({ user }) {
             a.click();
             a.remove();
             URL.revokeObjectURL(url);
-            setRunConfigFlash(`Downloaded ${rows.length} run events.`);
+            setRunConfigFlash(`Downloaded ${summaryRows.length} evaluated run rows.`);
         } catch (err) {
             setRunConfigFlash(err.message || "Failed to download run session data.");
         } finally {
@@ -783,6 +1522,7 @@ export default function SessionDetail({ user }) {
             ...base,
             name: source.name || null,
             template_key: source.template_key,
+            run_distance_m: Number(source.run_distance_m) || 2400,
             laps_required: Number(source.laps_required) || 1,
             enforcement: source.enforcement,
             scan_gap_ms: Number(source.scan_gap_ms) || 10000
@@ -811,12 +1551,14 @@ export default function SessionDetail({ user }) {
             setRunConfigForm({
                 name: "",
                 template_key: "A",
+                run_distance_m: 2400,
                 laps_required: 3,
                 enforcement: "OFF",
                 scan_gap_ms: 10000
             });
             setRunConfigFlash("Run config created. Generate QR/barcode if needed.");
             await loadRunConfigs();
+            await loadRunTagMappings();
         } catch (err) {
             setRunConfigFlash(err.message || "Failed to create run session config.");
         } finally {
@@ -854,6 +1596,7 @@ export default function SessionDetail({ user }) {
             }
             setRunConfigFlash("Run config saved.");
             await loadRunConfigs();
+            await loadRunTagMappings();
         } catch (err) {
             setRunConfigFlash(err.message || "Failed to save run session config.");
         } finally {
@@ -877,6 +1620,7 @@ export default function SessionDetail({ user }) {
             if (err) throw err;
             setRunConfigFlash("New token generated. Create QR/barcode if needed.");
             await loadRunConfigs();
+            await loadRunTagMappings();
         } catch (err) {
             setRunConfigFlash(err.message || "Failed to generate token.");
         } finally {
@@ -939,6 +1683,7 @@ export default function SessionDetail({ user }) {
             if (err) throw err;
             setRunConfigFlash("QR and barcode generated.");
             await loadRunConfigs();
+            await loadRunTagMappings();
         } catch {
             setRunConfigFlash("Failed to generate QR or barcode.");
         }
@@ -958,6 +1703,43 @@ export default function SessionDetail({ user }) {
         if (!config?.id) return;
         setPendingDeleteRunConfig(config);
         setShowRunConfigDeleteModal(true);
+    };
+
+    const handleDuplicateRunConfig = async (config) => {
+        if (!config?.id || !session?.id) return;
+        setRunConfigSaving(true);
+        setRunConfigFlash("");
+        try {
+            const token = crypto.randomUUID();
+            const payload = {
+                session_id: session.id,
+                name: config.name ? `${config.name} (Copy)` : null,
+                template_key: config.template_key,
+                run_distance_m: Number(config.run_distance_m) || 2400,
+                laps_required: Number(config.laps_required) || 1,
+                enforcement: config.enforcement || defaultRunEnforcement(config.template_key),
+                scan_gap_ms: Number(config.scan_gap_ms) || 10000,
+                pairing_token: token,
+                pairing_qr_data_url: null,
+                pairing_barcode_data_url: null,
+                timings_locked_at: null,
+                timings_locked_by: null,
+                timings_applied_at: null,
+                timings_applied_by: null,
+                timings_apply_summary: null
+            };
+            const { error: err } = await supabase
+                .from("run_configs")
+                .insert(payload);
+            if (err) throw err;
+            setRunConfigFlash("Run session config duplicated.");
+            await loadRunConfigs();
+            await loadRunTagMappings();
+        } catch (err) {
+            setRunConfigFlash(err.message || "Failed to duplicate run session config.");
+        } finally {
+            setRunConfigSaving(false);
+        }
     };
 
     const handleConfirmDeleteRunConfig = async () => {
@@ -981,6 +1763,7 @@ export default function SessionDetail({ user }) {
             setShowRunConfigDeleteModal(false);
             setPendingDeleteRunConfig(null);
             await loadRunConfigs();
+            await loadRunTagMappings();
         } catch (err) {
             setRunConfigFlash(err.message || "Failed to delete run session config.");
         } finally {
@@ -1288,12 +2071,8 @@ export default function SessionDetail({ user }) {
             } catch {}
         }
     };
-    const handleStatusChange = async (nextStatus) => {
+    const applyStatusChange = async (nextStatus) => {
         if (!session || session.status === nextStatus) return;
-        if (nextStatus === 'completed') {
-            const ok = window.confirm('Mark session as completed? Scores can no longer be recorded.');
-            if (!ok) return;
-        }
         setStatusUpdating(true);
         try {
             const { data, error: err } = await supabase
@@ -1304,12 +2083,30 @@ export default function SessionDetail({ user }) {
                 .single();
             if (err) throw err;
             setSession(data);
+            if (nextStatus === 'completed') {
+                setMassEditMode(false);
+                setMassEdits(new Map());
+                setMassEditErr('');
+                setMassEditNotice('');
+                setMassEditCancelOpen(false);
+                setMassEditSaveOpen(false);
+            }
             setFlash(`Status set to ${nextStatus}.`);
         } catch (err) {
             setFlash(err.message || 'Failed to update status.');
         } finally {
             setStatusUpdating(false);
         }
+    };
+
+    const handleStatusChange = async (nextStatus) => {
+        if (!session || session.status === nextStatus) return;
+        if (nextStatus === 'completed') {
+            setPendingStatusChange(nextStatus);
+            setStatusCompleteConfirmOpen(true);
+            return;
+        }
+        await applyStatusChange(nextStatus);
     };
 
     const downloadProfileCardsPdf = async (format = 'a4') => {
@@ -2204,6 +3001,40 @@ export default function SessionDetail({ user }) {
                                     <div className="text-xs text-gray-500 mt-1">Total laps needed to finish.</div>
                                 </div>
                                 <div>
+                                    <label className="block text-sm mb-1">Run Distance (m)</label>
+                                    <select
+                                        value={RUN_DISTANCE_PRESETS.includes(Number(runConfigForm.run_distance_m)) ? String(runConfigForm.run_distance_m) : "other"}
+                                        onChange={(e) => {
+                                            const v = e.target.value;
+                                            if (v === "other") {
+                                                if (RUN_DISTANCE_PRESETS.includes(Number(runConfigForm.run_distance_m))) {
+                                                    setRunConfigForm((prev) => ({ ...prev, run_distance_m: "" }));
+                                                }
+                                                return;
+                                            }
+                                            setRunConfigForm((prev) => ({ ...prev, run_distance_m: Number(v) }));
+                                        }}
+                                        className="border rounded p-2 w-full"
+                                    >
+                                        {RUN_DISTANCE_PRESETS.map((d) => (
+                                            <option key={d} value={d}>{d} m</option>
+                                        ))}
+                                        <option value="other">Other (key in)</option>
+                                    </select>
+                                    {!RUN_DISTANCE_PRESETS.includes(Number(runConfigForm.run_distance_m)) && (
+                                        <input
+                                            type="text"
+                                            inputMode="numeric"
+                                            pattern="[0-9]*"
+                                            value={runConfigForm.run_distance_m}
+                                            onChange={(e) => setRunConfigForm((prev) => ({ ...prev, run_distance_m: e.target.value }))}
+                                            className="border rounded p-2 w-full mt-2"
+                                            placeholder="Enter distance in meters"
+                                        />
+                                    )}
+                                    <div className="text-xs text-gray-500 mt-1">Used for run analytics. You can key in other distances.</div>
+                                </div>
+                                <div>
                                     <label className="block text-sm mb-1">Checkpoint Enforcement</label>
                                     <select
                                         value={runConfigForm.enforcement}
@@ -2271,17 +3102,38 @@ export default function SessionDetail({ user }) {
                                                         {config.name || `Run Session Config ${config.id?.slice(0, 6)}`}
                                                     </div>
                                                     <div className="text-xs text-gray-600">
-                                                        Setup {config.template_key} - Laps {config.laps_required} - Enforcement {config.enforcement || 'OFF'}
+                                                        Setup {config.template_key} - Distance {config.run_distance_m || 2400}m - Laps {config.laps_required} - Enforcement {config.enforcement || 'OFF'}
                                                     </div>
                                                 </div>
                                             </div>
                                             <div className="flex items-center gap-2">
                                                 <button
                                                     type="button"
-                                                    onClick={() => setExpandedRunConfigId(expanded ? null : config.id)}
+                                                    onClick={() => {
+                                                        const nextId = expanded ? null : config.id;
+                                                        setExpandedRunConfigId(nextId);
+                                                        if (nextId) {
+                                                            setRunTagDraftByConfig((prev) => ({
+                                                                ...prev,
+                                                                [nextId]: prev[nextId] || buildTagDraftForConfig(nextId)
+                                                            }));
+                                                            setRunApplyPolicyByConfig((prev) => ({
+                                                                ...prev,
+                                                                [nextId]: prev[nextId] || "best"
+                                                            }));
+                                                        }
+                                                    }}
                                                     className="text-xs px-3 py-1.5 border rounded hover:bg-gray-50"
                                                 >
                                                     {expanded ? 'Hide' : 'Edit'}
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleDuplicateRunConfig(config)}
+                                                    className="text-xs px-3 py-1.5 border rounded hover:bg-gray-50"
+                                                    disabled={runConfigSaving}
+                                                >
+                                                    Duplicate
                                                 </button>
                                                 <button
                                                     type="button"
@@ -2324,6 +3176,40 @@ export default function SessionDetail({ user }) {
                                                             onChange={(e) => updateRunConfigLocal(config.id, { laps_required: e.target.value })}
                                                             className="border rounded p-2 w-full"
                                                         />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-xs mb-1">Run Distance (m)</label>
+                                                        <select
+                                                            value={RUN_DISTANCE_PRESETS.includes(Number(config.run_distance_m)) ? String(config.run_distance_m) : "other"}
+                                                            onChange={(e) => {
+                                                                const v = e.target.value;
+                                                                if (v === "other") {
+                                                                    if (RUN_DISTANCE_PRESETS.includes(Number(config.run_distance_m))) {
+                                                                        updateRunConfigLocal(config.id, { run_distance_m: "" });
+                                                                    }
+                                                                    return;
+                                                                }
+                                                                updateRunConfigLocal(config.id, { run_distance_m: Number(v) });
+                                                            }}
+                                                            className="border rounded p-2 w-full"
+                                                        >
+                                                            {RUN_DISTANCE_PRESETS.map((d) => (
+                                                                <option key={d} value={d}>{d} m</option>
+                                                            ))}
+                                                            <option value="other">Other (key in)</option>
+                                                        </select>
+                                                        {!RUN_DISTANCE_PRESETS.includes(Number(config.run_distance_m)) && (
+                                                            <input
+                                                                type="text"
+                                                                inputMode="numeric"
+                                                                pattern="[0-9]*"
+                                                                value={config.run_distance_m ?? ""}
+                                                                onChange={(e) => updateRunConfigLocal(config.id, { run_distance_m: e.target.value })}
+                                                                className="border rounded p-2 w-full mt-2"
+                                                                placeholder="Enter distance in meters"
+                                                            />
+                                                        )}
+                                                        <div className="text-xs text-gray-500 mt-1">Used for run analytics.</div>
                                                     </div>
                                                     <div>
                                                         <label className="block text-xs mb-1">Checkpoint Enforcement</label>
@@ -2371,55 +3257,98 @@ export default function SessionDetail({ user }) {
                                                         />
                                                         <div className="text-xs text-gray-500 mt-1">Use this token in the run app.</div>
                                                     </div>
+                                                    <div className="sm:col-span-2 text-[11px] text-gray-600">
+                                                        Tag mapping and lock-in timing workflow are managed in dialogs.
+                                                    </div>
                                                 </div>
-                                                <div className="flex flex-wrap gap-2">
+                                                <div className="flex justify-start">
+                                                    {(() => {
+                                                        const unsaved = hasUnsavedRunConfig(config);
+                                                        return (
                                                     <button
                                                         type="button"
                                                         onClick={() => handleSaveRunConfig(config)}
-                                                        className="text-xs px-3 py-1.5 border rounded hover:bg-gray-50"
+                                                        className={
+                                                            (unsaved
+                                                                ? "px-6 py-3 text-sm bg-blue-600 text-white border border-blue-700 rounded hover:bg-blue-700"
+                                                                : "px-6 py-3 text-sm border rounded hover:bg-gray-50")
+                                                        }
                                                     >
                                                         Save
                                                     </button>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => handleGenerateRunToken(config)}
-                                                        className="text-xs px-3 py-1.5 border rounded hover:bg-gray-50"
-                                                    >
-                                                        Generate Token
-                                                    </button>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => handleGenerateRunCodes(config)}
-                                                        className="text-xs px-3 py-1.5 border rounded hover:bg-gray-50"
-                                                    >
-                                                        Create QR + Barcode
-                                                    </button>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => handleCopyRunToken(config.pairing_token)}
-                                                        className="text-xs px-3 py-1.5 border rounded hover:bg-gray-50"
-                                                        disabled={!config.pairing_token}
-                                                    >
-                                                        Copy Token
-                                                    </button>
+                                                        );
+                                                    })()}
                                                 </div>
-                                                <div className="flex flex-wrap gap-2">
+                                                <div className="grid sm:grid-cols-3 gap-3">
+                                                    <div className="border rounded p-2 bg-gray-50/60">
+                                                        <div className="text-[11px] font-semibold text-gray-700 mb-2">Runners</div>
+                                                        <div className="flex flex-wrap gap-2">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => openRunTagMappingModal(config)}
+                                                                className="text-xs px-3 py-1.5 border rounded hover:bg-gray-50"
+                                                            >
+                                                                Tag Mapping
+                                                            </button>
                                                     <button
                                                         type="button"
-                                                        onClick={() => handleResetRunConfig(config)}
+                                                        onClick={() => openRunLockModal(config)}
                                                         className="text-xs px-3 py-1.5 border rounded hover:bg-gray-50"
                                                     >
-                                                        Delete cloud run data
+                                                        Import Run Timings
                                                     </button>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => handleDownloadRunSessionData(config)}
-                                                        className="text-xs px-3 py-1.5 border rounded hover:bg-gray-50"
-                                                    >
-                                                        Download All Run Session Data
-                                                    </button>
+                                                        </div>
+                                                    </div>
+                                                    <div className="border rounded p-2 bg-gray-50/60">
+                                                        <div className="text-[11px] font-semibold text-gray-700 mb-2">Run App Pairing</div>
+                                                        <div className="flex flex-wrap gap-2">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleGenerateRunToken(config)}
+                                                                className="text-xs px-3 py-1.5 border rounded hover:bg-gray-50"
+                                                            >
+                                                                Generate Token
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleGenerateRunCodes(config)}
+                                                                className="text-xs px-3 py-1.5 border rounded hover:bg-gray-50"
+                                                            >
+                                                                Create QR + Barcode
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleCopyRunToken(config.pairing_token)}
+                                                                className="text-xs px-3 py-1.5 border rounded hover:bg-gray-50"
+                                                                disabled={!config.pairing_token}
+                                                            >
+                                                                Copy Token
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                    <div className="border rounded p-2 bg-amber-50/70 border-amber-200">
+                                                        <div className="text-[11px] font-semibold text-amber-800 mb-2">Data ops</div>
+                                                        <div className="flex flex-wrap gap-2">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleResetRunConfig(config)}
+                                                                className="text-xs px-3 py-1.5 border rounded hover:bg-gray-50"
+                                                            >
+                                                                Delete cloud run data
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleDownloadRunSessionData(config)}
+                                                                className="text-xs px-3 py-1.5 border rounded hover:bg-gray-50"
+                                                            >
+                                                                Download All Run Session Data
+                                                            </button>
+                                                        </div>
+                                                        <div className="text-[11px] text-amber-700 mt-2">
+                                                            Deletes cloud run events and sends CLEAR_ALL for station sync reset.
+                                                        </div>
+                                                    </div>
                                                 </div>
-                                                <div className="text-xs text-amber-600">Warning: this deletes cloud run events for this config and sends CLEAR_ALL to clear station local data on sync.</div>
                                                 {runConfigFlash && <div className="text-xs text-blue-600">{runConfigFlash}</div>}
                                                 {(config.pairing_qr_data_url || config.pairing_barcode_data_url) && (
                                                     <div className="grid sm:grid-cols-2 gap-3 pt-2">
@@ -2505,7 +3434,15 @@ export default function SessionDetail({ user }) {
                                 <div className="flex gap-2">
                                     {!massEditMode ? (
                                         <button
-                                            onClick={() => { setMassEditMode(true); setMassEditErr(''); setMassEditNotice(''); }}
+                                            onClick={() => {
+                                                if (sessionCompleted) {
+                                                    openCompletedScoresDialog();
+                                                    return;
+                                                }
+                                                setMassEditMode(true);
+                                                setMassEditErr('');
+                                                setMassEditNotice('');
+                                            }}
                                             className="text-xs px-3 py-1.5 border rounded bg-white hover:bg-gray-50"
                                         >
                                             Mass Edit
@@ -2513,7 +3450,13 @@ export default function SessionDetail({ user }) {
                                     ) : (
                                         <>
                                             <button
-                                                onClick={() => setMassEditSaveOpen(true)}
+                                                onClick={() => {
+                                                    if (sessionCompleted) {
+                                                        openCompletedScoresDialog();
+                                                        return;
+                                                    }
+                                                    setMassEditSaveOpen(true);
+                                                }}
                                                 disabled={massEditBusy}
                                                 className="text-xs px-3 py-1.5 border rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
                                             >
@@ -2559,6 +3502,7 @@ export default function SessionDetail({ user }) {
                                     <th className="px-3 py-2 border">Sit-ups</th>
                                     <th className="px-3 py-2 border">Push-ups</th>
                                     <th className="px-3 py-2 border">2.4km Run (mm:ss)</th>
+                                    <th className="px-3 py-2 border">Award</th>
                                     <th className="px-3 py-2 border w-40">Actions</th>
                                 </tr>
                             ) : (
@@ -2572,6 +3516,7 @@ export default function SessionDetail({ user }) {
                                     <th className="px-3 py-2 border">Pull-ups</th>
                                     <th className="px-3 py-2 border">Broad Jump</th>
                                     <th className="px-3 py-2 border">Run (mm:ss)</th>
+                                    <th className="px-3 py-2 border">Award</th>
                                     <th className="px-3 py-2 border w-40">Actions</th>
                                 </tr>
                             )}
@@ -2579,8 +3524,9 @@ export default function SessionDetail({ user }) {
                             <tbody>
                             {(() => {
                                 const total = filteredSortedRoster.length;
+                                const emptyColSpan = ((session?.assessment_type || 'NAPFA5') === 'IPPT3') ? 8 : 11;
                                 if (total === 0) return (
-                                    <tr><td colSpan="10" className="px-3 py-4 text-center text-gray-500">No students in this session yet.</td></tr>
+                                    <tr><td colSpan={emptyColSpan} className="px-3 py-4 text-center text-gray-500">No students in this session yet.</td></tr>
                                 );
                                 const pageItems = pagedScoresRoster;
                                     return pageItems.flatMap((s) => {
@@ -2644,10 +3590,13 @@ export default function SessionDetail({ user }) {
                                                 ) : withPoints(row.run_2400, ippt3.runPoints, (v) => fmtRun(v) || '-')}
                                               </td>
                                               <td className="px-3 py-2 border align-top">
-                                                {massEditMode && canManage
-                                                    ? <span className="text-xs text-gray-400">-</span>
-                                                    : <ScoreRowActions student={s} canRecord={canRecord} onSaved={async () => { await loadScoresMap(); await loadScoresCount(); }} sessionId={id} isIppt3={isIppt3} />
-                                                }
+                                                <AwardBadge award={ippt3.award} />
+                                              </td>
+                                                <td className="px-3 py-2 border align-top">
+                                                    {massEditMode && canManage
+                                                        ? <span className="text-xs text-gray-400">-</span>
+                                                        : <ScoreRowActions student={s} canRecord={canRecord} sessionCompleted={sessionCompleted} onBlocked={openCompletedScoresDialog} onSaved={async () => { await loadScoresMap(); await loadScoresCount(); }} sessionId={id} isIppt3={isIppt3} />
+                                                    }
                                               </td>
                                             </tr>
                                           ];
@@ -2724,9 +3673,12 @@ export default function SessionDetail({ user }) {
                                                     ) : withGrade(row.run_2400, napfaGrades.run, (v) => fmtRun(v) || '-')}
                                                 </td>
                                                 <td className="px-3 py-2 border align-top">
+                                                    <AwardBadge award={napfaGrades.award} />
+                                                </td>
+                                                <td className="px-3 py-2 border align-top">
                                                     {massEditMode && canManage
                                                         ? <span className="text-xs text-gray-400">-</span>
-                                                        : <ScoreRowActions student={s} canRecord={canRecord} onSaved={async () => { await loadScoresMap(); await loadScoresCount(); }} sessionId={id} isIppt3={isIppt3} />
+                                                        : <ScoreRowActions student={s} canRecord={canRecord} sessionCompleted={sessionCompleted} onBlocked={openCompletedScoresDialog} onSaved={async () => { await loadScoresMap(); await loadScoresCount(); }} sessionId={id} isIppt3={isIppt3} />
                                                     }
                                                 </td>
                                             </tr>
@@ -2772,6 +3724,286 @@ export default function SessionDetail({ user }) {
                     setMassEditNotice('');
                 }}
             />
+            <NoticeDialog
+                open={completedScoresDialogOpen}
+                title="Session Completed"
+                message="Scores cannot be changed after a session has been completed."
+                onClose={() => setCompletedScoresDialogOpen(false)}
+            />
+            <ConfirmDialog
+                open={statusCompleteConfirmOpen}
+                title="Mark Session Completed?"
+                message={(
+                    <div className="space-y-2">
+                        <p>After this session is marked completed, scores can no longer be changed.</p>
+                        {massEditMode && massEdits.size > 0 && (
+                            <p className="text-amber-700">Any unsaved mass edits on this page will be discarded.</p>
+                        )}
+                    </div>
+                )}
+                confirmText="Mark Completed"
+                cancelText="Keep Active"
+                tone="danger"
+                onCancel={() => {
+                    setStatusCompleteConfirmOpen(false);
+                    setPendingStatusChange(null);
+                }}
+                onConfirm={async () => {
+                    const nextStatus = pendingStatusChange;
+                    setStatusCompleteConfirmOpen(false);
+                    setPendingStatusChange(null);
+                    if (nextStatus) await applyStatusChange(nextStatus);
+                }}
+            />
+            {showRunTagMapModal && activeRunConfigForModal && (() => {
+                const modalConfig = runConfigs.find((c) => c.id === activeRunConfigForModal);
+                if (!modalConfig) return null;
+                const draft = runTagDraftByConfig[modalConfig.id] || {};
+                const rosterForDialog = runTagClassFilter
+                    ? (sortedRoster || []).filter((s) => String(s.class || "") === runTagClassFilter)
+                    : (sortedRoster || []);
+                return (
+                    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+                        <div className="bg-white rounded-lg w-full max-w-5xl border shadow-xl">
+                            <div className="px-4 py-3 border-b flex items-center justify-between gap-2">
+                                <div className="font-medium">Tag Mapping - {modalConfig.name || `Run Session Config ${modalConfig.id?.slice(0, 6)}`}</div>
+                                <button
+                                    type="button"
+                                    className="px-2 py-1 border rounded hover:bg-gray-50 text-sm"
+                                    onClick={() => setShowRunTagMapModal(false)}
+                                >
+                                    Close
+                                </button>
+                            </div>
+                            <div className="p-4 space-y-3">
+                                <div className="flex flex-wrap items-end gap-2">
+                                    <div>
+                                        <label className="block text-xs mb-1">Class</label>
+                                        <select value={runTagClassFilter} onChange={(e) => setRunTagClassFilter(e.target.value)} className="border rounded p-2 text-sm min-w-[160px]">
+                                            <option value="">All classes</option>
+                                            {classOptions.map((cls) => (
+                                                <option key={cls} value={cls}>{cls}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs mb-1">Auto-tag rule</label>
+                                        <select value={runTagRule} onChange={(e) => setRunTagRule(e.target.value)} className="border rounded p-2 text-sm min-w-[180px]">
+                                            <option value="numeric">Numbers only</option>
+                                            <option value="classIndex">Class + index (A01)</option>
+                                            <option value="structured4">4-digit (LCII)</option>
+                                        </select>
+                                    </div>
+                                    {runTagRule === "numeric" && (
+                                        <div className="flex items-end gap-2">
+                                            <div>
+                                                <label className="block text-xs mb-1">Numeric start</label>
+                                                <input value={runTagNumericStart} onChange={(e) => setRunTagNumericStart(e.target.value)} className="border rounded p-2 text-sm w-28" />
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={() => autoTagByRule(modalConfig.id)}
+                                                disabled={Boolean(runTagBusyByConfig[modalConfig.id]) || Boolean(modalConfig.timings_locked_at)}
+                                                className="px-3 py-2 border rounded hover:bg-gray-50 text-sm disabled:opacity-60"
+                                            >
+                                                AutoTag
+                                            </button>
+                                        </div>
+                                    )}
+                                    {runTagRule !== "numeric" && (
+                                        <button
+                                            type="button"
+                                            onClick={() => autoTagByRule(modalConfig.id)}
+                                            disabled={Boolean(runTagBusyByConfig[modalConfig.id]) || Boolean(modalConfig.timings_locked_at)}
+                                            className="px-3 py-2 border rounded hover:bg-gray-50 text-sm disabled:opacity-60"
+                                        >
+                                            AutoTag
+                                        </button>
+                                    )}
+                                </div>
+                                <div className="text-xs text-gray-600">
+                                    You can auto-tag by the selected rule, then manually override any row before saving.
+                                </div>
+                                <div className="max-h-[52vh] overflow-auto border rounded">
+                                    <table className="w-full text-sm">
+                                        <thead className="bg-gray-100">
+                                            <tr>
+                                                <th className="text-left px-2 py-1 border-b">Class</th>
+                                                <th className="text-left px-2 py-1 border-b">Student</th>
+                                                <th className="text-left px-2 py-1 border-b">Student ID</th>
+                                                <th className="text-left px-2 py-1 border-b">Tag ID</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {rosterForDialog.map((s) => (
+                                                <tr key={`${modalConfig.id}-map-${s.id}`}>
+                                                    <td className="px-2 py-1 border-b">{s.class || "-"}</td>
+                                                    <td className="px-2 py-1 border-b">{s.name || "-"}</td>
+                                                    <td className="px-2 py-1 border-b">{normalizeStudentId(s.student_identifier) || "-"}</td>
+                                                    <td className="px-2 py-1 border-b">
+                                                        <input
+                                                            value={String(draft[s.id] ?? "")}
+                                                            onChange={(e) => handleRunTagDraftChange(modalConfig.id, s.id, e.target.value)}
+                                                            placeholder="Tag ID"
+                                                            className="border rounded px-2 py-1 w-full"
+                                                            disabled={Boolean(modalConfig.timings_locked_at)}
+                                                        />
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                            {rosterForDialog.length === 0 && (
+                                                <tr>
+                                                    <td colSpan={4} className="px-2 py-2 text-gray-500">No students for selected filter.</td>
+                                                </tr>
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            <div className="px-4 py-3 border-t flex justify-end gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowRunTagMapModal(false)}
+                                    className="px-3 py-1.5 border rounded hover:bg-gray-50 text-sm"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => handleLockTagMapping(modalConfig)}
+                                    disabled={Boolean(runTagBusyByConfig[modalConfig.id]) || Boolean(modalConfig.timings_locked_at)}
+                                    className="px-3 py-1.5 border rounded hover:bg-gray-50 text-sm disabled:opacity-60"
+                                >
+                                    {modalConfig.timings_locked_at ? "Tag Mapping Locked" : "Lock Tag Mapping Permanently"}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={async () => {
+                                        await handleSaveRunTagMappings(modalConfig);
+                                        setShowRunTagMapModal(false);
+                                    }}
+                                    disabled={Boolean(runTagBusyByConfig[modalConfig.id]) || Boolean(modalConfig.timings_locked_at)}
+                                    className="px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-60 text-sm"
+                                >
+                                    Save Tag Mapping
+                                </button>
+                            </div>
+                            <div className="px-4 pb-3 text-[11px] text-amber-700 text-right">
+                                After locking tag mapping, tag changes are no longer allowed for this run session config.
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
+
+            {showRunLockModal && activeRunConfigForModal && (() => {
+                const modalConfig = runConfigs.find((c) => c.id === activeRunConfigForModal);
+                if (!modalConfig) return null;
+                const preview = runApplyPreviewByConfig[modalConfig.id];
+                const mappedRows = (runTagMappingsByConfig[modalConfig.id] || []).length;
+                const rosterCount = (sortedRoster || []).length;
+                return (
+                    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+                        <div className="bg-white rounded-lg w-full max-w-5xl border shadow-xl">
+                            <div className="px-4 py-3 border-b flex items-center justify-between gap-2">
+                                <div className="font-medium">Import Run Timings - {modalConfig.name || `Run Session Config ${modalConfig.id?.slice(0, 6)}`}</div>
+                                <button
+                                    type="button"
+                                    className="px-2 py-1 border rounded hover:bg-gray-50 text-sm"
+                                    onClick={() => setShowRunLockModal(false)}
+                                >
+                                    Close
+                                </button>
+                            </div>
+                            <div className="p-4 space-y-3">
+                                <div className="text-sm text-gray-700">
+                                    Tag mapping overview: mapped {mappedRows} / roster {rosterCount}
+                                </div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <label className="text-xs text-gray-600">Apply policy</label>
+                                    <select
+                                        value={runApplyPolicyByConfig[modalConfig.id] || "best"}
+                                        onChange={(e) => setRunApplyPolicyByConfig((prev) => ({ ...prev, [modalConfig.id]: e.target.value }))}
+                                        className="border rounded px-2 py-1 text-xs"
+                                    >
+                                        <option value="best">Best timing only (recommended)</option>
+                                        <option value="overwrite">Force overwrite existing</option>
+                                        <option value="fill-empty">Fill blanks only</option>
+                                    </select>
+                                    <button
+                                        type="button"
+                                        onClick={() => handlePreviewRunToScores(modalConfig)}
+                                        disabled={Boolean(runTagBusyByConfig[modalConfig.id])}
+                                        className="text-xs px-3 py-1.5 border rounded hover:bg-gray-50 disabled:opacity-60"
+                                    >
+                                        Refresh preview
+                                    </button>
+                                </div>
+                                <div className="max-h-[52vh] overflow-auto border rounded">
+                                    <table className="w-full text-sm">
+                                        <thead className="bg-gray-100">
+                                            <tr>
+                                                <th className="text-left px-2 py-1 border-b">Tag</th>
+                                                <th className="text-left px-2 py-1 border-b">Student</th>
+                                                <th className="text-left px-2 py-1 border-b">New timing</th>
+                                                <th className="text-left px-2 py-1 border-b">Old timing</th>
+                                                <th className="text-left px-2 py-1 border-b">Comparison</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {(preview?.rows || []).slice(0, 240).map((row, idx) => (
+                                                <tr key={`${modalConfig.id}-lock-${idx}`}>
+                                                    <td className="px-2 py-1 border-b">{row.tag_id || "-"}</td>
+                                                    <td className="px-2 py-1 border-b">{row.student_name || "-"}</td>
+                                                    <td className="px-2 py-1 border-b">{row.new_run_2400 != null ? (fmtRun(row.new_run_2400) || row.new_run_2400) : "-"}</td>
+                                                    <td className="px-2 py-1 border-b">{row.existing_run_2400 != null ? (fmtRun(row.existing_run_2400) || row.existing_run_2400) : "-"}</td>
+                                                    <td className="px-2 py-1 border-b">{row.comparison}</td>
+                                                </tr>
+                                            ))}
+                                            {!(preview?.rows || []).length && (
+                                                <tr>
+                                                    <td colSpan={5} className="px-2 py-2 text-gray-500">No preview rows yet. Click Refresh preview.</td>
+                                                </tr>
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                                {preview && (
+                                    <div className="text-xs text-gray-600">
+                                        Timings detected: {preview.totalTimings} | Matched: {preview.matched} | Unmatched tags: {preview.unmatchedTags}
+                                    </div>
+                                )}
+                            </div>
+                            <div className="px-4 py-3 border-t flex justify-end gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowRunLockModal(false)}
+                                    className="px-3 py-1.5 border rounded hover:bg-gray-50 text-sm"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={async () => {
+                                        await handleApplyRunToScores(modalConfig);
+                                        setShowRunLockModal(false);
+                                    }}
+                                    disabled={Boolean(runTagBusyByConfig[modalConfig.id]) || !modalConfig.timings_locked_at}
+                                    className="px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-60 text-sm"
+                                >
+                                    Apply to Scores
+                                </button>
+                            </div>
+                            {!modalConfig.timings_locked_at && (
+                                <div className="px-4 pb-3 text-xs text-amber-700 text-right">
+                                    Lock tag mapping in the Tag Mapping dialog before importing run timings.
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                );
+            })()}
+
             {showRunConfigDeleteModal && pendingDeleteRunConfig && (
                 <div className="fixed inset-0 z-50">
                     <div
@@ -2803,7 +4035,7 @@ export default function SessionDetail({ user }) {
                                     You are deleting: <span className="font-semibold">{pendingDeleteRunConfig.name || `Run Session Config ${pendingDeleteRunConfig.id?.slice(0, 6)}`}</span>
                                 </div>
                                 <div className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded p-3">
-                                    Warning: deleting this run session config will delete all related run session data in the database.
+                                    Warning: deleting this run session config will delete all related run session data and tag mappings in the database.
                                     Download all run session data first.
                                 </div>
                             </div>
@@ -2990,11 +4222,22 @@ function ScoresPager({ total, page, pageSize, onPageChange }) {
     );
 }
 
-function ScoreRowActions({ student, sessionId, canRecord, onSaved, isIppt3 }) {
+function ScoreRowActions({ student, sessionId, canRecord, sessionCompleted, onBlocked, onSaved, isIppt3 }) {
     const [open, setOpen] = useState(false);
     return (
         <>
-            <button onClick={() => setOpen(true)} disabled={!canRecord} className="px-3 py-1.5 border rounded hover:bg-gray-100 text-sm">
+            <button
+                onClick={() => {
+                    if (sessionCompleted) {
+                        onBlocked && onBlocked();
+                        return;
+                    }
+                    if (!canRecord) return;
+                    setOpen(true);
+                }}
+                disabled={!canRecord && !sessionCompleted}
+                className="px-3 py-1.5 border rounded hover:bg-gray-100 text-sm disabled:opacity-60"
+            >
                 Edit
             </button>
             {open && (
@@ -3017,7 +4260,7 @@ function ScoreRowActions({ student, sessionId, canRecord, onSaved, isIppt3 }) {
     );
 }
 
-function ConfirmDialog({ open, title, message, confirmText, tone, onCancel, onConfirm }) {
+function ConfirmDialog({ open, title, message, confirmText, cancelText, tone, onCancel, onConfirm }) {
     if (!open) return null;
     const confirmClass = tone === "danger"
         ? "px-3 py-1.5 border rounded bg-red-600 text-white hover:bg-red-700"
@@ -3032,8 +4275,28 @@ function ConfirmDialog({ open, title, message, confirmText, tone, onCancel, onCo
                     </div>
                     <div className="p-4 text-sm text-gray-700">{message}</div>
                     <div className="px-4 py-3 border-t flex justify-end gap-2">
-                        <button type="button" onClick={onCancel} className="px-3 py-1.5 border rounded hover:bg-gray-50">Keep Editing</button>
+                        <button type="button" onClick={onCancel} className="px-3 py-1.5 border rounded hover:bg-gray-50">{cancelText || "Keep Editing"}</button>
                         <button type="button" onClick={onConfirm} className={confirmClass}>{confirmText || "Confirm"}</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function NoticeDialog({ open, title, message, onClose }) {
+    if (!open) return null;
+    return (
+        <div className="fixed inset-0 z-50">
+            <div className="absolute inset-0 bg-black/35" onClick={onClose} />
+            <div className="absolute inset-0 flex items-center justify-center p-4">
+                <div role="dialog" aria-modal="true" className="w-full max-w-md bg-white rounded-lg shadow-lg border">
+                    <div className="px-4 py-3 border-b">
+                        <div className="font-medium">{title}</div>
+                    </div>
+                    <div className="p-4 text-sm text-gray-700">{message}</div>
+                    <div className="px-4 py-3 border-t flex justify-end">
+                        <button type="button" onClick={onClose} className="px-3 py-1.5 border rounded bg-blue-600 text-white hover:bg-blue-700">OK</button>
                     </div>
                 </div>
             </div>
