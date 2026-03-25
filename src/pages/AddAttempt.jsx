@@ -611,44 +611,19 @@ async function saveScore() {
     }
     if (num == null || !Number.isFinite(num)) return
     try {
-      // Check if a score row exists
       const studentUuid = await getStudentRowId()
       if (isIppt3) {
         const ipptColMap = { situps: 'situps', pushups: 'pushups', run: 'run_2400' }
         const ipptCol = ipptColMap[activeStation]
-        const { data: existing3 } = await supabase
+        const { error: saveErr } = await supabase
           .from('ippt3_scores')
-          .select('id')
-          .eq('session_id', sessionId)
-          .eq('student_id', studentUuid)
-          .maybeSingle()
-        if (existing3?.id) {
-          await supabase
-            .from('ippt3_scores')
-            .update({ [ipptCol]: num })
-            .eq('id', existing3.id)
-        } else {
-          await supabase
-            .from('ippt3_scores')
-            .insert({ session_id: sessionId, student_id: studentUuid, [ipptCol]: num })
-        }
+          .upsert([{ session_id: sessionId, student_id: studentUuid, [ipptCol]: num }], { onConflict: 'session_id,student_id' })
+        if (saveErr) throw saveErr
       } else {
-        const { data: existing } = await supabase
+        const { error: saveErr } = await supabase
           .from('scores')
-          .select('id')
-          .eq('session_id', sessionId)
-          .eq('student_id', studentUuid)
-          .maybeSingle()
-        if (existing?.id) {
-          await supabase
-            .from('scores')
-            .update({ [col]: num })
-            .eq('id', existing.id)
-        } else {
-          await supabase
-            .from('scores')
-            .insert({ session_id: sessionId, student_id: studentUuid, [col]: num })
-        }
+          .upsert([{ session_id: sessionId, student_id: studentUuid, [col]: num }], { onConflict: 'session_id,student_id' })
+        if (saveErr) throw saveErr
       }
       // Compute points attained for the saved station
       try {
