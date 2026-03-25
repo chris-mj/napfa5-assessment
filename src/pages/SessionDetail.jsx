@@ -2136,7 +2136,7 @@ export default function SessionDetail({ user }) {
                 const stripsPerPage = is19 ? 10 : 8;
                 const stripH = is19 ? 19 : 25;
                 const stripBlockH = stripsPerPage * stripH;
-                const topBottomMargin = ((pageH - stripBlockH) / 2) + (is19 ? 0 : 2.5); // 25mm shifts down by 2.5mm
+                const topBottomMargin = ((pageH - stripBlockH) / 2) + (is19 ? 0 : 2.0); // 25mm shifts down by 2.0mm
                 const leftNoPrint = is19 ? 30 : 20; // 25mm reduces left padding by 10mm
                 const rightNoPrint = 30; // required blank zone at trailing right side
                 const rightPad = 4;
@@ -2193,7 +2193,7 @@ export default function SessionDetail({ user }) {
 
                     const qrSize = is19 ? 15 : 21;
                     const qrX = leftNoPrint + (is19 ? 1.5 : 2);
-                    const qrY = cy - (qrSize / 2);
+                    const qrY = cy - (qrSize / 2) - (is19 ? 0 : 1.5);
 
                     const barX = qrX + qrSize + (is19 ? 2 : 3);
                     const barW = is19 ? 44 : 54;
