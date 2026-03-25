@@ -23,10 +23,13 @@ export default function ScoreForm({student, sessionId, onSaved}){
       run_2400: form.run_2400 ? parseFloat(form.run_2400) : null,
       broad_jump: form.broad_jump ? parseInt(form.broad_jump) : null,
     }
-    const { data, error } = await supabase.from('scores').insert(payload).select()
+    const { data, error } = await supabase
+      .from('scores')
+      .upsert([payload], { onConflict: 'session_id,student_id' })
+      .select()
     setSaving(false)
     if(error) return alert('Save failed: ' + error.message)
-    onSaved && onSaved(data[0])
+    onSaved && onSaved(data?.[0])
   }
 
   return (
