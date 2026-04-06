@@ -1,6 +1,7 @@
 ﻿import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
+import { fetchSessionRosterWithStudents } from "../lib/sessionRoster";
 import { drawBarcode } from "../utils/barcode";
 import { drawQr } from "../utils/qrcode";
 import { normalizeStudentId } from "../utils/ids";
@@ -16,20 +17,22 @@ export default function SessionCards() {
       setLoading(true);
       setError("");
       // roster with student + class (active enrollment)
-      const { data, error: err } = await supabase
-        .from('session_roster')
-        .select('students!inner(id, student_identifier, name, enrollments!left(class, is_active))')
-        .eq('session_id', id)
-        .order('student_id', { ascending: true });
-      if (err) { setError(err.message); setLoading(false); return; }
+      let data;
+      try {
+        data = await fetchSessionRosterWithStudents(supabase, id, {
+          studentFields: ['id', 'student_identifier', 'name'],
+        });
+      } catch (err) {
+        setError(err.message);
+        setLoading(false);
+        return;
+      }
       const list = (data||[]).map(r => {
-        const enr = r.students?.enrollments;
-        const activeClass = Array.isArray(enr) ? (enr.find(e => e?.is_active)?.class) : (enr?.class);
         return {
           id: r.students.id,
           student_identifier: r.students.student_identifier,
           name: r.students.name,
-          class: activeClass || ''
+          class: r.class || ''
         };
       }).sort((a, b) => (String(a.class||'').localeCompare(String(b.class||''), undefined, { numeric: true, sensitivity: 'base' })
         || String(a.name||'').localeCompare(String(b.name||''), undefined, { sensitivity: 'base' })));

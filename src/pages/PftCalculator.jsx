@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
+import { fetchSessionRosterWithStudents } from '../lib/sessionRoster'
 import { evaluateNapfa, normalizeSex, secondsToMmss } from '../utils/napfaStandards'
 
 export default function PftCalculator({ user }) {
@@ -109,10 +110,15 @@ export default function PftCalculator({ user }) {
 
   function toIntOrNull(v) {
     if (v == null) return null
-    const s = String(v).replace(/[^0-9\-]/g, '').trim()
+    const raw = String(v).trim()
+    if (!raw) return null
+    const formulaMatch = raw.match(/^=\s*"([^"]+)"\s*$/)
+    const normalized = (formulaMatch ? formulaMatch[1] : raw).replace(/,/g, '').trim()
+    const sciMatch = normalized.match(/-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/)
+    const s = sciMatch ? sciMatch[0] : ''
     if (!s) return null
-    const n = parseInt(s, 10)
-    return Number.isFinite(n) ? n : null
+    const n = Number(s)
+    return Number.isFinite(n) ? Math.trunc(n) : null
   }
 
   function toFloatOrNull(v) {
@@ -169,6 +175,14 @@ export default function PftCalculator({ user }) {
   function csvCell(v) {
     const s = v == null ? '' : String(v)
     return (s.includes(',') || s.includes('"') || s.includes('\n')) ? `"${s.replace(/"/g,'""')}"` : s
+  }
+
+  function csvCountCell(v) {
+    if (v == null || v === '') return ''
+    const n = Number(v)
+    if (!Number.isFinite(n)) return String(v)
+    // Force spreadsheet apps to keep count stations as literal whole-number text.
+    return `="${Math.trunc(n)}"`
   }
 
   function fmtDdMmYyyy(d) {
@@ -256,10 +270,10 @@ export default function PftCalculator({ user }) {
       .maybeSingle()
     setSessionMeta(se || null)
     const testDate = se?.session_date ? new Date(se.session_date) : (defaultDate ? new Date(defaultDate) : null)
-    const { data: roster } = await supabase
-      .from('session_roster')
-      .select('students:students!inner(id,student_identifier,name,gender,dob,enrollments!left(class,is_active))')
-      .eq('session_id', sessionId)
+    const roster = await fetchSessionRosterWithStudents(supabase, sessionId, {
+      sessionYear: testDate ? testDate.getFullYear() : null,
+      studentFields: ['id', 'student_identifier', 'name', 'gender', 'dob'],
+    })
     const studentIds = (roster||[]).map(r => r.students?.id).filter(Boolean)
     let scoresMap = new Map()
     if (studentIds.length) {
@@ -271,10 +285,7 @@ export default function PftCalculator({ user }) {
     }
     for (const r of (roster||[])) {
       const s = r.students || {}
-      let klass = ''
-      const enr = s.enrollments
-      if (Array.isArray(enr)) klass = enr.find(e=>e?.is_active)?.class || ''
-      else if (enr) klass = enr.class || ''
+      const klass = r.class || ''
       const id = s.student_identifier || ''
       const name = s.name || ''
       const genderRaw = s.gender || ''
@@ -331,10 +342,10 @@ export default function PftCalculator({ user }) {
         r.attendance,
         fmtDdMmYyyy(r.testDate),
         r.runKm,
-        r.situps ?? '',
+        csvCountCell(r.situps),
         r.broadJumpCm ?? '',
         r.sitAndReachCm ?? '',
-        r.pullups ?? '',
+        csvCountCell(r.pullups),
         r.shuttleSec ?? '',
         r.runRaw ?? '',
         st.situps?.grade || '', st.situps?.points ?? '',

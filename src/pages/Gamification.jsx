@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
+import { fetchSessionRosterWithStudents } from "../lib/sessionRoster";
 import { fmtRun } from "../lib/scores";
 import { SitupsIcon, BroadJumpIcon, ReachIcon, PullupsIcon, PushupsIcon, ShuttleIcon } from "../components/icons/StationIcons";
 import { evaluateNapfa, normalizeSex } from "../utils/napfaStandards";
@@ -96,7 +97,11 @@ export default function Gamification({ user }) {
   const [scoresMap, setScoresMap] = useState(new Map());
   const [loading, setLoading] = useState(false);
   const [groupBy, setGroupBy] = useState("class");
+  const [leaderboardMode, setLeaderboardMode] = useState("detailed");
   const refreshTimerRef = useRef(null);
+  const refreshCountdownRef = useRef(null);
+  const [nextRefreshIn, setNextRefreshIn] = useState(null);
+  const sessionAssessmentType = session?.assessment_type || "NAPFA5";
 
   useEffect(() => {
     let ignore = false;
@@ -129,10 +134,26 @@ export default function Gamification({ user }) {
     return () => { ignore = true; };
   }, [user?.id]);
 
+  const refreshScores = useCallback(async (targetSessionId, assessmentType) => {
+    const table = assessmentType === "IPPT3" ? "ippt3_scores" : "scores";
+    const selectFields = table === "ippt3_scores"
+      ? "student_id,situps,pushups,run_2400"
+      : "student_id,situps,broad_jump,sit_and_reach,pullups,shuttle_run,run_2400";
+    const { data } = await supabase
+      .from(table)
+      .select(selectFields)
+      .eq("session_id", targetSessionId);
+    return new Map((data || []).map((row) => [row.student_id, row]));
+  }, []);
+
   useEffect(() => {
     let ignore = false;
     const loadSession = async () => {
-      if (!sessionId) { setSession(null); setRoster([]); setScoresMap(new Map()); return; }
+      if (!sessionId) { setSession(null); setRoster([]); setScoresMap(new Map()); setNextRefreshIn(null); return; }
+      setSession(null);
+      setRoster([]);
+      setScoresMap(new Map());
+      setNextRefreshIn(null);
       setLoading(true);
       try {
         const { data: sess } = await supabase
@@ -141,31 +162,17 @@ export default function Gamification({ user }) {
           .eq("id", sessionId)
           .maybeSingle();
         if (!ignore) setSession(sess || null);
-        const { data: rRows } = await supabase
-          .from("session_roster")
-          .select("student_id, house, students!inner(id, student_identifier, name, gender, dob, enrollments(class,academic_year))")
-          .eq("session_id", sessionId);
         const sessionYear = sess?.session_date ? new Date(sess.session_date).getFullYear() : null;
+        const rRows = await fetchSessionRosterWithStudents(supabase, sessionId, {
+          includeHouse: true,
+          sessionYear,
+          studentFields: ["id", "name", "gender", "dob"],
+        });
         const list = (rRows || []).map(r => {
           const s = r.students || {};
-          const ens = Array.isArray(s.enrollments) ? s.enrollments : [];
-          let cls = "";
-          if (sessionYear) {
-            const m = ens.find(e => String(e.academic_year) === String(sessionYear));
-            cls = m?.class || "";
-          }
-          if (!cls && ens.length) {
-            const sorted = [...ens].sort((a,b)=> (b.academic_year||0)-(a.academic_year||0));
-            cls = sorted[0]?.class || "";
-          }
-          return { id: s.id, name: s.name, gender: s.gender, dob: s.dob, class: cls, house: r.house || "" };
+          return { id: s.id, name: s.name, gender: s.gender, dob: s.dob, class: r.class || "", house: r.house || "" };
         });
-        const isIppt3 = (sess?.assessment_type || "NAPFA5") === "IPPT3";
-        const { data: sRows } = await supabase
-          .from(isIppt3 ? "ippt3_scores" : "scores")
-          .select("*")
-          .eq("session_id", sessionId);
-        const map = new Map((sRows || []).map(r => [r.student_id, r]));
+        const map = await refreshScores(sessionId, sess?.assessment_type || "NAPFA5");
         if (!ignore) {
           setRoster(list);
           setScoresMap(map);
@@ -176,28 +183,43 @@ export default function Gamification({ user }) {
     };
     loadSession();
     return () => { ignore = true; };
-  }, [sessionId]);
+  }, [refreshScores, sessionId]);
 
   // Realtime updates: listen for score changes, then refetch once after a debounce.
   // This avoids hammering the DB with one fetch per update while keeping the view live.
   useEffect(() => {
-    if (!sessionId || !session) return;
-    const isIppt3 = (session?.assessment_type || "NAPFA5") === "IPPT3";
-    const table = isIppt3 ? "ippt3_scores" : "scores";
+    if (!sessionId || !session || session.id !== sessionId) return;
+    const table = sessionAssessmentType === "IPPT3" ? "ippt3_scores" : "scores";
     let cancelled = false;
+    const clearRefreshCountdown = () => {
+      if (refreshCountdownRef.current) {
+        clearInterval(refreshCountdownRef.current);
+        refreshCountdownRef.current = null;
+      }
+      setNextRefreshIn(null);
+    };
     const scheduleRefresh = () => {
       if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+      if (refreshCountdownRef.current) clearInterval(refreshCountdownRef.current);
+      const refreshAt = Date.now() + 5000;
+      setNextRefreshIn(5);
+      refreshCountdownRef.current = setInterval(() => {
+        const remainingMs = refreshAt - Date.now();
+        if (remainingMs <= 0) {
+          clearRefreshCountdown();
+          return;
+        }
+        setNextRefreshIn(Math.ceil(remainingMs / 1000));
+      }, 250);
       refreshTimerRef.current = setTimeout(async () => {
         refreshTimerRef.current = null;
         try {
-          const { data } = await supabase
-            .from(table)
-            .select("*")
-            .eq("session_id", sessionId);
+          const data = await refreshScores(sessionId, sessionAssessmentType);
           if (!cancelled) {
-            setScoresMap(new Map((data || []).map(r => [r.student_id, r])));
+            setScoresMap(data);
           }
         } catch {}
+        if (!cancelled) clearRefreshCountdown();
       }, 5000);
     };
     const channel = supabase
@@ -214,9 +236,10 @@ export default function Gamification({ user }) {
         clearTimeout(refreshTimerRef.current);
         refreshTimerRef.current = null;
       }
+      clearRefreshCountdown();
       supabase.removeChannel(channel);
     };
-  }, [sessionId, session?.assessment_type]);
+  }, [refreshScores, sessionAssessmentType, sessionId, session?.id]);
 
   const stations = useMemo(() => {
     if ((session?.assessment_type || "NAPFA5") === "IPPT3") {
@@ -552,18 +575,25 @@ export default function Gamification({ user }) {
   }, [groupLabel, groupStats]);
 
   const classLeaderboards = useMemo(() => {
-    return groupStats.map(g => ({
-      cls: g.cls,
-      buckets: g.buckets,
-      totals: g.totals,
-      avgCompletion: g.avgCompletion,
-      avgTotal: g.avgTotal,
-      stationLeads: g.stationLeads,
-    }));
+    return groupStats
+      .map(g => ({
+        cls: g.cls,
+        buckets: g.buckets,
+        totals: g.totals,
+        avgCompletion: g.avgCompletion,
+        avgTotal: g.avgTotal,
+        stationLeads: g.stationLeads,
+      }))
+      .sort((a, b) => (b.totals?.all ?? 0) - (a.totals?.all ?? 0) || (b.avgTotal ?? 0) - (a.avgTotal ?? 0));
   }, [groupStats]);
 
   return (
     <main className="w-full">
+      <div className="fixed bottom-4 right-4 z-30">
+        <div className="rounded-full border border-slate-200 bg-white/95 px-4 py-2 text-sm text-slate-600 shadow-lg backdrop-blur">
+          {nextRefreshIn != null ? `Next refresh in ${nextRefreshIn}s` : "Waiting for changes"}
+        </div>
+      </div>
       <div className="max-w-6xl mx-auto px-4 py-6 space-y-6">
         <header className="space-y-1">
           <h1 className="text-2xl font-semibold">Challenge Hub</h1>
@@ -722,9 +752,48 @@ export default function Gamification({ user }) {
             </section>
 
             <section className="space-y-3">
-              <h2 className="text-lg font-semibold">{groupLabel} Leaderboards</h2>
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <h2 className="text-lg font-semibold">{groupLabel} Leaderboards</h2>
+                <div className="inline-flex rounded-lg border border-slate-200 bg-white p-1 text-sm">
+                  <button
+                    type="button"
+                    className={`rounded-md px-3 py-1.5 ${leaderboardMode === "simple" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"}`}
+                    onClick={() => setLeaderboardMode("simple")}
+                  >
+                    Simple
+                  </button>
+                  <button
+                    type="button"
+                    className={`rounded-md px-3 py-1.5 ${leaderboardMode === "detailed" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"}`}
+                    onClick={() => setLeaderboardMode("detailed")}
+                  >
+                    Detailed
+                  </button>
+                </div>
+              </div>
               {classLeaderboards.length === 0 ? (
                 <div className="text-sm text-gray-500">No leaderboard data yet.</div>
+              ) : leaderboardMode === "simple" ? (
+                <div className="overflow-hidden rounded-xl border bg-white shadow-sm">
+                  <table className="w-full text-sm">
+                    <thead className="bg-slate-50 text-slate-600">
+                      <tr>
+                        <th className="px-4 py-3 text-left font-medium">Rank</th>
+                        <th className="px-4 py-3 text-left font-medium">{groupLabel}</th>
+                        <th className="px-4 py-3 text-right font-medium">Total Points</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {classLeaderboards.map((group, idx) => (
+                        <tr key={group.cls} className="border-t border-slate-100">
+                          <td className="px-4 py-3 text-slate-500">{idx + 1}</td>
+                          <td className="px-4 py-3 font-medium text-slate-900">{group.cls}</td>
+                          <td className="px-4 py-3 text-right font-semibold tabular-nums text-slate-900">{group.totals?.all ?? 0}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {classLeaderboards.map(group => (

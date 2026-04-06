@@ -3,6 +3,7 @@ import { useMemo, useRef, useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 import { SCORE_SELECT_FIELDS, fetchScoreRow, fetchIppt3Row, fmtRun } from '../lib/scores'
+import { fetchEnrollmentsMap, fetchSessionRosterWithStudents, resolveEnrollmentClass } from '../lib/sessionRoster'
 import { cohortRowsIppt3, evaluateIppt3 } from '../utils/ippt3Standards'
 import { evaluateNapfa, findRows, getAgeGroup, normalizeSex, secondsToMmss } from '../utils/napfaStandards'
 import { normalizeStudentId } from '../utils/ids'
@@ -31,8 +32,16 @@ export default function AddAttempt({ user }) {
   }
   const [sessionId, setSessionId] = useState('')
   const [sessions, setSessions] = useState([])
+  const [schoolId, setSchoolId] = useState(null)
   const [schoolType, setSchoolType] = useState(null)
   const currentSession = useMemo(() => (Array.isArray(sessions) ? sessions.find(s => s.id === sessionId) : null), [sessions, sessionId])
+  const sessionYear = useMemo(() => {
+    try {
+      return currentSession?.session_date ? new Date(currentSession.session_date).getFullYear() : null
+    } catch {
+      return null
+    }
+  }, [currentSession?.session_date])
   const isIppt3 = String(currentSession?.assessment_type || 'NAPFA5').toUpperCase() === 'IPPT3'
   const stations = useMemo(() => (isIppt3 ? [
     { key: 'situps', name: 'Sit-ups', Icon: SitupsIcon, description: 'Count repetitions | 1 attempt' },
@@ -304,6 +313,7 @@ export default function AddAttempt({ user }) {
           .eq('user_id', user.id)
           .maybeSingle()
         if (mErr || !mem?.school_id) return
+        setSchoolId(mem.school_id)
         // Load school type for standards evaluation (Primary/Secondary)
         try {
           const { data: sch } = await supabase
@@ -414,7 +424,7 @@ export default function AddAttempt({ user }) {
     try {
       const { data, error: err } = await supabase
         .from('session_roster')
-        .select('students!inner(id, student_identifier, name, gender, dob, enrollments!left(class, is_active))')
+        .select('students!inner(id, student_identifier, name, gender, dob)')
         .eq('session_id', sessionId)
         .eq('students.student_identifier', sid)
         .maybeSingle()
@@ -424,16 +434,11 @@ export default function AddAttempt({ user }) {
         setStudent(null)
         return
       }
-      let className = ''
-      const enr = data.students?.enrollments
-      if (Array.isArray(enr)) {
-        className = enr.find((e)=>e?.is_active)?.class || ''
-      } else if (enr) {
-        className = enr.class || ''
-      }
+      const enrollmentsByStudent = await fetchEnrollmentsMap(supabase, [data.students.id])
+      const className = resolveEnrollmentClass(enrollmentsByStudent.get(data.students.id), { schoolId, sessionYear })
       const id = (data.students.student_identifier || '').toUpperCase()
       setStudent(null)
-      setStudent({ id, name: data.students.name, className, gender: data.students.gender, dob: data.students.dob })
+      setStudent({ id: data.students.id, studentIdentifier: id, name: data.students.name, className, gender: data.students.gender, dob: data.students.dob })
       setRevealKey((k)=>k+1)
       setAttempt1('')
       setAttempt2('')
@@ -498,33 +503,28 @@ export default function AddAttempt({ user }) {
       if (!sessionId) return
       setRosterLoading(true)
       try {
-        const { data, error } = await supabase
-          .from('session_roster')
-          .select('students:students!inner(id, student_identifier, name, gender, enrollments!left(class, is_active))')
-          .eq('session_id', sessionId)
+        const data = await fetchSessionRosterWithStudents(supabase, sessionId, {
+          schoolId,
+          sessionYear,
+          studentFields: ['id', 'student_identifier', 'name'],
+        })
         if (!ignore) {
-          if (error) {
-            setRoster([])
-          } else {
-            const rows = (data||[]).map(r => {
-              const s = r.students || {}
-              let className = ''
-              const enr = s.enrollments
-              if (Array.isArray(enr)) className = enr.find(e=>e?.is_active)?.class || ''
-              else if (enr) className = enr.class || ''
-              return { key: s.student_identifier, name: s.name, className }
-            })
-            rows.sort((a,b)=> (a.name||'').localeCompare(b.name||''))
-            setRoster(rows)
-          }
+          const rows = (data||[]).map(r => {
+            const s = r.students || {}
+            return { key: s.student_identifier, name: s.name, className: r.class || '' }
+          })
+          rows.sort((a,b)=> (a.name||'').localeCompare(b.name||''))
+          setRoster(rows)
         }
+      } catch {
+        if (!ignore) setRoster([])
       } finally {
         if (!ignore) setRosterLoading(false)
       }
     }
     loadRoster()
     return () => { ignore = true }
-  }, [sessionId])
+  }, [schoolId, sessionId, sessionYear])
 
   // Input helpers (hoisted declarations to avoid TDZ issues)
   function onlyInt(val) { return (val || '').toString().replace(/[^0-9]/g, '') }
@@ -541,16 +541,15 @@ export default function AddAttempt({ user }) {
       try {
         setExisting(null)
         if (!student || !sessionId) return
-        const sid = await getStudentRowId()
         if (isIppt3) {
-          const data3 = await fetchIppt3Row(supabase, sessionId, sid)
+          const data3 = await fetchIppt3Row(supabase, sessionId, student.id)
           setExisting(data3 ? { situps: data3.situps, pullups: undefined, broad_jump: undefined, sit_and_reach: undefined, shuttle_run: undefined, run_2400: data3.run_2400, pushups: data3.pushups } : null)
         } else {
           const { data } = await supabase
             .from('scores')
             .select(SCORE_SELECT_FIELDS)
             .eq('session_id', sessionId)
-            .eq('student_id', sid)
+            .eq('student_id', student.id)
             .maybeSingle()
           setExisting(data || null)
         }
@@ -611,18 +610,17 @@ async function saveScore() {
     }
     if (num == null || !Number.isFinite(num)) return
     try {
-      const studentUuid = await getStudentRowId()
       if (isIppt3) {
         const ipptColMap = { situps: 'situps', pushups: 'pushups', run: 'run_2400' }
         const ipptCol = ipptColMap[activeStation]
         const { error: saveErr } = await supabase
           .from('ippt3_scores')
-          .upsert([{ session_id: sessionId, student_id: studentUuid, [ipptCol]: num }], { onConflict: 'session_id,student_id' })
+          .upsert([{ session_id: sessionId, student_id: student.id, [ipptCol]: num }], { onConflict: 'session_id,student_id' })
         if (saveErr) throw saveErr
       } else {
         const { error: saveErr } = await supabase
           .from('scores')
-          .upsert([{ session_id: sessionId, student_id: studentUuid, [col]: num }], { onConflict: 'session_id,student_id' })
+          .upsert([{ session_id: sessionId, student_id: student.id, [col]: num }], { onConflict: 'session_id,student_id' })
         if (saveErr) throw saveErr
       }
       // Compute points attained for the saved station
@@ -685,31 +683,18 @@ async function saveScore() {
       setAttempt1('')
       setAttempt2('')
       try {
-        const sid = await getStudentRowId()
         if (isIppt3) {
-          const row3 = await fetchIppt3Row(supabase, sessionId, sid)
+          const row3 = await fetchIppt3Row(supabase, sessionId, student.id)
           // Normalize to existing-like shape for display convenience
           setExisting(row3 ? { situps: row3.situps, pullups: undefined, broad_jump: undefined, sit_and_reach: undefined, shuttle_run: undefined, run_2400: row3.run_2400, pushups: row3.pushups } : null)
         } else {
-          const data = await fetchScoreRow(supabase, sessionId, sid)
+          const data = await fetchScoreRow(supabase, sessionId, student.id)
           setExisting(data || null)
         }
       } catch {}
     } catch (e) {
       showToast('error', e.message || 'Failed to save score')
     }
-  }
-
-  // Helper to retrieve the student's UUID by their identifier within this session
-  async function getStudentRowId() {
-    // We already queried the student; try to re-fetch the UUID for reliability
-    const { data, error } = await supabase
-      .from('students')
-      .select('id')
-      .eq('student_identifier', student.id)
-      .maybeSingle()
-    if (error || !data?.id) throw new Error('Student record missing')
-    return data.id
   }
 
   // Allow pressing Enter in attempt inputs to save
@@ -994,7 +979,7 @@ async function saveScore() {
                       </div>
                       <div className="flex-1">
                         <div className="text-gray-900 text-base font-semibold">
-                          {student.name} <span className="text-gray-600 font-normal">/ {student.id}</span>
+                          {student.name} <span className="text-gray-600 font-normal">/ {student.studentIdentifier}</span>
                         </div>
                         <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm text-gray-700">
                           <div>

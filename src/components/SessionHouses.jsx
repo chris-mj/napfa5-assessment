@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback } from "react";
 import { supabase } from "../lib/supabaseClient";
+import { fetchSessionRosterWithStudents } from "../lib/sessionRoster";
 import { normalizeStudentId } from "../utils/ids";
 
 export default function SessionHouses({ session, membership, canManage }) {
@@ -31,34 +33,25 @@ export default function SessionHouses({ session, membership, canManage }) {
   const [newHouseName, setNewHouseName] = useState("");
   const [houseModalTarget, setHouseModalTarget] = useState({ mode: "bulk", studentId: null });
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     if (!sessionId || !schoolId) return;
     setLoading(true);
     setMessage("");
     try {
-      const { data: rosterRows, error: rErr } = await supabase
-        .from("session_roster")
-        .select("student_id, house, students!inner(id, student_identifier, name, gender, enrollments!left(class, academic_year, is_active, school_id))")
-        .eq("session_id", sessionId);
-      if (rErr) throw rErr;
+      const rosterRows = await fetchSessionRosterWithStudents(supabase, sessionId, {
+        includeHouse: true,
+        schoolId,
+        sessionYear,
+        studentFields: ["id", "student_identifier", "name", "gender"],
+      });
       const list = (rosterRows || []).map(r => {
         const s = r.students || {};
-        const ens = Array.isArray(s.enrollments) ? s.enrollments : [];
-        let cls = "";
-        if (sessionYear) {
-          const m = ens.find(e => e && e.school_id === schoolId && e.academic_year === sessionYear && e.is_active);
-          cls = m?.class || "";
-        }
-        if (!cls && ens.length) {
-          const sorted = [...ens].sort((a,b)=> (b.academic_year||0)-(a.academic_year||0));
-          cls = sorted[0]?.class || "";
-        }
         return {
           id: s.id,
           student_identifier: s.student_identifier,
           name: s.name,
           gender: s.gender,
-          class: cls,
+          class: r.class || "",
           house: r.house || ""
         };
       });
@@ -71,9 +64,9 @@ export default function SessionHouses({ session, membership, canManage }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [schoolId, sessionId, sessionYear]);
 
-  useEffect(() => { loadData(); /* eslint-disable-next-line */ }, [sessionId, schoolId, sessionYear]);
+  useEffect(() => { loadData(); }, [loadData]);
 
   const filtered = useMemo(() => {
     const q = (filterQuery || "").trim().toLowerCase();

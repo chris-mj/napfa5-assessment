@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { jsPDF } from "jspdf";
 import { supabase } from "../lib/supabaseClient";
+import { fetchSessionRosterWithStudents } from "../lib/sessionRoster";
 import { normalizeStudentId } from "../utils/ids";
 import { drawQrDataUrl } from "../utils/qrcode";
 import { encodeGroupQr } from "../utils/groupQr";
@@ -53,16 +55,17 @@ export default function SessionGroups({ session, membership, canManage }) {
     groups: false,
   });
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     if (!sessionId || !schoolId) return;
     setLoading(true);
     setMessage("");
     try {
       const [{ data: rosterRows, error: rosterErr }, { data: grpRows, error: grpErr }, { data: mRows, error: memErr }] = await Promise.all([
-        supabase
-          .from("session_roster")
-          .select("student_id, students!inner(id, student_identifier, name, gender, enrollments!left(class, academic_year, is_active, school_id))")
-          .eq("session_id", sessionId),
+        fetchSessionRosterWithStudents(supabase, sessionId, {
+          schoolId,
+          sessionYear,
+          studentFields: ["id", "student_identifier", "name", "gender"],
+        }).then((data) => ({ data, error: null })).catch((error) => ({ data: null, error })),
         supabase
           .from("session_groups")
           .select("id, session_id, group_code, group_name")
@@ -79,21 +82,11 @@ export default function SessionGroups({ session, membership, canManage }) {
 
       const list = (rosterRows || []).map((r) => {
         const s = r.students || {};
-        const ens = Array.isArray(s.enrollments) ? s.enrollments : [];
-        let cls = "";
-        if (sessionYear) {
-          const m = ens.find((e) => e && e.school_id === schoolId && e.academic_year === sessionYear && e.is_active);
-          cls = m?.class || "";
-        }
-        if (!cls && ens.length) {
-          const sorted = [...ens].sort((a, b) => (b.academic_year || 0) - (a.academic_year || 0));
-          cls = sorted[0]?.class || "";
-        }
         return {
           id: s.id,
           student_identifier: s.student_identifier,
           name: s.name,
-          class: cls,
+          class: r.class || "",
           gender: s.gender || "",
         };
       });
@@ -109,12 +102,11 @@ export default function SessionGroups({ session, membership, canManage }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [schoolId, sessionId, sessionYear]);
 
   useEffect(() => {
     loadData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, schoolId, sessionYear]);
+  }, [loadData]);
 
   const classOptions = useMemo(() => {
     const set = new Set((roster || []).map((r) => r.class).filter(Boolean));

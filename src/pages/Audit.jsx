@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
 import { isPlatformOwner } from "../lib/roles";
@@ -15,6 +15,7 @@ export default function Audit({ user }) {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const [selectedSchool, setSelectedSchool] = useState("");
+  const owner = isPlatformOwner(user);
 
   const schoolParam = useMemo(() => {
     try {
@@ -39,7 +40,9 @@ export default function Audit({ user }) {
     load();
   }, [user?.id]);
 
-  const loadEvents = async () => {
+  const membershipReady = owner || memberships.length > 0 || !!membership?.school_id;
+
+  const loadEvents = useCallback(async () => {
     const owner = isPlatformOwner(user);
     const validUuid = (v) => typeof v === 'string' && /^[0-9a-fA-F-]{36}$/.test(v);
     // Allow platform owner to filter by either UI selection or URL param.
@@ -79,9 +82,12 @@ export default function Audit({ user }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [membership?.school_id, memberships, schoolParam, selectedSchool, entityType, user]);
 
-  useEffect(() => { loadEvents(); /* eslint-disable-next-line */ }, [membership?.school_id, selectedSchool, entityType, schoolParam, memberships]);
+  useEffect(() => {
+    if (!membershipReady) return;
+    loadEvents();
+  }, [membershipReady, loadEvents]);
   useEffect(() => { setPage(1); }, [entityType, query]);
 
   const filtered = useMemo(() => {
@@ -107,7 +113,6 @@ export default function Audit({ user }) {
     });
   }, [events, query]);
 
-  const owner = isPlatformOwner(user);
   const schoolOptions = useMemo(() => {
     const opts = (memberships || []).map(m => ({ id: m.school_id, name: m.schools?.name || m.school_id }));
     // Deduplicate

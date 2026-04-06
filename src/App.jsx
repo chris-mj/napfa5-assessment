@@ -107,8 +107,6 @@ function AnimatedRoutes({ user, setUser }) {
         } catch {}
         setUser(null);
         navigate("/", { replace: true });
-        // Best-effort global revoke in background; ignore 403/session_not_found
-        supabase.auth.signOut({ scope: 'global' }).catch(() => {});
     };
 
     return (

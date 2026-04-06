@@ -841,7 +841,7 @@ export default function ManageStudents({ user }) {
                       <tr key={r.id} className={"odd:bg-white even:bg-gray-50 border-l-4 " + (r.is_active ? "opacity-100 border-l-green-500" : "opacity-60 border-l-gray-400") }>
                         <td className="border px-2 py-2 w-10"><input type="checkbox" checked={selectedEnrollments.has(r.id)} onChange={(e)=>toggleRowSelect(r.id, e.target.checked)} /></td>
                         <td className="border px-3 py-2">{normalizeStudentId(r.students?.student_identifier)}</td>
-                        <td className="border px-3 py-2">
+                        <td className="border px-3 py-2 text-left align-top">
                           <button className="underline decoration-dotted underline-offset-2" onClick={()=>{ setHistoryFor(r.students); openHistory(r.students.id) }}>{r.students?.name}</button>
                         </td>
                       <td className="border px-3 py-2">{r.students?.gender || '-'}</td>
