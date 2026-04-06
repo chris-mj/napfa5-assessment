@@ -157,19 +157,10 @@ export default function AttemptEditor({ sessionId, studentId, onSaved, isIppt3 =
         shuttle_run: (shuttle == null || Number.isNaN(shuttle)) ? null : Number.parseFloat(Number(shuttle).toFixed(1)),
         run_2400,
       };
-      if (previous) {
-        const { error } = await supabase
-          .from("scores")
-          .update(payload)
-          .eq("session_id", sessionId)
-          .eq("student_id", studentId);
-        if (error) throw error;
-      } else {
-        const { error } = await supabase
-          .from("scores")
-          .insert({ session_id: sessionId, student_id: studentId, ...payload });
-        if (error) throw error;
-      }
+      const { error } = await supabase
+        .from("scores")
+        .upsert({ session_id: sessionId, student_id: studentId, ...payload }, { onConflict: "session_id,student_id" });
+      if (error) throw error;
       // Refresh previous panel with latest values
       try {
         const latest = await fetchScoreRow(supabase, sessionId, studentId);

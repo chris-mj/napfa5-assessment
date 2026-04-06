@@ -18,6 +18,7 @@ export default function Dashboard({ user }) {
 
   // Roles present for this user
   const roleSet = useMemo(() => new Set((memberships || []).map(m => String(m.role || '').toLowerCase())), [memberships]);
+  const primarySchoolId = memberships[0]?.school_id || "";
   const isOwner = isPlatformOwner(user);
   const isAdmin = roleSet.has('admin') || roleSet.has('superadmin') || isOwner;
   const isTeacher = roleSet.has('score_taker');
@@ -57,8 +58,8 @@ export default function Dashboard({ user }) {
   useEffect(() => {
     let ignore = false;
     async function loadDashboardData() {
-      if (!memberships.length) return;
-      const schoolId = memberships[0].school_id; // primary membership for scope
+      if (!primarySchoolId) return;
+      const schoolId = primarySchoolId; // primary membership for scope
       try {
         // Today window (local day)
         const now = new Date();
@@ -157,7 +158,7 @@ export default function Dashboard({ user }) {
     }
     loadDashboardData();
     return () => { ignore = true };
-  }, [memberships]);
+  }, [primarySchoolId]);
 
   const kpi = (label, value) => (
     <div className="rounded-xl bg-white p-4 shadow-sm border border-gray-100">

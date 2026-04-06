@@ -127,6 +127,8 @@ create table if not exists memberships (
 );
 create index if not exists idx_memberships_user on memberships (user_id);
 create index if not exists idx_memberships_school on memberships (school_id);
+create index if not exists idx_memberships_user_school_role
+  on memberships (user_id, school_id, role);
 
 -- Reusable QR login credentials for low-privilege staff accounts
 do $$ begin
@@ -174,6 +176,8 @@ create table if not exists enrollments (
 create index if not exists idx_enrollments_school_year_class_active
   on enrollments (school_id, academic_year, class, is_active);
 create index if not exists idx_enrollments_student_active on enrollments (student_id, is_active);
+create index if not exists idx_enrollments_student_school_year_active
+  on enrollments (student_id, school_id, academic_year, is_active);
 
 -- Ensure only one active enrollment per student
 do $$ begin
@@ -849,6 +853,371 @@ do $$ begin
 exception when duplicate_object then null; end $$;
 
 -- =========================
+-- RLS performance tightening for hot tables
+-- Preserve semantics while reducing overlapping permissive policies
+-- and allowing auth helpers to be evaluated once per statement.
+-- =========================
+
+drop policy if exists memberships_select_self on memberships;
+drop policy if exists memberships_delete_self on memberships;
+drop policy if exists memberships_admin_cud on memberships;
+
+create policy memberships_select_self_or_school_admin
+on memberships for select
+using (
+  memberships.user_id = (select auth.uid())
+  or exists (
+    select 1 from memberships m2
+    where m2.user_id = (select auth.uid())
+      and m2.school_id = memberships.school_id
+      and m2.role in ('admin','superadmin')
+  )
+);
+
+create policy memberships_insert_admin_same_school
+on memberships for insert
+with check (
+  exists (
+    select 1 from memberships m2
+    where m2.user_id = (select auth.uid())
+      and m2.school_id = memberships.school_id
+      and m2.role in ('admin','superadmin')
+  )
+);
+
+create policy memberships_update_admin_same_school
+on memberships for update
+using (
+  exists (
+    select 1 from memberships m2
+    where m2.user_id = (select auth.uid())
+      and m2.school_id = memberships.school_id
+      and m2.role in ('admin','superadmin')
+  )
+)
+with check (
+  exists (
+    select 1 from memberships m2
+    where m2.user_id = (select auth.uid())
+      and m2.school_id = memberships.school_id
+      and m2.role in ('admin','superadmin')
+  )
+);
+
+create policy memberships_delete_self_or_school_admin
+on memberships for delete
+using (
+  memberships.user_id = (select auth.uid())
+  or exists (
+    select 1 from memberships m2
+    where m2.user_id = (select auth.uid())
+      and m2.school_id = memberships.school_id
+      and m2.role in ('admin','superadmin')
+  )
+);
+
+drop policy if exists students_select_by_enrollment on students;
+drop policy if exists students_admin_cud on students;
+
+create policy students_select_visible
+on students for select
+using (
+  exists (
+    select 1 from enrollments e
+    join memberships m on m.school_id = e.school_id
+    where e.student_id = students.id
+      and m.user_id = (select auth.uid())
+  )
+  or exists (
+    select 1 from memberships m
+    where m.user_id = (select auth.uid())
+      and m.role in ('admin','superadmin')
+  )
+);
+
+create policy students_insert_admin_any_school
+on students for insert
+with check (
+  exists (
+    select 1 from memberships m
+    where m.user_id = (select auth.uid())
+      and m.role in ('admin','superadmin')
+  )
+);
+
+create policy students_update_admin_any_school
+on students for update
+using (
+  exists (
+    select 1 from memberships m
+    where m.user_id = (select auth.uid())
+      and m.role in ('admin','superadmin')
+  )
+)
+with check (
+  exists (
+    select 1 from memberships m
+    where m.user_id = (select auth.uid())
+      and m.role in ('admin','superadmin')
+  )
+);
+
+create policy students_delete_admin_any_school
+on students for delete
+using (
+  exists (
+    select 1 from memberships m
+    where m.user_id = (select auth.uid())
+      and m.role in ('admin','superadmin')
+  )
+);
+
+drop policy if exists enrollments_select_by_membership on enrollments;
+drop policy if exists enrollments_admin_cud on enrollments;
+
+create policy enrollments_select_by_membership
+on enrollments for select
+using (
+  exists (
+    select 1 from memberships m
+    where m.user_id = (select auth.uid())
+      and m.school_id = enrollments.school_id
+  )
+);
+
+create policy enrollments_insert_admin_same_school
+on enrollments for insert
+with check (
+  exists (
+    select 1 from memberships m
+    where m.user_id = (select auth.uid())
+      and m.school_id = enrollments.school_id
+      and m.role in ('admin','superadmin')
+  )
+);
+
+create policy enrollments_update_admin_same_school
+on enrollments for update
+using (
+  exists (
+    select 1 from memberships m
+    where m.user_id = (select auth.uid())
+      and m.school_id = enrollments.school_id
+      and m.role in ('admin','superadmin')
+  )
+)
+with check (
+  exists (
+    select 1 from memberships m
+    where m.user_id = (select auth.uid())
+      and m.school_id = enrollments.school_id
+      and m.role in ('admin','superadmin')
+  )
+);
+
+create policy enrollments_delete_admin_same_school
+on enrollments for delete
+using (
+  exists (
+    select 1 from memberships m
+    where m.user_id = (select auth.uid())
+      and m.school_id = enrollments.school_id
+      and m.role in ('admin','superadmin')
+  )
+);
+
+drop policy if exists sessions_select_by_membership on sessions;
+drop policy if exists sessions_select_platform_owner on sessions;
+drop policy if exists sessions_admin_cud on sessions;
+
+create policy sessions_select_visible
+on sessions for select
+using (
+  exists (
+    select 1 from memberships m
+    where m.user_id = (select auth.uid())
+      and m.school_id = sessions.school_id
+  )
+  or (select lower(coalesce(auth.jwt() ->> 'email', ''))) = lower('christopher_teo_ming_jian@moe.edu.sg')
+);
+
+create policy sessions_insert_admin_same_school
+on sessions for insert
+with check (
+  exists (
+    select 1 from memberships m
+    where m.user_id = (select auth.uid())
+      and m.school_id = sessions.school_id
+      and m.role in ('admin','superadmin')
+  )
+);
+
+create policy sessions_update_admin_same_school
+on sessions for update
+using (
+  exists (
+    select 1 from memberships m
+    where m.user_id = (select auth.uid())
+      and m.school_id = sessions.school_id
+      and m.role in ('admin','superadmin')
+  )
+)
+with check (
+  exists (
+    select 1 from memberships m
+    where m.user_id = (select auth.uid())
+      and m.school_id = sessions.school_id
+      and m.role in ('admin','superadmin')
+  )
+);
+
+create policy sessions_delete_admin_same_school
+on sessions for delete
+using (
+  exists (
+    select 1 from memberships m
+    where m.user_id = (select auth.uid())
+      and m.school_id = sessions.school_id
+      and m.role in ('admin','superadmin')
+  )
+);
+
+drop policy if exists session_roster_select_by_membership on session_roster;
+drop policy if exists session_roster_admin_insert_update on session_roster;
+drop policy if exists session_roster_admin_update on session_roster;
+drop policy if exists session_roster_admin_delete_guarded on session_roster;
+
+create policy session_roster_select_by_membership
+on session_roster for select
+using (
+  exists (
+    select 1 from sessions s
+    join memberships m on m.school_id = s.school_id
+    where s.id = session_roster.session_id
+      and m.user_id = (select auth.uid())
+  )
+);
+
+create policy session_roster_insert_admin_when_not_completed
+on session_roster for insert to public
+with check (
+  exists (
+    select 1 from sessions s
+    join memberships m on m.school_id = s.school_id
+    where s.id = session_roster.session_id
+      and s.status <> 'completed'
+      and m.user_id = (select auth.uid())
+      and m.role in ('admin','superadmin')
+  )
+);
+
+create policy session_roster_update_admin_when_not_completed
+on session_roster for update
+using (
+  exists (
+    select 1 from sessions s
+    join memberships m on m.school_id = s.school_id
+    where s.id = session_roster.session_id
+      and s.status <> 'completed'
+      and m.user_id = (select auth.uid())
+      and m.role in ('admin','superadmin')
+  )
+)
+with check (
+  exists (
+    select 1 from sessions s
+    join memberships m on m.school_id = s.school_id
+    where s.id = session_roster.session_id
+      and s.status <> 'completed'
+      and m.user_id = (select auth.uid())
+      and m.role in ('admin','superadmin')
+  )
+);
+
+create policy session_roster_delete_admin_guarded
+on session_roster for delete
+using (
+  exists (
+    select 1 from sessions s
+    join memberships m on m.school_id = s.school_id
+    where s.id = session_roster.session_id
+      and s.status <> 'completed'
+      and m.user_id = (select auth.uid())
+      and m.role in ('admin','superadmin')
+  )
+  and not exists (
+    select 1 from scores sc
+    where sc.session_id = session_roster.session_id
+      and sc.student_id = session_roster.student_id
+  )
+);
+
+drop policy if exists scores_select_by_membership on scores;
+drop policy if exists scores_insert_when_active_with_role on scores;
+drop policy if exists scores_update_when_active_with_role on scores;
+drop policy if exists scores_delete_when_active_admin on scores;
+
+create policy scores_select_by_membership
+on scores for select
+using (
+  exists (
+    select 1 from sessions s
+    join memberships m on m.school_id = s.school_id
+    where s.id = scores.session_id
+      and m.user_id = (select auth.uid())
+  )
+);
+
+create policy scores_insert_when_active_with_role
+on scores for insert
+with check (
+  exists (
+    select 1 from sessions s
+    join memberships m on m.school_id = s.school_id
+    where s.id = scores.session_id
+      and s.status = 'active'
+      and m.user_id = (select auth.uid())
+      and m.role in ('admin','superadmin','score_taker')
+  )
+);
+
+create policy scores_update_when_active_with_role
+on scores for update
+using (
+  exists (
+    select 1 from sessions s
+    join memberships m on m.school_id = s.school_id
+    where s.id = scores.session_id
+      and s.status = 'active'
+      and m.user_id = (select auth.uid())
+      and m.role in ('admin','superadmin','score_taker')
+  )
+)
+with check (
+  exists (
+    select 1 from sessions s
+    join memberships m on m.school_id = s.school_id
+    where s.id = scores.session_id
+      and s.status = 'active'
+      and m.user_id = (select auth.uid())
+      and m.role in ('admin','superadmin','score_taker')
+  )
+);
+
+create policy scores_delete_when_active_admin
+on scores for delete
+using (
+  exists (
+    select 1 from sessions s
+    join memberships m on m.school_id = s.school_id
+    where s.id = scores.session_id
+      and s.status = 'active'
+      and m.user_id = (select auth.uid())
+      and m.role in ('admin','superadmin')
+  )
+);
+
+-- =========================
 -- Verification helpers (read-only)
 -- =========================
 
@@ -1374,6 +1743,9 @@ begin
   if tg_op = 'INSERT' then
     v_new := to_jsonb(NEW);
   elsif tg_op = 'UPDATE' then
+    if OLD is not distinct from NEW then
+      return NEW;
+    end if;
     v_old := to_jsonb(OLD);
     v_new := to_jsonb(NEW);
   elsif tg_op = 'DELETE' then

@@ -1,5 +1,7 @@
 ﻿import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
+import { useCallback } from "react";
+import { fetchSessionRosterWithStudents } from "../lib/sessionRoster";
 import { normalizeStudentId } from "../utils/ids";
 
 export default function RosterDualList({ user, session, membership, canManage, onProfileCards }) {
@@ -42,22 +44,23 @@ export default function RosterDualList({ user, session, membership, canManage, o
     return () => window.removeEventListener('resize', updateRows);
   }, []);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     if (!sessionId || !schoolId) return;
     setLoading(true);
     setMessage("");
     try {
       // Load roster
-      const { data: rosterRows, error: rErr } = await supabase
-        .from('session_roster')
-        .select('student_id, students!inner(id, student_identifier, name, enrollments!left(class, academic_year, is_active, school_id))')
-        .eq('session_id', sessionId);
-      if (rErr) throw rErr;
-      let rosterList = (rosterRows || []).map(r => {
-        const enr = r.students?.enrollments || [];
-        const cls = (Array.isArray(enr) ? enr : [enr]).find(e => e && e.school_id === schoolId && e.academic_year === sessionYear && e.is_active)?.class || '';
-        return { id: r.students.id, student_identifier: r.students.student_identifier, name: r.students.name, class: cls };
+      let rosterList = await fetchSessionRosterWithStudents(supabase, sessionId, {
+        schoolId,
+        sessionYear,
+        studentFields: ['id', 'student_identifier', 'name'],
       });
+      rosterList = (rosterList || []).map((r) => ({
+        id: r.students.id,
+        student_identifier: r.students.student_identifier,
+        name: r.students.name,
+        class: r.class || '',
+      }));
       // Load scores to determine which cannot be removed
       const { data: scoreRows } = await supabase
         .from('scores')
@@ -104,9 +107,9 @@ export default function RosterDualList({ user, session, membership, canManage, o
     } finally {
       setLoading(false);
     }
-  };
+  }, [schoolId, sessionId, sessionYear]);
 
-  useEffect(() => { loadData(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [sessionId, schoolId, sessionYear]);
+  useEffect(() => { loadData(); }, [loadData]);
 
   useEffect(() => {
     if (!cardsMenuOpen) return;

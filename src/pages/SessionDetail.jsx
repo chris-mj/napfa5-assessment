@@ -8,6 +8,7 @@ import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { isPlatformOwner } from "../lib/roles";
 import { supabase } from "../lib/supabaseClient";
 import { fmtRun } from "../lib/scores";
+import { fetchSessionRosterWithStudents } from "../lib/sessionRoster";
 import { evaluateIppt3, awardForTotal } from "../utils/ippt3Standards";
 import { evaluateNapfa } from "../utils/napfaStandards";
 import RosterDualList from "../components/RosterDualList";
@@ -770,26 +771,20 @@ export default function SessionDetail({ user }) {
     };
 
     const loadRoster = async () => {
-        const { data, error: err } = await supabase
-            .from("session_roster")
-            .select("student_id, students!inner(id, student_identifier, name, gender, dob, enrollments(class,academic_year))")
-            .eq("session_id", id)
-            .order("student_id", { ascending: true });
-        if (err) return;
         const sessionYear = session?.session_date ? new Date(session.session_date).getFullYear() : null;
+        let data;
+        try {
+            data = await fetchSessionRosterWithStudents(supabase, id, {
+                schoolId: membership?.school_id || null,
+                sessionYear,
+                studentFields: ["id", "student_identifier", "name", "gender", "dob"],
+            });
+        } catch {
+            return;
+        }
         const list = (data || []).map((r) => {
             const s = r.students || {};
-            const ens = Array.isArray(s.enrollments) ? s.enrollments : [];
-            let cls = '';
-            if (sessionYear) {
-                const m = ens.find(e => String(e.academic_year) === String(sessionYear));
-                cls = m?.class || '';
-            }
-            if (!cls && ens.length) {
-                const sorted = [...ens].sort((a,b)=> (b.academic_year||0)-(a.academic_year||0));
-                cls = sorted[0]?.class || '';
-            }
-            return { id: s.id, student_identifier: s.student_identifier, name: s.name, class: cls, gender: s.gender, dob: s.dob };
+            return { id: s.id, student_identifier: s.student_identifier, name: s.name, class: r.class || "", gender: s.gender, dob: s.dob };
         });
         setRoster(list);
     };
@@ -1830,16 +1825,15 @@ export default function SessionDetail({ user }) {
             if ((session?.assessment_type || 'NAPFA5') === 'IPPT3') {
                 const headers = ['S/N','Name','ID','Class','Gender','DOB','Attendance Status','Sit Up reps','Push-ups reps','2.4 Km Run MMSS','PFT Test Date','Sit Up score','Push-ups score','2.4 Km Run score','Total Points','Award'];
                 const prefix = headers.join(',') + '\n';
-                const { data: rosterRows, error: rErr } = await supabase
-                    .from('session_roster')
-                    .select('students:student_id(id, student_identifier, name, gender, dob, enrollments!left(class, is_active))')
-                    .eq('session_id', id);
-                if (rErr) throw rErr;
+                const rosterRows = await fetchSessionRosterWithStudents(supabase, id, {
+                    schoolId: membership?.school_id || null,
+                    sessionYear: session?.session_date ? new Date(session.session_date).getFullYear() : null,
+                    studentFields: ['id', 'student_identifier', 'name', 'gender', 'dob'],
+                    orderByStudentId: false,
+                });
                 const list = (rosterRows || []).map(rr => {
                     const st = rr.students || {};
-                    const enr = st.enrollments;
-                    const activeClass = Array.isArray(enr) ? (enr.find(e=>e?.is_active)?.class) : (enr?.class);
-                    return { id: st.id, name: st.name || '', sid: st.student_identifier || '', gender: st.gender || '', dob: st.dob || '', class: activeClass || '' };
+                    return { id: st.id, name: st.name || '', sid: st.student_identifier || '', gender: st.gender || '', dob: st.dob || '', class: rr.class || '' };
                 });
                 const { data: sRows } = await supabase
                     .from('ippt3_scores')
@@ -2111,16 +2105,13 @@ export default function SessionDetail({ user }) {
 
     const downloadProfileCardsPdf = async (format = 'a4') => {
         try {
-            const { data, error } = await supabase
-                .from('session_roster')
-                .select('students!inner(id, student_identifier, name, enrollments!left(class, is_active))')
-                .eq('session_id', id)
-                .order('student_id', { ascending: true });
-            if (error) throw error;
+            const data = await fetchSessionRosterWithStudents(supabase, id, {
+                schoolId: membership?.school_id || null,
+                sessionYear: session?.session_date ? new Date(session.session_date).getFullYear() : null,
+                studentFields: ['id', 'student_identifier', 'name'],
+            });
             const list = (data || []).map(r => {
-                const enr = r.students?.enrollments;
-                const activeClass = Array.isArray(enr) ? (enr.find(e => e?.is_active)?.class) : (enr?.class);
-                return { id: r.students.id, student_identifier: r.students.student_identifier, name: r.students.name, class: activeClass || '' };
+                return { id: r.students.id, student_identifier: r.students.student_identifier, name: r.students.name, class: r.class || '' };
             }).sort((a, b) => (String(a.class||'').localeCompare(String(b.class||''), undefined, { numeric: true, sensitivity: 'base' })
                 || String(a.name||'').localeCompare(String(b.name||''), undefined, { sensitivity: 'base' })));
             if (!list.length) { setFlash('No students in roster.'); return; }

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
+import { fetchSessionGroupMembersWithStudents } from "../lib/sessionRoster";
 import { normalizeStudentId } from "../utils/ids";
 import { parseGroupQr } from "../utils/groupQr";
 import { SitupsIcon, BroadJumpIcon, ReachIcon, PullupsIcon, ShuttleIcon, PushupsIcon } from "../components/icons/StationIcons";
@@ -181,29 +182,17 @@ export default function ScoreEntryGroup({ user }) {
       if (gErr) throw gErr;
       if (!grp?.id) throw new Error("Group not found in selected session.");
       const sessionYear = currentSession?.session_date ? new Date(currentSession.session_date).getFullYear() : null;
-      const { data: mRows, error: mErr } = await supabase
-        .from("session_group_members")
-        .select("student_id, students!inner(id, student_identifier, name, gender, dob, enrollments!left(class, academic_year, is_active))")
-        .eq("session_id", sid)
-        .eq("session_group_id", grp.id);
-      if (mErr) throw mErr;
+      const mRows = await fetchSessionGroupMembersWithStudents(supabase, sid, grp.id, {
+        sessionYear,
+        studentFields: ["id", "student_identifier", "name", "gender", "dob"],
+      });
       const list = (mRows || []).map((r) => {
         const s = r.students || {};
-        const ens = Array.isArray(s.enrollments) ? s.enrollments : [];
-        let className = "";
-        if (sessionYear != null) {
-          const m = ens.find((e) => e && String(e.academic_year) === String(sessionYear) && e.is_active);
-          className = m?.class || "";
-        }
-        if (!className && ens.length) {
-          const sorted = [...ens].sort((a, b) => (b.academic_year || 0) - (a.academic_year || 0));
-          className = sorted[0]?.class || "";
-        }
         return {
           studentId: s.id,
           sid: normalizeStudentId(s.student_identifier || ""),
           name: s.name || "",
-          className,
+          className: r.class || "",
           scoreInput: "",
           existing: null,
           dirty: false,

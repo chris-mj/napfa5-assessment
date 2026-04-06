@@ -3,6 +3,7 @@
 import { SitupsIcon, BroadJumpIcon, ReachIcon, PullupsIcon, ShuttleIcon } from '../components/icons/StationIcons'
 
 import { supabase } from '../lib/supabaseClient'
+import { startLoaderMetric } from '../lib/devLoaderMetrics'
 
 import { normalizeStudentId } from '../utils/ids'
 
@@ -57,6 +58,7 @@ export default function ViewScore() {
 
 
   const handleSearch = async (idValue) => {
+    const doneMetric = startLoaderMetric('ViewScore.handleSearch')
 
     setError('')
 
@@ -80,27 +82,36 @@ export default function ViewScore() {
 
       if (e1) throw e1
 
-      if (!stu?.id) { setError('Student not found or not visible.'); setProfile(null); setAttempts([]); setSelectedId(null); return }
+      if (!stu?.id) {
+        doneMetric({ rows: 0 })
+        setError('Student not found or not visible.'); setProfile(null); setAttempts([]); setSelectedId(null); return
+      }
 
       setProfile({ id: stu.id, sid: stu.student_identifier, name: stu.name, gender: stu.gender, dob: stu.dob })
 
 
 
-      const { data: rows, error: e2 } = await supabase
-        .from('scores')
-        .select('id, test_date, created_at, situps, shuttle_run, sit_and_reach, pullups, run_2400, broad_jump, sessions!fk_scores_session(id, session_date, status, schools:school_id(type))')
-        .eq('student_id', stu.id)
-        .order('test_date', { ascending: false })
+      const [
+        { data: rows, error: e2 },
+        { data: rows3, error: e3 },
+      ] = await Promise.all([
+        supabase
+          .from('scores')
+          .select('id, test_date, created_at, situps, shuttle_run, sit_and_reach, pullups, run_2400, broad_jump, sessions!fk_scores_session!inner(session_date, schools:school_id(type))')
+          .eq('student_id', stu.id)
+          .eq('sessions.status', 'active')
+          .order('test_date', { ascending: false }),
+        supabase
+          .from('ippt3_scores')
+          .select('id, situps, pushups, run_2400, inserted_at, updated_at, sessions:session_id!inner(session_date, schools:school_id(type))')
+          .eq('student_id', stu.id)
+          .eq('sessions.status', 'active'),
+      ])
       if (e2) throw e2
-
-      const { data: rows3, error: e3 } = await supabase
-        .from('ippt3_scores')
-        .select('id, situps, pushups, run_2400, inserted_at, updated_at, session_id, sessions:session_id(id, session_date, status, schools:school_id(type))')
-        .eq('student_id', stu.id)
       if (e3) throw e3
 
       // Only keep attempts linked to active sessions
-      const listNapfa = (rows || []).filter(r => (r.sessions?.status === 'active')).map(r => ({
+      const listNapfa = (rows || []).map(r => ({
         id: r.id,
         kind: 'NAPFA5',
         test_date: r.sessions?.session_date || r.test_date || r.created_at || null,
@@ -114,7 +125,7 @@ export default function ViewScore() {
         assessment_type: 'NAPFA5',
       }))
 
-      const listIppt3 = (rows3 || []).filter(r => (r.sessions?.status === 'active')).map(r => ({
+      const listIppt3 = (rows3 || []).map(r => ({
         id: `ip3-${r.id}`,
         kind: 'IPPT3',
         test_date: r.sessions?.session_date || r.inserted_at || r.updated_at || null,
@@ -134,7 +145,9 @@ export default function ViewScore() {
 
       setAttempts(merged)
       setSelectedId(merged[0]?.id || null)
+      doneMetric({ rows: merged.length })
     } catch (e) {
+      doneMetric({ failed: true, error: e })
 
       setError(e.message || '-')
 
