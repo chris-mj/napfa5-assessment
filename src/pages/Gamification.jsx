@@ -650,6 +650,119 @@ export default function Gamification({ user }) {
         {!loading && session && (
           <>
             <section className="space-y-3">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <h2 className="text-lg font-semibold">{groupLabel} Leaderboards</h2>
+                <div className="inline-flex rounded-lg border border-slate-200 bg-white p-1 text-sm">
+                  <button
+                    type="button"
+                    className={`rounded-md px-3 py-1.5 ${leaderboardMode === "simple" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"}`}
+                    onClick={() => setLeaderboardMode("simple")}
+                  >
+                    Simple
+                  </button>
+                  <button
+                    type="button"
+                    className={`rounded-md px-3 py-1.5 ${leaderboardMode === "detailed" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"}`}
+                    onClick={() => setLeaderboardMode("detailed")}
+                  >
+                    Detailed
+                  </button>
+                </div>
+              </div>
+              {classLeaderboards.length === 0 ? (
+                <div className="text-sm text-gray-500">No leaderboard data yet.</div>
+              ) : leaderboardMode === "simple" ? (
+                <div className="overflow-hidden rounded-xl border bg-white shadow-sm">
+                  <table className="w-full text-sm">
+                    <thead className="bg-slate-50 text-slate-600">
+                      <tr>
+                        <th className="px-4 py-3 text-left font-medium">Rank</th>
+                        <th className="px-4 py-3 text-left font-medium">{groupLabel}</th>
+                        <th className="px-4 py-3 text-right font-medium">Total Points</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {classLeaderboards.map((group, idx) => (
+                        <tr key={group.cls} className="border-t border-slate-100">
+                          <td className="px-4 py-3 text-slate-500">{idx + 1}</td>
+                          <td className="px-4 py-3 font-medium text-slate-900">{group.cls}</td>
+                          <td className="px-4 py-3 text-right font-semibold tabular-nums text-slate-900">{group.totals?.all ?? 0}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {classLeaderboards.map(group => (
+                    <div key={group.cls} className="border rounded-xl p-3 bg-white shadow-sm space-y-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="truncate font-semibold text-base text-slate-900" title={group.cls}>{group.cls}</div>
+                        <div className="rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-800">
+                          Total {group.totals?.all ?? 0}
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="rounded-lg border border-slate-200 bg-slate-50/80 px-2.5 py-2">
+                          <div className="text-[11px] uppercase tracking-[0.16em] text-slate-500">Completion</div>
+                          <div className="mt-1 text-sm font-semibold text-slate-900">{Math.round(group.avgCompletion * 100)}%</div>
+                        </div>
+                        <div className="rounded-lg border border-slate-200 bg-slate-50/80 px-2.5 py-2">
+                          <div className="text-[11px] uppercase tracking-[0.16em] text-slate-500">Avg points</div>
+                          <div className="mt-1 text-sm font-semibold text-slate-900">{group.avgTotal.toFixed(1)}</div>
+                        </div>
+                        <div className="rounded-lg border border-slate-200 bg-slate-50/80 px-2.5 py-2">
+                          <div className="text-[11px] uppercase tracking-[0.16em] text-slate-500">Leads</div>
+                          <div className="mt-1 text-sm font-semibold text-slate-900">{group.stationLeads}</div>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                        {[
+                          { key: "M", label: "Boys" },
+                          { key: "F", label: "Girls" },
+                        ].map(section => (
+                          <div key={section.key} className="rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2.5 space-y-2">
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="text-xs uppercase tracking-[0.18em] text-slate-500">{section.label}</div>
+                              <div className="text-xs font-semibold text-slate-700">{group.totals?.[section.key] ?? 0} pts</div>
+                            </div>
+                            {(group.buckets?.[section.key] || []).length === 0 ? (
+                              <div className="text-sm text-gray-500">No scores yet</div>
+                            ) : (
+                              group.buckets[section.key].map((it, idx) => (
+                                <div key={it.student.id} className="flex items-center justify-between gap-3 text-sm">
+                                  <div className="min-w-0 flex flex-1 items-center gap-1.5">
+                                    <span className="shrink-0 text-slate-500">{idx + 1}.</span>
+                                    <span className="truncate text-slate-900" title={it.student.name || "Unknown"}>{it.student.name || "Unknown"}</span>
+                                  </div>
+                                  <div className="shrink-0 font-medium tabular-nums text-slate-700">{it.total}</div>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        ))}
+                        {group.buckets?.U?.length > 0 && (
+                          <div className="rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2.5 space-y-2">
+                            <div className="text-xs uppercase tracking-[0.18em] text-slate-500">Unspecified</div>
+                            {group.buckets.U.map((it, idx) => (
+                              <div key={it.student.id} className="flex items-center justify-between gap-3 text-sm">
+                                <div className="min-w-0 flex flex-1 items-center gap-1.5">
+                                  <span className="shrink-0 text-slate-500">{idx + 1}.</span>
+                                  <span className="truncate text-slate-900" title={it.student.name || "Unknown"}>{it.student.name || "Unknown"}</span>
+                                </div>
+                                <div className="shrink-0 font-medium tabular-nums text-slate-700">{it.total}</div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            <section className="space-y-3">
               <h2 className="text-lg font-semibold">Top Scorers</h2>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {pbCards.map(({ station, resByGender }) => (
@@ -767,118 +880,6 @@ export default function Gamification({ user }) {
               )}
             </section>
 
-            <section className="space-y-3">
-              <div className="flex items-center justify-between gap-3 flex-wrap">
-                <h2 className="text-lg font-semibold">{groupLabel} Leaderboards</h2>
-                <div className="inline-flex rounded-lg border border-slate-200 bg-white p-1 text-sm">
-                  <button
-                    type="button"
-                    className={`rounded-md px-3 py-1.5 ${leaderboardMode === "simple" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"}`}
-                    onClick={() => setLeaderboardMode("simple")}
-                  >
-                    Simple
-                  </button>
-                  <button
-                    type="button"
-                    className={`rounded-md px-3 py-1.5 ${leaderboardMode === "detailed" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"}`}
-                    onClick={() => setLeaderboardMode("detailed")}
-                  >
-                    Detailed
-                  </button>
-                </div>
-              </div>
-              {classLeaderboards.length === 0 ? (
-                <div className="text-sm text-gray-500">No leaderboard data yet.</div>
-              ) : leaderboardMode === "simple" ? (
-                <div className="overflow-hidden rounded-xl border bg-white shadow-sm">
-                  <table className="w-full text-sm">
-                    <thead className="bg-slate-50 text-slate-600">
-                      <tr>
-                        <th className="px-4 py-3 text-left font-medium">Rank</th>
-                        <th className="px-4 py-3 text-left font-medium">{groupLabel}</th>
-                        <th className="px-4 py-3 text-right font-medium">Total Points</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {classLeaderboards.map((group, idx) => (
-                        <tr key={group.cls} className="border-t border-slate-100">
-                          <td className="px-4 py-3 text-slate-500">{idx + 1}</td>
-                          <td className="px-4 py-3 font-medium text-slate-900">{group.cls}</td>
-                          <td className="px-4 py-3 text-right font-semibold tabular-nums text-slate-900">{group.totals?.all ?? 0}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {classLeaderboards.map(group => (
-                    <div key={group.cls} className="border rounded-xl p-3 bg-white shadow-sm space-y-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="truncate font-semibold text-base text-slate-900" title={group.cls}>{group.cls}</div>
-                        <div className="rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-800">
-                          Total {group.totals?.all ?? 0}
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-3 gap-2">
-                        <div className="rounded-lg border border-slate-200 bg-slate-50/80 px-2.5 py-2">
-                          <div className="text-[11px] uppercase tracking-[0.16em] text-slate-500">Completion</div>
-                          <div className="mt-1 text-sm font-semibold text-slate-900">{Math.round(group.avgCompletion * 100)}%</div>
-                        </div>
-                        <div className="rounded-lg border border-slate-200 bg-slate-50/80 px-2.5 py-2">
-                          <div className="text-[11px] uppercase tracking-[0.16em] text-slate-500">Avg points</div>
-                          <div className="mt-1 text-sm font-semibold text-slate-900">{group.avgTotal.toFixed(1)}</div>
-                        </div>
-                        <div className="rounded-lg border border-slate-200 bg-slate-50/80 px-2.5 py-2">
-                          <div className="text-[11px] uppercase tracking-[0.16em] text-slate-500">Leads</div>
-                          <div className="mt-1 text-sm font-semibold text-slate-900">{group.stationLeads}</div>
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-                        {[
-                          { key: "M", label: "Boys" },
-                          { key: "F", label: "Girls" },
-                        ].map(section => (
-                          <div key={section.key} className="rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2.5 space-y-2">
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="text-xs uppercase tracking-[0.18em] text-slate-500">{section.label}</div>
-                              <div className="text-xs font-semibold text-slate-700">{group.totals?.[section.key] ?? 0} pts</div>
-                            </div>
-                            {(group.buckets?.[section.key] || []).length === 0 ? (
-                              <div className="text-sm text-gray-500">No scores yet</div>
-                            ) : (
-                              group.buckets[section.key].map((it, idx) => (
-                                <div key={it.student.id} className="flex items-center justify-between gap-3 text-sm">
-                                  <div className="min-w-0 flex flex-1 items-center gap-1.5">
-                                    <span className="shrink-0 text-slate-500">{idx + 1}.</span>
-                                    <span className="truncate text-slate-900" title={it.student.name || "Unknown"}>{it.student.name || "Unknown"}</span>
-                                  </div>
-                                  <div className="shrink-0 font-medium tabular-nums text-slate-700">{it.total}</div>
-                                </div>
-                              ))
-                            )}
-                          </div>
-                        ))}
-                        {group.buckets?.U?.length > 0 && (
-                          <div className="rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2.5 space-y-2">
-                            <div className="text-xs uppercase tracking-[0.18em] text-slate-500">Unspecified</div>
-                            {group.buckets.U.map((it, idx) => (
-                              <div key={it.student.id} className="flex items-center justify-between gap-3 text-sm">
-                                <div className="min-w-0 flex flex-1 items-center gap-1.5">
-                                  <span className="shrink-0 text-slate-500">{idx + 1}.</span>
-                                  <span className="truncate text-slate-900" title={it.student.name || "Unknown"}>{it.student.name || "Unknown"}</span>
-                                </div>
-                                <div className="shrink-0 font-medium tabular-nums text-slate-700">{it.total}</div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
           </>
         )}
       </div>
