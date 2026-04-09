@@ -94,6 +94,7 @@ export default function UserGuide({ user }) {
           <p className="text-sm text-gray-600">Guided workflow for NAPFA assessments. Cards show based on your access.</p>
           <nav aria-label="On this page" className="text-sm">
             <ul className="flex flex-wrap gap-3 text-blue-700">
+              <li><a href="#whats-new" className="underline">What&apos;s New</a></li>
               <li><a href="#setup" className="underline">Set Up</a></li>
               <li><a href="#run" className="underline">Conduct Assessment</a></li>
               <li><a href="#after" className="underline">After Assessment</a></li>
@@ -102,6 +103,22 @@ export default function UserGuide({ user }) {
             </ul>
           </nav>
         </header>
+
+        <section className="bg-white border rounded-lg p-4 shadow-sm space-y-3" id="whats-new">
+          <h2 className="text-lg font-semibold">What&apos;s New</h2>
+          <div className="space-y-4 text-sm text-gray-700">
+            <div>
+              <p className="font-medium">9 Apr</p>
+              <ul className="list-disc pl-5 space-y-1 mt-1">
+                <li>Session Detail roster tab now includes <span className="font-medium">A4 paper (4 cards per page, write score space)</span> for larger profile cards with handwritten station boxes.</li>
+                <li>Session Detail scores tab now supports <span className="font-medium">Import PFT</span> using the standard PFT file format, with preview, overwrite-or-keep-better options, unmatched-student reporting, and duplicate-row merging.</li>
+                <li>Challenge Hub now refreshes on a lighter 10-second polling cycle instead of live score subscriptions.</li>
+                <li>Award Calculator exports now keep station <span className="font-medium">points</span> without grade columns, fix empty-run scoring, and include <span className="font-medium">Next grade recommendation</span>.</li>
+                <li>Award Calculator now includes an <span className="font-medium">Individualised Student Report</span> download as an A5 PDF with test details, station points, award, next-grade recommendation, and training tips.</li>
+              </ul>
+            </div>
+          </div>
+        </section>
 
         <section className="space-y-3" id="setup">
           <h2 className="text-lg font-semibold">1. Set Up</h2>
@@ -192,6 +209,52 @@ export default function UserGuide({ user }) {
             )}
             {canManage && (
               <Card
+                title="Sessions"
+                desc="Create sessions, manage status, and organize class test days."
+                to="/sessions"
+                tips={["Create a session and set it to Active before score entry.", "Close the session when finished to prevent further edits.", "Use the Houses tab inside a session to assign student clans.", "Open Session Detail to access roster cards, scores import, and print/export tools."]}
+                onHowTo={(t, s) => { setHowToTitle(t); setHowToSteps(s); setHowToOpen(true); }}
+                howToSteps={[
+                  "Open Sessions and click Create Session.",
+                  "Fill in title, date, and class; save.",
+                  "Set status to Active to allow score entry.",
+                ]}
+              />
+            )}
+            {canManage && (
+              <Card
+                title="Session Houses"
+                desc="Assign student clans within a session and manage house CSVs."
+                to="/sessions"
+                cta="Open Sessions"
+                tips={["Open a session and switch to the Houses tab.", "Download the house list, edit, and upload to bulk-assign."]}
+                onHowTo={(t, s) => { setHowToTitle(t); setHowToSteps(s); setHowToOpen(true); }}
+                howToSteps={[
+                  "Open Sessions and select a session.",
+                  "Go to the Houses tab.",
+                  "Assign houses per student or use the bulk dropdown.",
+                  "Download/upload the House CSV for bulk updates.",
+                ]}
+              />
+            )}
+            {canManage && (
+              <Card
+                title="Session Cards"
+                desc="Generate profile cards and wristband formats from a specific session page."
+                to="/sessions"
+                cta="Open Sessions"
+                tips={["Open a session then choose Cards to generate PDFs.", "Use the format menu to select the most suitable print layout (including 25mm wristband).", "The profile-card menu now includes a 4-up A4 write-score format for station use."]}
+                onHowTo={(t, s) => { setHowToTitle(t); setHowToSteps(s); setHowToOpen(true); }}
+                howToSteps={[
+                  "Open Sessions and select a session.",
+                  "Click Cards and choose the required format.",
+                  "For larger handwritten score sheets, choose A4 paper (4 cards per page, write score space).",
+                  "Download/print as needed for distribution.",
+                ]}
+              />
+            )}
+            {canManage && (
+              <Card
                 title="StepWise2"
                 desc="Create Run Setup tab in Session Detail StepWise2 for station flow, enforcement, and scan timing."
                 to="/sessions"
@@ -252,42 +315,12 @@ export default function UserGuide({ user }) {
         <section className="space-y-3" id="run">
           <h2 className="text-lg font-semibold">2. Run Assessment</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {canManage && (
-              <Card
-                title="Sessions"
-                desc="Create sessions, manage status, and organize class test days."
-                to="/sessions"
-                tips={["Create a session and set it to Active before score entry.", "Close the session when finished to prevent further edits.", "Use the Houses tab inside a session to assign student clans."]}
-                onHowTo={(t, s) => { setHowToTitle(t); setHowToSteps(s); setHowToOpen(true); }}
-                howToSteps={[
-                  "Open Sessions and click Create Session.",
-                  "Fill in title, date, and class; save.",
-                  "Set status to Active to allow score entry.",
-                ]}
-              />
-            )}
-            {canManage && (
-              <Card
-                title="Session Houses"
-                desc="Assign student clans within a session and manage house CSVs."
-                to="/sessions"
-                cta="Open Sessions"
-                tips={["Open a session and switch to the Houses tab.", "Download the house list, edit, and upload to bulk-assign."]}
-                onHowTo={(t, s) => { setHowToTitle(t); setHowToSteps(s); setHowToOpen(true); }}
-                howToSteps={[
-                  "Open Sessions and select a session.",
-                  "Go to the Houses tab.",
-                  "Assign houses per student or use the bulk dropdown.",
-                  "Download/upload the House CSV for bulk updates.",
-                ]}
-              />
-            )}
             {canRecord && (
               <Card
                 title="Score Entry"
                 desc="Record students' attempts during an active session."
                 to="/add-attempt"
-                tips={["Session must be Active.", "Use Station Tools for timer/counter support and quick fill.", "Scanner now supports camera switching on supported devices."]}
+                tips={["Session must be Active.", "Use Station Tools for timer/counter support and quick fill.", "Scanner now supports camera switching on supported devices.", "Repeated saves of the same score are skipped to reduce unnecessary writes."]}
                 onHowTo={(t, s) => { setHowToTitle(t); setHowToSteps(s); setHowToOpen(true); }}
                 howToSteps={[
                   "Go to Score Entry and choose the Active session.",
@@ -303,7 +336,7 @@ export default function UserGuide({ user }) {
                 title="Score Entry (Group)"
                 desc="Load a group and enter scores for multiple students in one screen."
                 to="/add-attempt-group"
-                tips={["Session must be Active.", "Double-check both Session and Station before entering scores.", "You can load a group by list selection, manual code, or scanner."]}
+                tips={["Session must be Active.", "Double-check both Session and Station before entering scores.", "You can load a group by list selection, manual code, or scanner.", "Rows with unchanged values are skipped when saving all changes."]}
                 onHowTo={(t, s) => { setHowToTitle(t); setHowToSteps(s); setHowToOpen(true); }}
                 howToSteps={[
                   "Open Score Entry (Group) and confirm the correct active session.",
@@ -318,12 +351,13 @@ export default function UserGuide({ user }) {
                 title="Challenge Hub"
                 desc="Track top scorers and gender-split leaderboards for a session."
                 to="/gamification"
-                tips={["Select a session to view top scorers.", "Group leaderboards by class or house."]}
+                tips={["Select a session to view top scorers.", "Group leaderboards by class or house.", "The page refreshes on a timed cycle and also supports manual refresh."]}
                 onHowTo={(t, s) => { setHowToTitle(t); setHowToSteps(s); setHowToOpen(true); }}
                 howToSteps={[
                   "Open Challenge Hub.",
                   "Choose a session.",
                   "Review top scorers by station and leaderboards by class/house.",
+                  "Use Refresh if you need the latest scores immediately between polling cycles.",
                 ]}
               />
             )}
@@ -348,16 +382,16 @@ export default function UserGuide({ user }) {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {canManage && (
               <Card
-                title="PFT Calculator"
+                title="NAPFA Award Calculator"
                 desc="Compute grades and export PFT from uploads or session data."
                 to="/pft-calculator"
-                tips={["Choose auto/1.6/2.4 km depending on cohort.", "You can compute from uploaded CSVs or directly from a session."]}
+                tips={["Choose auto/1.6/2.4 km depending on cohort.", "You can compute from uploaded CSVs or directly from a session.", "Exports now include station points and a Next grade recommendation column.", "Use Individualised Student Report for A5 PDF handouts."]}
                 onHowTo={(t, s) => { setHowToTitle(t); setHowToSteps(s); setHowToOpen(true); }}
                 howToSteps={[
                   "Open PFT Calculator.",
                   "Choose source: Upload file or From Session.",
                   "Set test date and run mode (auto/1.6/2.4).",
-                  "Compute and export the results file.",
+                  "Download the combined CSV, per-class CSVs, or the Individualised Student Report PDF.",
                 ]}
               />
             )}
@@ -385,21 +419,6 @@ export default function UserGuide({ user }) {
                   "Open Audit and select school (if applicable).",
                   "Filter by type (scores, sessions, enrollments) or search.",
                   "Click session links to drilldown into details.",
-                ]}
-              />
-            )}
-            {canManage && (
-              <Card
-                title="Session Cards"
-                desc="Generate profile cards and wristband formats from a specific session page."
-                to="/sessions"
-                cta="Open Sessions"
-                tips={["Open a session then choose Cards to generate PDFs.", "Use the format menu to select the most suitable print layout (including 25mm wristband)."]}
-                onHowTo={(t, s) => { setHowToTitle(t); setHowToSteps(s); setHowToOpen(true); }}
-                howToSteps={[
-                  "Open Sessions and select a session.",
-                  "Click Cards and choose the required format.",
-                  "Download/print as needed for distribution.",
                 ]}
               />
             )}

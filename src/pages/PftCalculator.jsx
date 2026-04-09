@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { jsPDF } from 'jspdf'
 import { supabase } from '../lib/supabaseClient'
 import { fetchSessionRosterWithStudents } from '../lib/sessionRoster'
 import { evaluateNapfa, normalizeSex, secondsToMmss } from '../utils/napfaStandards'
@@ -204,6 +205,124 @@ export default function PftCalculator({ user }) {
     return level === 'Primary' ? 1.6 : 2.4
   }
 
+  function sanitizeNumberOrNull(v) {
+    const n = Number(v)
+    return Number.isFinite(n) ? n : null
+  }
+
+  function gradeRank(g) {
+    const t = String(g || '').toUpperCase()
+    return t === 'A' ? 5 : t === 'B' ? 4 : t === 'C' ? 3 : t === 'D' ? 2 : t === 'E' ? 1 : 0
+  }
+
+  function stationRecommendations(st, targetAward, { includeRun = true } = {}) {
+    const targetMinGrade = targetAward === 'Gold' ? 'C' : targetAward === 'Silver' ? 'D' : 'E'
+    const targetMinRank = gradeRank(targetMinGrade)
+    const targetPoints = targetAward === 'Gold' ? 21 : targetAward === 'Silver' ? 15 : 6
+    const defs = [
+      { key: 'situps', label: 'Sit-ups' },
+      { key: 'broad_jump_cm', label: 'Broad Jump' },
+      { key: 'sit_and_reach_cm', label: 'Sit & Reach' },
+      { key: 'pullups', label: 'Pull-ups' },
+      { key: 'shuttle_s', label: 'Shuttle Run' },
+    ]
+    if (includeRun) defs.push({ key: 'run', label: 'Run' })
+    const gradeBlockers = defs
+      .map((def) => {
+        const row = st?.[def.key]
+        return {
+          ...def,
+          rank: gradeRank(row?.grade),
+          points: row?.points ?? 0,
+          missing: !row?.grade,
+        }
+      })
+      .filter((item) => item.rank < targetMinRank)
+      .sort((a, b) => {
+        if (a.missing !== b.missing) return a.missing ? -1 : 1
+        if (a.rank !== b.rank) return a.rank - b.rank
+        return a.points - b.points
+      })
+
+    if (gradeBlockers.length > 0) return gradeBlockers.slice(0, 2).map((item) => item.label)
+
+    const total = (Object.values(st || {}).reduce((sum, row) => sum + (Number(row?.points) || 0), 0))
+    if (total < targetPoints) {
+      return defs
+        .map((def) => ({ ...def, points: st?.[def.key]?.points ?? 0 }))
+        .sort((a, b) => a.points - b.points)
+        .slice(0, 2)
+        .map((item) => item.label)
+    }
+    return []
+  }
+
+  function computeAwardSummary(st) {
+    const fiveKeys = ['situps', 'broad_jump_cm', 'sit_and_reach_cm', 'pullups', 'shuttle_s']
+    const allKeys = [...fiveKeys, 'run']
+    const hasFiveComplete = fiveKeys.every((key) => !!st?.[key]?.grade)
+    const hasRun = !!st?.run?.grade
+    const fiveTotal = fiveKeys.reduce((sum, key) => sum + (Number(st?.[key]?.points) || 0), 0)
+    const total = allKeys.reduce((sum, key) => sum + (Number(st?.[key]?.points) || 0), 0)
+    const minFive = hasFiveComplete ? Math.min(...fiveKeys.map((key) => gradeRank(st?.[key]?.grade))) : 0
+    const minAll = hasFiveComplete && hasRun ? Math.min(...allKeys.map((key) => gradeRank(st?.[key]?.grade))) : 0
+
+    let award = 'No Award'
+    if (hasFiveComplete && hasRun) {
+      if (total >= 21 && minAll >= gradeRank('C')) award = 'Gold'
+      else if (total >= 15 && minAll >= gradeRank('D')) award = 'Silver'
+      else if (total >= 6 && minAll >= gradeRank('E')) award = 'Bronze'
+    }
+
+    let recommendationBaseAward = 'No Award'
+    if (hasFiveComplete) {
+      if (fiveTotal >= 21 && minFive >= gradeRank('C')) recommendationBaseAward = 'Gold'
+      else if (fiveTotal >= 15 && minFive >= gradeRank('D')) recommendationBaseAward = 'Silver'
+      else if (fiveTotal >= 6 && minFive >= gradeRank('E')) recommendationBaseAward = 'Bronze'
+    }
+
+    let nextRecommendation = ''
+    if (hasFiveComplete && recommendationBaseAward !== 'Gold') {
+      const targetAward = recommendationBaseAward === 'Silver' ? 'Gold' : recommendationBaseAward === 'Bronze' ? 'Silver' : 'Bronze'
+      nextRecommendation = stationRecommendations(st, targetAward, { includeRun: hasRun }).join(', ')
+    }
+
+    return {
+      award,
+      totalPoints: hasRun ? total : fiveTotal,
+      nextRecommendation,
+    }
+  }
+
+  function recommendationToTips(nextRecommendation, award) {
+    const stationTips = {
+      'Sit-ups': 'Build core endurance with timed sit-up sets 2 to 3 times each week.',
+      'Broad Jump': 'Add explosive leg work such as squat jumps and standing jump drills.',
+      'Sit & Reach': 'Work on hamstring and lower-back mobility with short daily stretching.',
+      'Pull-ups': 'Train upper-body strength with assisted pull-ups, negatives, and scapular pulls.',
+      'Shuttle Run': 'Practice acceleration, turning technique, and short sprint repeats.',
+      'Run': 'Improve aerobic pacing with interval runs and one steady longer run each week.',
+    }
+    const stations = String(nextRecommendation || '')
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean)
+
+    if (stations.length > 0) {
+      return stations.map((station) => stationTips[station] || `Focus training on ${station.toLowerCase()}.`)
+    }
+    if (award === 'Gold') {
+      return [
+        'Maintain current standard with balanced weekly conditioning and recovery.',
+        'Keep one speed session and one strength session in the training week.',
+      ]
+    }
+    return [
+      'Complete all stations with valid scores before planning the next grade jump.',
+      'Focus first on consistent technique and regular weekly practice.',
+    ]
+  }
+
   async function buildRowsFromUpload() {
     const allRows = []
     for (const f of files) {
@@ -242,19 +361,39 @@ export default function PftCalculator({ user }) {
 
         let res = null
         if (sex && age != null) {
-          const measures = { situps, broad_jump_cm: broadJumpCm, sit_and_reach_cm: sitAndReachCm, pullups, shuttle_s: shuttleSec, run_seconds: runSec }
+          const measures = {
+            situps: sanitizeNumberOrNull(situps),
+            broad_jump_cm: sanitizeNumberOrNull(broadJumpCm),
+            sit_and_reach_cm: sanitizeNumberOrNull(sitAndReachCm),
+            pullups: sanitizeNumberOrNull(pullups),
+            shuttle_s: sanitizeNumberOrNull(shuttleSec),
+            run_seconds: sanitizeNumberOrNull(runSec),
+          }
           res = evaluateNapfa({ level, sex, age, run_km: runKm }, measures)
         }
         const st = res?.stations || {}
-        const total = res?.totalPoints || 0
-        const grades = [st.situps?.grade, st.broad_jump_cm?.grade, st.sit_and_reach_cm?.grade, st.pullups?.grade, st.shuttle_s?.grade, st.run?.grade]
-        const award = grades.every(g => !!g)
-          ? (total >= 21 && minRank(grades) >= rank('C')) ? 'Gold'
-            : (total >= 15 && minRank(grades) >= rank('D')) ? 'Silver'
-            : (total >= 6 && minRank(grades) >= rank('E')) ? 'Bronze'
-            : 'No Award'
-          : 'No Award'
-        allRows.push({ source: f.name, name, id, class: klass, gender: genderRaw, dob: dobRaw, attendance, testDate, runKm, situps, broadJumpCm, sitAndReachCm, pullups, shuttleSec, runRaw: runRaw && runSec != null ? secondsToMmss(runSec) : (runRaw || ''), st, total, award })
+        const summary = computeAwardSummary(st)
+        allRows.push({
+          source: f.name,
+          name,
+          id,
+          class: klass,
+          gender: genderRaw,
+          dob: dobRaw,
+          attendance,
+          testDate,
+          runKm,
+          situps,
+          broadJumpCm,
+          sitAndReachCm,
+          pullups,
+          shuttleSec,
+          runRaw: runRaw && runSec != null ? secondsToMmss(runSec) : '',
+          st,
+          total: summary.totalPoints,
+          award: summary.award,
+          nextRecommendation: summary.nextRecommendation,
+        })
       }
       appendLog({ file: f.name, headerIdx, parsed })
     }
@@ -279,7 +418,7 @@ export default function PftCalculator({ user }) {
     if (studentIds.length) {
       const { data: sc } = await supabase
         .from('scores')
-        .select('student_id,situps,pullups,broad_jump,sit_and_reach,shuttle_run')
+        .select('student_id,situps,pullups,broad_jump,sit_and_reach,shuttle_run,run_2400')
         .eq('session_id', sessionId)
       for (const row of (sc||[])) scoresMap.set(row.student_id, row)
     }
@@ -296,30 +435,51 @@ export default function PftCalculator({ user }) {
       const broadJumpCm = sc.broad_jump ?? null
       const sitAndReachCm = sc.sit_and_reach ?? null
       const shuttleSec = sc.shuttle_run ?? null
+      const runMin = sc.run_2400 ?? null
       const dobISO = s.dob || null
       const age = calcAgeAt(dobISO, testDate)
       const level = levelLabel
       const sex = normalizeSex(genderRaw)
       const runKm = resolveRunKm(age, level, mode)
-      const runSec = null
+      const runSec = runMin == null ? null : Math.round(Number(runMin) * 60)
       let res = null
       if (sex && age != null) {
-        const measures = { situps, broad_jump_cm: broadJumpCm, sit_and_reach_cm: sitAndReachCm, pullups, shuttle_s: shuttleSec, run_seconds: runSec }
+        const measures = {
+          situps: sanitizeNumberOrNull(situps),
+          broad_jump_cm: sanitizeNumberOrNull(broadJumpCm),
+          sit_and_reach_cm: sanitizeNumberOrNull(sitAndReachCm),
+          pullups: sanitizeNumberOrNull(pullups),
+          shuttle_s: sanitizeNumberOrNull(shuttleSec),
+          run_seconds: sanitizeNumberOrNull(runSec),
+        }
         res = evaluateNapfa({ level, sex, age, run_km: runKm }, measures)
       }
       const st = res?.stations || {}
-      const total = res?.totalPoints || 0
-      const grades = [st.situps?.grade, st.broad_jump_cm?.grade, st.sit_and_reach_cm?.grade, st.pullups?.grade, st.shuttle_s?.grade, st.run?.grade]
-      const award = grades.every(g => !!g)
-        ? (total >= 21 && minRank(grades) >= rank('C')) ? 'Gold'
-          : (total >= 15 && minRank(grades) >= rank('D')) ? 'Silver'
-          : (total >= 6 && minRank(grades) >= rank('E')) ? 'Bronze'
-          : 'No Award'
-        : 'No Award'
+      const summary = computeAwardSummary(st)
       const hasAny = [situps,pullups,broadJumpCm,sitAndReachCm,shuttleSec,runSec].some(v => v != null)
       const attendance = hasAny ? 'P' : ''
-      const runRaw = ''
-      allRows.push({ source: se?.title ? `Session: ${se.title}` : 'Session', name, id, class: klass, gender: genderRaw, dob: dobRaw, attendance, testDate, runKm, situps, broadJumpCm, sitAndReachCm, pullups, shuttleSec, runRaw, st, total, award })
+      const runRaw = runSec == null ? '' : secondsToMmss(runSec)
+      allRows.push({
+        source: se?.title ? `Session: ${se.title}` : 'Session',
+        name,
+        id,
+        class: klass,
+        gender: genderRaw,
+        dob: dobRaw,
+        attendance,
+        testDate,
+        runKm,
+        situps,
+        broadJumpCm,
+        sitAndReachCm,
+        pullups,
+        shuttleSec,
+        runRaw,
+        st,
+        total: summary.totalPoints,
+        award: summary.award,
+        nextRecommendation: summary.nextRecommendation,
+      })
     }
     return allRows
   }
@@ -328,7 +488,7 @@ export default function PftCalculator({ user }) {
     const headers = [
       'Student ID','Name','Class','Gender','DOB','Attendance','PFT Test Date','Run Distance (km)',
       'Sit-ups','Broad Jump (cm)','Sit & Reach (cm)','Pull-ups','Shuttle (s)','Run (MM:SS)',
-      'Sit-ups Grade','Sit-ups Points','Broad Jump Grade','Broad Jump Points','Sit & Reach Grade','Sit & Reach Points','Pull-ups Grade','Pull-ups Points','Shuttle Grade','Shuttle Points','Run Grade','Run Points','Total Points','Award','Source'
+      'Sit-ups Points','Broad Jump Points','Sit & Reach Points','Pull-ups Points','Shuttle Points','Run Points','Total Points','Award','Next grade recommendation','Source'
     ]
     const lines = [headers.map(csvCell).join(',')]
     for (const r of rows) {
@@ -348,13 +508,13 @@ export default function PftCalculator({ user }) {
         csvCountCell(r.pullups),
         r.shuttleSec ?? '',
         r.runRaw ?? '',
-        st.situps?.grade || '', st.situps?.points ?? '',
-        st.broad_jump_cm?.grade || '', st.broad_jump_cm?.points ?? '',
-        st.sit_and_reach_cm?.grade || '', st.sit_and_reach_cm?.points ?? '',
-        st.pullups?.grade || '', st.pullups?.points ?? '',
-        st.shuttle_s?.grade || '', st.shuttle_s?.points ?? '',
-        st.run?.grade || '', st.run?.points ?? '',
-        r.total ?? '', r.award || '',
+        st.situps?.points ?? '',
+        st.broad_jump_cm?.points ?? '',
+        st.sit_and_reach_cm?.points ?? '',
+        st.pullups?.points ?? '',
+        st.shuttle_s?.points ?? '',
+        st.run?.points ?? '',
+        r.total ?? '', r.award || '', r.nextRecommendation || '',
         r.source || ''
       ].map(csvCell).join(','))
     }
@@ -369,6 +529,116 @@ export default function PftCalculator({ user }) {
     document.body.appendChild(a)
     a.click()
     a.remove()
+  }
+
+  function buildIndividualReportPdf(rows) {
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a5' })
+    const pageWidth = doc.internal.pageSize.getWidth()
+    const pageHeight = doc.internal.pageSize.getHeight()
+    const margin = 10
+    const contentWidth = pageWidth - (margin * 2)
+
+    const stationRows = [
+      { label: 'Sit-ups', value: (row) => row.situps ?? '', points: (st) => st.situps?.points ?? '' },
+      { label: 'Broad Jump', value: (row) => row.broadJumpCm ?? '', points: (st) => st.broad_jump_cm?.points ?? '' },
+      { label: 'Sit & Reach', value: (row) => row.sitAndReachCm ?? '', points: (st) => st.sit_and_reach_cm?.points ?? '' },
+      { label: 'Pull-ups', value: (row) => row.pullups ?? '', points: (st) => st.pullups?.points ?? '' },
+      { label: 'Shuttle Run', value: (row) => row.shuttleSec ?? '', points: (st) => st.shuttle_s?.points ?? '' },
+      { label: 'Run', value: (row) => row.runRaw ?? '', points: (st) => st.run?.points ?? '' },
+    ]
+
+    rows.forEach((row, index) => {
+      if (index > 0) doc.addPage('a5', 'portrait')
+      const st = row.st || {}
+      const tips = recommendationToTips(row.nextRecommendation, row.award)
+      let y = margin
+
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(15)
+      doc.text('Individualised Student Report', margin, y)
+      y += 5
+
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(8.5)
+      doc.setTextColor(90, 103, 120)
+      doc.text(String(row.source || 'Award Calculator'), margin, y)
+      doc.setTextColor(15, 23, 42)
+      y += 7
+
+      doc.setDrawColor(203, 213, 225)
+      doc.roundedRect(pageWidth - 44, margin, 34, 9, 4, 4)
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(10)
+      doc.text(String(row.award || 'No Award'), pageWidth - 27, margin + 5.8, { align: 'center' })
+
+      const metaRows = [
+        ['Student ID', row.id],
+        ['Name', row.name],
+        ['Class', row.class],
+        ['Gender', row.gender],
+        ['DOB', row.dob],
+        ['Attendance', row.attendance],
+        ['PFT Test Date', fmtDdMmYyyy(row.testDate)],
+        ['Run Distance', row.runKm ? `${row.runKm} km` : ''],
+        ['Total Points', row.total],
+        ['Next grade recommendation', row.nextRecommendation || '-'],
+      ]
+
+      doc.setFontSize(8)
+      metaRows.forEach(([label, value]) => {
+        doc.setFont('helvetica', 'bold')
+        doc.text(`${label}:`, margin, y)
+        doc.setFont('helvetica', 'normal')
+        const lines = doc.splitTextToSize(String(value ?? ''), 90)
+        doc.text(lines, 48, y)
+        y += Math.max(4.5, lines.length * 3.6)
+      })
+
+      y += 2
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(9)
+      doc.text('Scores', margin, y)
+      y += 4
+
+      const col1 = margin
+      const col2 = margin + 56
+      const col3 = pageWidth - margin - 20
+      doc.setFillColor(226, 232, 240)
+      doc.rect(margin, y, contentWidth, 6, 'F')
+      doc.setFontSize(8)
+      doc.text('Station', col1 + 2, y + 4.2)
+      doc.text('Recorded Score', col2 + 2, y + 4.2)
+      doc.text('Points', col3 + 2, y + 4.2)
+      y += 6
+
+      doc.setFont('helvetica', 'normal')
+      stationRows.forEach((station) => {
+        doc.rect(margin, y, contentWidth, 6)
+        doc.line(col2, y, col2, y + 6)
+        doc.line(col3, y, col3, y + 6)
+        doc.text(String(station.label), col1 + 2, y + 4.2)
+        doc.text(String(station.value(row) ?? ''), col2 + 2, y + 4.2)
+        doc.text(String(station.points(st) ?? ''), col3 + 2, y + 4.2)
+        y += 6
+      })
+
+      y += 4
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(9)
+      doc.text('Training Tips', margin, y)
+      y += 4
+
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(8)
+      tips.forEach((tip) => {
+        const lines = doc.splitTextToSize(`• ${tip}`, contentWidth - 2)
+        if (y + (lines.length * 3.5) > pageHeight - margin) return
+        doc.text(lines, margin + 1, y)
+        y += lines.length * 3.5 + 1.2
+      })
+    })
+
+    return doc
   }
 
   async function handleProcessPerClass() {
@@ -426,6 +696,26 @@ export default function PftCalculator({ user }) {
     }
   }
 
+  async function handleDownloadIndividualReport() {
+    if (source === 'upload' && !files.length) return
+    if (source === 'session' && !sessionId) return
+    setBusy(true)
+    setLog([])
+    try {
+      const allRows = source === 'upload' ? await buildRowsFromUpload() : await buildRowsFromSession()
+      allRows.sort((a,b) => (String(a.class||'').localeCompare(String(b.class||'')) || String(a.name||'').localeCompare(String(b.name||''))))
+      const ts = new Date()
+      const baseName = (source === 'session' && sessionMeta)
+        ? `PFT_Individualised_Report_${sessionMeta.title || 'Session'}_${String(ts.getFullYear())}${String(ts.getMonth()+1).padStart(2,'0')}${String(ts.getDate()).padStart(2,'0')}`
+        : `PFT_Individualised_Report_${String(ts.getFullYear())}${String(ts.getMonth()+1).padStart(2,'0')}${String(ts.getDate()).padStart(2,'0')}`
+      buildIndividualReportPdf(allRows).save(`${baseName}.pdf`)
+    } catch (e) {
+      appendLog({ error: e?.message || String(e) })
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <div className="p-4 max-w-5xl mx-auto">
       <h1 className="text-2xl font-bold mb-3">NAPFA Award Score Calculator</h1>
@@ -471,7 +761,7 @@ export default function PftCalculator({ user }) {
           </div>
         </div>
         <div className="border-t border-slate-200" />
-        <div className="text-sm font-semibold text-slate-700">Calculation Method</div>
+        <div className="text-sm font-semibold text-slate-700">Award Calculator</div>
         <div className="text-sm">
           <div className="inline-flex rounded-lg bg-slate-100 p-1">
             <button
@@ -503,6 +793,7 @@ export default function PftCalculator({ user }) {
             <div className="flex items-center gap-2">
               <button onClick={handleProcess} disabled={!files.length || busy || !levelLabel} className="px-4 py-2 bg-blue-600 text-white rounded disabled:opacity-60">{busy ? 'Processing…' : 'Download (All Students)'}</button>
               <button onClick={handleProcessPerClass} disabled={!files.length || busy || !levelLabel} className="px-4 py-2 bg-blue-600/90 hover:bg-blue-600 text-white rounded disabled:opacity-60">{busy ? 'Processing…' : 'Download (Per Class)'}</button>
+              <button onClick={handleDownloadIndividualReport} disabled={!files.length || busy || !levelLabel} className="px-4 py-2 bg-emerald-600/90 hover:bg-emerald-600 text-white rounded disabled:opacity-60">{busy ? 'Processing…' : 'Individualised Student Report'}</button>
               <span className="text-sm text-slate-600">{files.length ? `${files.length} file(s) selected` : 'No files selected'}</span>
             </div>
           </>
@@ -521,6 +812,7 @@ export default function PftCalculator({ user }) {
             <div className="flex items-center gap-2">
               <button onClick={handleProcess} disabled={!sessionId || busy || !levelLabel} className="px-4 py-2 bg-blue-600 text-white rounded disabled:opacity-60">{busy ? 'Processing…' : 'Download (All Students)'}</button>
               <button onClick={handleProcessPerClass} disabled={!sessionId || busy || !levelLabel} className="px-4 py-2 bg-blue-600/90 hover:bg-blue-600 text-white rounded disabled:opacity-60">{busy ? 'Processing…' : 'Download (Per Class)'}</button>
+              <button onClick={handleDownloadIndividualReport} disabled={!sessionId || busy || !levelLabel} className="px-4 py-2 bg-emerald-600/90 hover:bg-emerald-600 text-white rounded disabled:opacity-60">{busy ? 'Processing…' : 'Individualised Student Report'}</button>
             </div>
           </>
         )}
@@ -534,11 +826,3 @@ export default function PftCalculator({ user }) {
   )
 }
 
-function rank(g) {
-  const t = String(g||'').toUpperCase()
-  return t === 'A' ? 5 : t === 'B' ? 4 : t === 'C' ? 3 : t === 'D' ? 2 : t === 'E' ? 1 : 0
-}
-function minRank(grades) {
-  const r = grades.map(rank)
-  return r.length ? Math.min(...r) : 0
-}

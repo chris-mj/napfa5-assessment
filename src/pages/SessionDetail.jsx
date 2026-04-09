@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import AttemptEditor from "../components/AttemptEditor";
 import { jsPDF } from "jspdf";
 import { drawBarcode } from "../utils/barcode";
@@ -11,6 +11,7 @@ import { fmtRun } from "../lib/scores";
 import { fetchSessionRosterWithStudents } from "../lib/sessionRoster";
 import { evaluateIppt3, awardForTotal } from "../utils/ippt3Standards";
 import { evaluateNapfa } from "../utils/napfaStandards";
+import { parseNapfaCsv } from "../utils/napfaCsv";
 import RosterDualList from "../components/RosterDualList";
 import SessionHouses from "../components/SessionHouses";
 import SessionGroups from "../components/SessionGroups";
@@ -20,6 +21,49 @@ const RUN_DISTANCE_PRESETS = [1600, 2400, 3200, 5000, 10000];
 const RESET_RUN_ENDPOINT = import.meta.env.DEV
     ? 'http://localhost:3000/api/run/resetConfig'
     : 'https://napfa5-assessment.vercel.app/api/run/resetConfig';
+const NAPFA_IMPORT_FIELDS = ['situps', 'broad_jump', 'sit_and_reach', 'pullups', 'shuttle_run', 'run_2400'];
+const PFT_IMPORT_PREVIEW_LIMIT = 50;
+
+function normalizeImportedScoreValue(key, value) {
+    if (value == null || value === "") return null;
+    const num = Number(value);
+    if (!Number.isFinite(num)) return null;
+    return key === 'shuttle_run' ? Number(num.toFixed(1)) : Number(num.toFixed(2));
+}
+
+function isImportedScoreBetter(key, incoming, existing) {
+    if (incoming == null) return false;
+    if (existing == null) return true;
+    if (key === 'shuttle_run' || key === 'run_2400') return incoming < existing;
+    return incoming > existing;
+}
+
+function mergeImportedRowsByBest(rows) {
+    const byIdentifier = new Map();
+    const duplicateCounts = new Map();
+    rows.forEach((row) => {
+        const id = normalizeStudentId(row?.id || "");
+        if (!id) return;
+        const existing = byIdentifier.get(id);
+        if (!existing) {
+            byIdentifier.set(id, { ...row, id });
+            duplicateCounts.set(id, 1);
+            return;
+        }
+        duplicateCounts.set(id, (duplicateCounts.get(id) || 1) + 1);
+        const merged = { ...existing };
+        NAPFA_IMPORT_FIELDS.forEach((key) => {
+            const incoming = normalizeImportedScoreValue(key, row[key]);
+            const current = normalizeImportedScoreValue(key, merged[key]);
+            if (isImportedScoreBetter(key, incoming, current)) merged[key] = incoming;
+        });
+        byIdentifier.set(id, merged);
+    });
+    return {
+        rows: Array.from(byIdentifier.values()),
+        duplicateCount: Array.from(duplicateCounts.values()).filter((count) => count > 1).length,
+    };
+}
 
 function gradeToRank(g) {
     if (!g) return 0;
@@ -397,6 +441,13 @@ export default function SessionDetail({ user }) {
     const [massEditCancelOpen, setMassEditCancelOpen] = useState(false);
     const [massEditSaveOpen, setMassEditSaveOpen] = useState(false);
     const [completedScoresDialogOpen, setCompletedScoresDialogOpen] = useState(false);
+    const [pftImportOpen, setPftImportOpen] = useState(false);
+    const [pftImportBusy, setPftImportBusy] = useState(false);
+    const [pftImportErr, setPftImportErr] = useState("");
+    const [pftImportPreview, setPftImportPreview] = useState(null);
+    const [pftImportFileName, setPftImportFileName] = useState("");
+    const [pftImportCsvText, setPftImportCsvText] = useState("");
+    const [pftImportMode, setPftImportMode] = useState('keep_better');
     const [statusCompleteConfirmOpen, setStatusCompleteConfirmOpen] = useState(false);
     const [pendingStatusChange, setPendingStatusChange] = useState(null);
     const [filterClass, setFilterClass] = useState("");
@@ -1352,6 +1403,206 @@ export default function SessionDetail({ user }) {
         setScoresByStudent(map);
     };
 
+    const closePftImportModal = () => {
+        if (pftImportBusy) return;
+        setPftImportOpen(false);
+        setPftImportErr("");
+        setPftImportPreview(null);
+        setPftImportFileName("");
+        setPftImportCsvText("");
+        setPftImportMode('keep_better');
+    };
+
+    const buildPftImportPreview = useCallback((csvText, overwriteAll) => {
+        const parsed = parseNapfaCsv(csvText, {
+            academicYear: session?.session_date ? new Date(session.session_date).getFullYear() : null,
+            schoolId: membership?.school_id || null,
+        });
+        const merged = mergeImportedRowsByBest(parsed.rows || []);
+        const rosterByIdentifier = new Map((sortedRoster || []).map((student) => [normalizeStudentId(student.student_identifier || ""), student]));
+        const previewRows = [];
+        const applyRows = [];
+        let unmatchedCount = 0;
+        let unchangedCount = 0;
+        let worseCount = 0;
+
+        merged.rows.forEach((row) => {
+            const rosterStudent = rosterByIdentifier.get(normalizeStudentId(row.id || ""));
+                if (!rosterStudent) {
+                    unmatchedCount += 1;
+                    if (previewRows.length < PFT_IMPORT_PREVIEW_LIMIT) {
+                        previewRows.push({
+                            id: row.id,
+                            name: row.name || "-",
+                            className: row.class || "-",
+                            action: "Skip",
+                        reason: "Student not in session roster",
+                    });
+                }
+                return;
+            }
+
+            const existing = scoresByStudent.get(rosterStudent.id) || {};
+            const nextRow = {
+                session_id: id,
+                student_id: rosterStudent.id,
+                situps: normalizeImportedScoreValue('situps', existing.situps),
+                broad_jump: normalizeImportedScoreValue('broad_jump', existing.broad_jump),
+                sit_and_reach: normalizeImportedScoreValue('sit_and_reach', existing.sit_and_reach),
+                pullups: normalizeImportedScoreValue('pullups', existing.pullups),
+                shuttle_run: normalizeImportedScoreValue('shuttle_run', existing.shuttle_run),
+                run_2400: normalizeImportedScoreValue('run_2400', existing.run_2400),
+            };
+
+            const changedStations = [];
+            let skippedForWorse = 0;
+            let skippedForSame = 0;
+            NAPFA_IMPORT_FIELDS.forEach((key) => {
+                const incoming = normalizeImportedScoreValue(key, row[key]);
+                if (incoming == null) return;
+                const current = normalizeImportedScoreValue(key, nextRow[key]);
+                if (!overwriteAll && !isImportedScoreBetter(key, incoming, current)) {
+                    if (current === incoming) skippedForSame += 1;
+                    else skippedForWorse += 1;
+                    return;
+                }
+                if (current === incoming) {
+                    skippedForSame += 1;
+                    return;
+                }
+                nextRow[key] = incoming;
+                changedStations.push(key);
+            });
+
+            if (changedStations.length === 0) {
+                unchangedCount += skippedForSame > 0 && skippedForWorse === 0 ? 1 : 0;
+                worseCount += skippedForWorse > 0 ? 1 : 0;
+                if (previewRows.length < PFT_IMPORT_PREVIEW_LIMIT) {
+                    previewRows.push({
+                        id: normalizeStudentId(rosterStudent.student_identifier || ""),
+                        name: rosterStudent.name || row.name || "-",
+                        className: rosterStudent.class || "-",
+                        action: "Skip",
+                        reason: skippedForWorse > 0 ? "Imported scores were not better" : "No score changes",
+                    });
+                }
+                return;
+            }
+
+            applyRows.push(nextRow);
+            if (previewRows.length < PFT_IMPORT_PREVIEW_LIMIT) {
+                previewRows.push({
+                    id: normalizeStudentId(rosterStudent.student_identifier || ""),
+                    name: rosterStudent.name || row.name || "-",
+                    className: rosterStudent.class || "-",
+                    action: "Import",
+                    reason: changedStations.join(", "),
+                });
+            }
+        });
+
+        return {
+            parsedRows: parsed.rows.length,
+            parseErrors: parsed.errors || [],
+            duplicateRows: merged.duplicateCount,
+            unmatchedCount,
+            unchangedCount,
+            worseCount,
+            rowsToImport: applyRows.length,
+            previewRows,
+            applyRows,
+        };
+    }, [id, membership?.school_id, scoresByStudent, sortedRoster, session?.session_date]);
+
+    const downloadPftImportSummary = () => {
+        if (!pftImportPreview) return;
+        const csvCell = (value) => {
+            const text = value == null ? '' : String(value);
+            return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+        };
+        const lines = [
+            ['File', pftImportFileName || ''].map(csvCell).join(','),
+            ['Mode', pftImportMode === 'overwrite_all' ? 'Overwrite imported scores' : 'Keep better score only'].map(csvCell).join(','),
+            ['Parsed rows', pftImportPreview.parsedRows].map(csvCell).join(','),
+            ['Rows to import', pftImportPreview.rowsToImport].map(csvCell).join(','),
+            ['Unmatched', pftImportPreview.unmatchedCount].map(csvCell).join(','),
+            ['Duplicate source IDs', pftImportPreview.duplicateRows].map(csvCell).join(','),
+            ['No changes', pftImportPreview.unchangedCount].map(csvCell).join(','),
+            ['Worse skipped', pftImportPreview.worseCount].map(csvCell).join(','),
+            ['Parse errors', pftImportPreview.parseErrors.length].map(csvCell).join(','),
+            '',
+            ['Preview rows', `Showing first ${PFT_IMPORT_PREVIEW_LIMIT} only`].map(csvCell).join(','),
+            ['ID', 'Name', 'Class', 'Action', 'Detail'].map(csvCell).join(','),
+            ...pftImportPreview.previewRows.map((row) => [
+                row.id,
+                row.name,
+                row.className,
+                row.action,
+                row.reason,
+            ].map(csvCell).join(',')),
+        ];
+        if (pftImportPreview.parseErrors.length) {
+            lines.push('');
+            lines.push(['Parse error row', 'Message'].map(csvCell).join(','));
+            pftImportPreview.parseErrors.forEach((item) => {
+                lines.push([item.row, item.message].map(csvCell).join(','));
+            });
+        }
+        const blob = new Blob([lines.join('\n') + '\n'], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `pft_import_preview_${Date.now()}.csv`;
+        link.click();
+        URL.revokeObjectURL(url);
+    };
+
+    const handlePftImportFile = async (file) => {
+        if (!file) return;
+        if (isIppt3) {
+            setPftImportErr("PFT CSV import currently supports NAPFA-5 sessions only.");
+            return;
+        }
+        setPftImportErr("");
+        setPftImportPreview(null);
+        setPftImportFileName(file.name || "");
+        try {
+            const text = await file.text();
+            setPftImportCsvText(text);
+            setPftImportPreview(buildPftImportPreview(text, pftImportMode === 'overwrite_all'));
+        } catch (err) {
+            setPftImportErr(err.message || "Failed to parse PFT CSV.");
+        }
+    };
+
+    const applyPftImport = async () => {
+        if (!pftImportPreview) return;
+        if (!pftImportPreview.applyRows.length) {
+            setPftImportErr("No score changes to import.");
+            return;
+        }
+        setPftImportBusy(true);
+        setPftImportErr("");
+        try {
+            const chunkSize = 200;
+            for (let i = 0; i < pftImportPreview.applyRows.length; i += chunkSize) {
+                const chunk = pftImportPreview.applyRows.slice(i, i + chunkSize);
+                const { error: upsertErr } = await supabase
+                    .from('scores')
+                    .upsert(chunk, { onConflict: 'session_id,student_id' });
+                if (upsertErr) throw upsertErr;
+            }
+            await loadScoresMap();
+            await loadScoresCount();
+            setFlash(`Imported scores for ${pftImportPreview.rowsToImport} roster student(s).`);
+            closePftImportModal();
+        } catch (err) {
+            setPftImportErr(err.message || "Failed to import scores.");
+        } finally {
+            setPftImportBusy(false);
+        }
+    };
+
     // Responsive scores table page size (100 desktop, 40 mobile)
     useEffect(() => {
         const calc = () => setScoresPageSize(window.innerWidth < 768 ? 40 : 100);
@@ -1371,6 +1622,16 @@ export default function SessionDetail({ user }) {
         const timer = setTimeout(() => setRunConfigFlash(""), 3500);
         return () => clearTimeout(timer);
     }, [runConfigFlash]);
+
+    useEffect(() => {
+        if (!pftImportCsvText) return;
+        try {
+            setPftImportPreview(buildPftImportPreview(pftImportCsvText, pftImportMode === 'overwrite_all'));
+            setPftImportErr("");
+        } catch (err) {
+            setPftImportErr(err.message || "Failed to rebuild PFT import preview.");
+        }
+    }, [buildPftImportPreview, pftImportCsvText, pftImportMode]);
 
     const handleEditToggle = () => {
         if (!session) return;
@@ -2404,6 +2665,174 @@ export default function SessionDetail({ user }) {
                 return;
             }
 
+            if (format === 'a4_score_sheet_4up') {
+                const scoreDoc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+                const pageW = 210;
+                const pageH = 297;
+                const margin = 10;
+                const cols = 2;
+                const rows = 2;
+                const cellW = (pageW - margin * 2) / cols;
+                const cellH = (pageH - margin * 2) / rows;
+                const perPage = cols * rows;
+                const qrSize = 20;
+                const bcCanvas = document.createElement('canvas');
+                const titleLine = String(session?.title || "");
+                const schoolLine = String(schoolName || "");
+                const stationLines = (session?.assessment_type || 'NAPFA5') === 'IPPT3'
+                    ? ['Sit-ups', 'Push-ups', 'Run']
+                    : ['Sit-ups', 'Broad Jump', 'Sit & Reach', 'Pull-ups', 'Shuttle Run', 'Run'];
+
+                const truncateToWidth = (text, maxW, fontSize) => {
+                    if (!text) return '';
+                    scoreDoc.setFontSize(fontSize);
+                    const ellipsis = '...';
+                    let t = String(text);
+                    if (scoreDoc.getTextWidth(t) <= maxW) return t;
+                    while (t.length > 0 && scoreDoc.getTextWidth(t + ellipsis) > maxW) t = t.slice(0, -1);
+                    return t.length ? (t + ellipsis) : ellipsis;
+                };
+
+                const wrapNameTwoLines = (text, maxW, fontSize) => {
+                    const raw = String(text || '').trim();
+                    if (!raw) return ['', ''];
+                    scoreDoc.setFontSize(fontSize);
+                    const words = raw.split(/\s+/).filter(Boolean);
+                    let line1 = '';
+                    let i = 0;
+                    for (; i < words.length; i++) {
+                        const candidate = line1 ? `${line1} ${words[i]}` : words[i];
+                        if (scoreDoc.getTextWidth(candidate) <= maxW) line1 = candidate;
+                        else break;
+                    }
+                    if (!line1) {
+                        line1 = truncateToWidth(words[0], maxW, fontSize);
+                        i = 1;
+                    }
+                    const rest = words.slice(i).join(' ');
+                    const line2 = rest ? truncateToWidth(rest, maxW, fontSize) : '';
+                    return [line1, line2];
+                };
+
+                const drawPageGuides = () => {
+                    scoreDoc.setDrawColor(232);
+                    scoreDoc.setLineWidth(0.15);
+                    for (let c = 0; c <= cols; c++) {
+                        const x = margin + c * cellW;
+                        scoreDoc.line(x, margin, x, pageH - margin);
+                    }
+                    for (let r = 0; r <= rows; r++) {
+                        const y = margin + r * cellH;
+                        scoreDoc.line(margin, y, pageW - margin, y);
+                    }
+                };
+
+                for (let i = 0; i < list.length; i++) {
+                    const idxInPage = i % perPage;
+                    if (i > 0 && idxInPage === 0) scoreDoc.addPage('a4', 'portrait');
+                    if (idxInPage === 0) drawPageGuides();
+
+                    const s = list[i];
+                    const idNorm = normalizeStudentId(s.student_identifier);
+                    const col = idxInPage % cols;
+                    const row = Math.floor(idxInPage / cols);
+                    const x0 = margin + col * cellW;
+                    const y0 = margin + row * cellH;
+
+                    const cardX = x0 + 4;
+                    const cardY = y0 + 4;
+                    const cardW = cellW - 8;
+                    const cardH = cellH - 8;
+
+                    scoreDoc.setDrawColor(170);
+                    scoreDoc.setLineWidth(0.3);
+                    scoreDoc.rect(cardX, cardY, cardW, cardH);
+
+                    const qrX = cardX + cardW - qrSize - 5;
+                    const qrY = cardY + 5;
+                    const textX = cardX + 5;
+                    const textW = qrX - textX - 4;
+
+                    const schoolLabel = truncateToWidth(schoolLine, textW, 8.5);
+                    const sessionLabel = truncateToWidth(titleLine, textW, 8.5);
+                    const idLabel = truncateToWidth(idNorm, textW, 13);
+                    const [nameLine1, nameLine2] = wrapNameTwoLines(s.name || '', textW, 11.5);
+                    const classLabel = truncateToWidth(s.class || '', textW, 10.5);
+
+                    scoreDoc.setFontSize(8.5);
+                    if (schoolLabel) scoreDoc.text(schoolLabel, textX, cardY + 8);
+                    if (sessionLabel) scoreDoc.text(sessionLabel, textX, cardY + 12);
+                    scoreDoc.setFontSize(13);
+                    if (idLabel) scoreDoc.text(idLabel, textX, cardY + 20);
+                    scoreDoc.setFontSize(11.5);
+                    if (nameLine1) scoreDoc.text(nameLine1, textX, cardY + 28);
+                    if (nameLine2) scoreDoc.text(nameLine2, textX, cardY + 33);
+                    scoreDoc.setFontSize(10.5);
+                    if (classLabel) scoreDoc.text(classLabel, textX, cardY + (nameLine2 ? 40 : 35));
+
+                    try {
+                        const qrUrl = await drawQrDataUrl(idNorm, 220, 'M', 1);
+                        scoreDoc.addImage(qrUrl, 'PNG', qrX, qrY, qrSize, qrSize);
+                    } catch {}
+
+                    const bcX = cardX + 5;
+                    const bcY = cardY + 47;
+                    const bcW = cardW - 10;
+                    const bcH = 13;
+                    try {
+                        drawBarcode(bcCanvas, idNorm, {
+                            format: 'CODE128',
+                            width: 1.5,
+                            height: 40,
+                            margin: 8,
+                            displayValue: false,
+                        });
+                        const bcUrl = bcCanvas.toDataURL('image/png');
+                        scoreDoc.addImage(bcUrl, 'PNG', bcX, bcY, bcW, bcH);
+                    } catch {}
+                    scoreDoc.setFontSize(9.5);
+                    scoreDoc.text(truncateToWidth(idNorm, bcW, 9.5), bcX + (bcW / 2), bcY + bcH + 4, { align: 'center' });
+
+                    const scoreAreaTop = bcY + bcH + 10;
+                    const rowGap = 10.5;
+                    const labelW = 30;
+                    const boxX = cardX + labelW + 10;
+                    const boxW = cardW - labelW - 15;
+                    scoreDoc.setFontSize(10);
+                    stationLines.forEach((label, idx) => {
+                        const y = scoreAreaTop + idx * rowGap;
+                        scoreDoc.text(label, textX, y);
+                        scoreDoc.rect(boxX, y - 5, boxW, 7);
+                    });
+                }
+
+                const d = new Date(session.session_date);
+                const dd = String(d.getDate()).padStart(2, '0');
+                const mm = String(d.getMonth() + 1).padStart(2, '0');
+                const yyyy = d.getFullYear();
+                const ddmmyyyy = `${dd}${mm}${yyyy}`;
+                const safeTitle = String(session?.title || 'session')
+                    .trim()
+                    .replace(/[\\/:*?"<>|]+/g, '')
+                    .replace(/\s+/g, '_');
+                const outFile = `${safeTitle}_${ddmmyyyy}_a4_score_sheet_4up.pdf`;
+                scoreDoc.save(outFile);
+                try {
+                    const validUuid = (v) => typeof v === 'string' && /[0-9a-fA-F-]{36}/.test(v);
+                    const sid = validUuid(id) ? id : null;
+                    const sch = validUuid(membership?.school_id) ? membership.school_id : null;
+                    await supabase.rpc('audit_log_event', {
+                        p_entity_type: 'profile_cards',
+                        p_action: 'download',
+                        p_entity_id: null,
+                        p_school_id: sch,
+                        p_session_id: sid,
+                        p_details: { file: outFile, count: list.length, format: 'a4_score_sheet_4up' }
+                    });
+                } catch {}
+                return;
+            }
+
             const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
             const pageW = 210, pageH = 297;
             const margin = 8; // add small printer-safe margins
@@ -3423,6 +3852,17 @@ export default function SessionDetail({ user }) {
                             </div>
                             {canManage && (
                                 <div className="flex gap-2">
+                                    {!isIppt3 && (
+                                        <button
+                                            onClick={() => {
+                                                setPftImportOpen(true);
+                                                setPftImportErr("");
+                                            }}
+                                            className="text-xs px-3 py-1.5 border rounded bg-white hover:bg-gray-50"
+                                        >
+                                            Import PFT
+                                        </button>
+                                    )}
                                     {!massEditMode ? (
                                         <button
                                             onClick={() => {
@@ -3466,7 +3906,7 @@ export default function SessionDetail({ user }) {
                                         onClick={exportPftAllClasses}
                                         className="text-xs px-3 py-1.5 border rounded bg-white hover:bg-gray-50"
                                     >
-                                        Export PFT (All Classes)
+                                        Export PFT (All classes in 1 sheet)
                                     </button>
                                     <button
                                         onClick={exportPftPerClass}
@@ -3687,6 +4127,195 @@ export default function SessionDetail({ user }) {
                         />
                     </div>
                 </section>
+            )}
+            {pftImportOpen && (
+                <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-lg w-full max-w-5xl border shadow-xl max-h-[90vh] flex flex-col">
+                        <div className="px-4 py-3 border-b flex items-center justify-between gap-2">
+                            <div className="font-medium">Import PFT Scores</div>
+                            <button
+                                type="button"
+                                className="px-2 py-1 border rounded hover:bg-gray-50 text-sm"
+                                onClick={closePftImportModal}
+                                disabled={pftImportBusy}
+                            >
+                                Close
+                            </button>
+                        </div>
+                        <div className="p-4 space-y-4 overflow-y-auto">
+                            <div className="text-sm text-gray-600">
+                                Use the cockpit PFT CSV in the same format as the export. Students not already in this session roster will be skipped.
+                            </div>
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                <div className="flex items-center gap-3 flex-wrap">
+                                    <input
+                                        type="file"
+                                        accept=".csv,text/csv"
+                                        onChange={(e) => handlePftImportFile(e.target.files?.[0] || null)}
+                                        disabled={pftImportBusy}
+                                    />
+                                    {pftImportFileName && (
+                                        <span className="text-xs text-gray-500">{pftImportFileName}</span>
+                                    )}
+                                </div>
+                            </div>
+                            <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-3 space-y-3">
+                                <div className="text-sm font-medium text-slate-900">Import Rules</div>
+                                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px]">
+                                    <div className="space-y-2 text-sm text-slate-700">
+                                        <label className="flex items-start gap-2">
+                                            <input
+                                                type="radio"
+                                                name="pft-import-mode"
+                                                value="keep_better"
+                                                checked={pftImportMode === 'keep_better'}
+                                                onChange={(e) => setPftImportMode(e.target.value)}
+                                                disabled={pftImportBusy || !pftImportCsvText}
+                                                className="mt-0.5"
+                                            />
+                                            <span>
+                                                Keep better score only <span className="text-xs text-green-700">(Recommended)</span>
+                                                <div className="text-xs text-slate-500">Higher is better for reps/distance. Lower is better for shuttle/run.</div>
+                                            </span>
+                                        </label>
+                                        <label className="flex items-start gap-2">
+                                            <input
+                                                type="radio"
+                                                name="pft-import-mode"
+                                                value="overwrite_all"
+                                                checked={pftImportMode === 'overwrite_all'}
+                                                onChange={(e) => setPftImportMode(e.target.value)}
+                                                disabled={pftImportBusy || !pftImportCsvText}
+                                                className="mt-0.5"
+                                            />
+                                            <span>
+                                                Uploaded PFT will fully overwrite all scores
+                                                <div className="text-xs text-slate-500">Imported values replace existing scores for stations that have values in the CSV.</div>
+                                            </span>
+                                        </label>
+                                    </div>
+                                    <div>
+                                        <div className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500 mb-2">Notes</div>
+                                        <ul className="list-disc pl-4 space-y-1 text-[11px] leading-4 text-slate-600">
+                                            <li>Students not in session roster will be skipped.</li>
+                                            <li>Blank CSV cells do not clear existing scores.</li>
+                                            <li>Duplicate CSV rows are merged by best station result.</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+                            {pftImportErr && <div className="text-sm text-red-600">{pftImportErr}</div>}
+                            {pftImportPreview && (
+                                <div className="space-y-3">
+                                    <div className="sticky top-0 z-10 bg-white pb-2">
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 text-xs">
+                                        <div className="border rounded-lg bg-gray-50 px-3 py-2">
+                                            <div className="text-gray-500">Parsed</div>
+                                            <div className="text-base font-semibold">{pftImportPreview.parsedRows}</div>
+                                        </div>
+                                        <div className="border rounded-lg bg-gray-50 px-3 py-2">
+                                            <div className="text-gray-500">Import rows</div>
+                                            <div className="text-base font-semibold">{pftImportPreview.rowsToImport}</div>
+                                        </div>
+                                        <div className="border rounded-lg bg-gray-50 px-3 py-2">
+                                            <div className="text-gray-500">Unmatched</div>
+                                            <div className="text-base font-semibold">{pftImportPreview.unmatchedCount}</div>
+                                        </div>
+                                        <div className="border rounded-lg bg-gray-50 px-3 py-2">
+                                            <div className="text-gray-500">Duplicates</div>
+                                            <div className="text-base font-semibold">{pftImportPreview.duplicateRows}</div>
+                                        </div>
+                                        <div className="border rounded-lg bg-gray-50 px-3 py-2">
+                                            <div className="text-gray-500">No changes</div>
+                                            <div className="text-base font-semibold">{pftImportPreview.unchangedCount}</div>
+                                        </div>
+                                        <div className="border rounded-lg bg-gray-50 px-3 py-2">
+                                            <div className="text-gray-500">Worse skipped</div>
+                                            <div className="text-base font-semibold">{pftImportPreview.worseCount}</div>
+                                        </div>
+                                    </div>
+                                    </div>
+                                    {pftImportPreview.parseErrors.length > 0 && (
+                                        <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                                            <div className="font-medium mb-1">Parse issues</div>
+                                            <div className="space-y-1 max-h-24 overflow-auto">
+                                                {pftImportPreview.parseErrors.slice(0, 10).map((item, idx) => (
+                                                    <div key={`${item.row}-${idx}`}>Row {item.row}: {item.message}</div>
+                                                ))}
+                                                {pftImportPreview.parseErrors.length > 10 && (
+                                                    <div>...and {pftImportPreview.parseErrors.length - 10} more</div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+                                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                                        <div>
+                                            <div className="text-sm font-medium text-slate-900">Preview rows (first {PFT_IMPORT_PREVIEW_LIMIT} only)</div>
+                                            <div className="text-xs text-slate-500">All matched rows will still be imported. This table is only a preview.</div>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={downloadPftImportSummary}
+                                            className="text-xs px-3 py-1.5 border rounded bg-white hover:bg-gray-50"
+                                        >
+                                            Download Preview Summary CSV
+                                        </button>
+                                    </div>
+                                    <div className="border rounded overflow-auto max-h-[48vh]">
+                                        <table className="w-full text-sm">
+                                            <thead className="bg-gray-100 sticky top-0 z-10">
+                                                <tr>
+                                                    <th className="text-left px-3 py-2 border-b">ID</th>
+                                                    <th className="text-left px-3 py-2 border-b">Name</th>
+                                                    <th className="text-left px-3 py-2 border-b">Class</th>
+                                                    <th className="text-left px-3 py-2 border-b">Action</th>
+                                                    <th className="text-left px-3 py-2 border-b">Detail</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {pftImportPreview.previewRows.length === 0 ? (
+                                                    <tr>
+                                                        <td colSpan={5} className="px-3 py-4 text-center text-gray-500">No preview rows.</td>
+                                                    </tr>
+                                                ) : pftImportPreview.previewRows.map((row, idx) => (
+                                                    <tr key={`${row.id}-${idx}`}>
+                                                        <td className="px-3 py-2 border-b">{row.id}</td>
+                                                        <td className="px-3 py-2 border-b">{row.name}</td>
+                                                        <td className="px-3 py-2 border-b">{row.className}</td>
+                                                        <td className="px-3 py-2 border-b">
+                                                            <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${row.action === 'Import' ? 'bg-green-100 text-green-800' : 'bg-slate-100 text-slate-700'}`}>
+                                                                {row.action}
+                                                            </span>
+                                                        </td>
+                                                        <td className="px-3 py-2 border-b text-xs text-gray-600">{row.reason}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                        <div className="px-4 py-3 border-t flex justify-end gap-2">
+                            <button
+                                type="button"
+                                onClick={closePftImportModal}
+                                disabled={pftImportBusy}
+                                className="px-3 py-1.5 border rounded hover:bg-gray-50 text-sm disabled:opacity-60"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={applyPftImport}
+                                disabled={pftImportBusy || !pftImportPreview || pftImportPreview.rowsToImport === 0}
+                                className="px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-60 text-sm"
+                            >
+                                {pftImportBusy ? 'Importing...' : 'Apply Import'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
             )}
             <ConfirmDialog
                 open={massEditSaveOpen}

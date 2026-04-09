@@ -124,7 +124,7 @@ export function parseNapfaCsv(csvText, options = {}) {
     const sitAndReachCm = parseFloatOrNull(cols[9]);
     const pullups = parseIntOrNull(cols[10]);
     const shuttleRunSec = parseFloatOrNull(cols[11]);
-    // cols[12] 1.6/2.4 Km Run MMSS (ignored per spec)
+    const runSeconds = parseMmssToSeconds(cols[12]);
     // cols[13] PFT Test Date (ignored)
 
     if (!id || !String(id).trim()) {
@@ -145,6 +145,8 @@ export function parseNapfaCsv(csvText, options = {}) {
       sit_and_reach_cm: sitAndReachCm,
       pullups,
       shuttle_run_sec: shuttleRunSec,
+      run_seconds: runSeconds,
+      run_2400: runSeconds == null ? null : Number((runSeconds / 60).toFixed(2)),
       school_id: schoolId || null,
       academic_year: academicYear || null,
     });
@@ -172,6 +174,7 @@ export function parseNapfaCsv(csvText, options = {}) {
     sit_and_reach: r.sit_and_reach_cm,
     pullups: r.pullups,
     shuttle_run: r.shuttle_run_sec,
+    run_2400: r.run_seconds == null ? null : Number((r.run_seconds / 60).toFixed(2)),
   }));
 
   const summary = {
