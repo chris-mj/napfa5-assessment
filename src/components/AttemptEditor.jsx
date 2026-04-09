@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
-import { SCORE_SELECT_FIELDS, fetchScoreRow, fetchIppt3Row, fmtRun } from "../lib/scores";
+import { SCORE_SELECT_FIELDS, fetchIppt3Row, fmtRun } from "../lib/scores";
 
 export default function AttemptEditor({ sessionId, studentId, onSaved, isIppt3 = false }) {
   const [loading, setLoading] = useState(true);
@@ -111,14 +111,18 @@ export default function AttemptEditor({ sessionId, studentId, onSaved, isIppt3 =
           pushups,
           run_2400,
         };
+        const unchanged = (previous?.situps ?? null) === situps
+          && (previous?.pushups ?? null) === pushups
+          && (previous?.run_2400 ?? null) === run_2400;
+        if (unchanged) {
+          onSaved?.();
+          return;
+        }
         const { error } = await supabase
           .from("ippt3_scores")
           .upsert(payload, { onConflict: "session_id,student_id" });
         if (error) throw error;
-        try {
-          const latest = await fetchIppt3Row(supabase, sessionId, studentId);
-          if (latest) setPrevious(latest);
-        } catch {}
+        setPrevious(payload);
         onSaved?.();
         return;
       }
@@ -157,15 +161,24 @@ export default function AttemptEditor({ sessionId, studentId, onSaved, isIppt3 =
         shuttle_run: (shuttle == null || Number.isNaN(shuttle)) ? null : Number.parseFloat(Number(shuttle).toFixed(1)),
         run_2400,
       };
+      const unchanged = (previous?.situps ?? null) === payload.situps
+        && (previous?.pullups ?? null) === payload.pullups
+        && (previous?.broad_jump ?? null) === payload.broad_jump
+        && (previous?.sit_and_reach ?? null) === payload.sit_and_reach
+        && (previous?.shuttle_run ?? null) === payload.shuttle_run
+        && (previous?.run_2400 ?? null) === payload.run_2400;
+      if (unchanged) {
+        onSaved?.();
+        return;
+      }
       const { error } = await supabase
         .from("scores")
         .upsert({ session_id: sessionId, student_id: studentId, ...payload }, { onConflict: "session_id,student_id" });
       if (error) throw error;
-      // Refresh previous panel with latest values
-      try {
-        const latest = await fetchScoreRow(supabase, sessionId, studentId);
-        if (latest) setPrevious(latest);
-      } catch {}
+      setPrevious((prev) => ({
+        ...(prev || {}),
+        ...payload,
+      }));
       onSaved?.();
     } catch (e) {
       setError(e.message);

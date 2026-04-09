@@ -1915,6 +1915,41 @@ do $$ begin
   end if;
 end $$;
 
+-- ============================================================
+-- Hot write relief for score entry
+-- Run these statements manually in Supabase SQL editor when
+-- score-write latency is more important than audit / Realtime / RLS.
+-- ============================================================
+--
+-- 1) Disable score audit trigger to remove per-write audit inserts.
+-- drop trigger if exists audit_scores_trg on public.scores;
+--
+-- 2) Remove scores tables from Realtime publication to reduce WAL fan-out.
+-- do $$
+-- begin
+--   if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+--     begin
+--       alter publication supabase_realtime drop table public.scores;
+--     exception when undefined_object then null;
+--     end;
+--     if exists (
+--       select 1
+--       from information_schema.tables
+--       where table_schema = 'public'
+--         and table_name = 'ippt3_scores'
+--     ) then
+--       begin
+--         alter publication supabase_realtime drop table public.ippt3_scores;
+--       exception when undefined_object then null;
+--       end;
+--     end if;
+--   end if;
+-- end $$;
+--
+-- 3) Disable RLS on hot score tables.
+-- alter table if exists public.scores disable row level security;
+-- alter table if exists public.ippt3_scores disable row level security;
+
 -- RLS for audit table
 alter table audit.audit_events enable row level security;
 

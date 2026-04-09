@@ -2,7 +2,7 @@
 import { useMemo, useRef, useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
-import { SCORE_SELECT_FIELDS, fetchScoreRow, fetchIppt3Row, fmtRun } from '../lib/scores'
+import { SCORE_SELECT_FIELDS, fetchIppt3Row, fmtRun } from '../lib/scores'
 import { fetchEnrollmentsMap, fetchSessionRosterWithStudents, resolveEnrollmentClass } from '../lib/sessionRoster'
 import { cohortRowsIppt3, evaluateIppt3 } from '../utils/ippt3Standards'
 import { evaluateNapfa, findRows, getAgeGroup, normalizeSex, secondsToMmss } from '../utils/napfaStandards'
@@ -610,6 +610,26 @@ async function saveScore() {
     }
     if (num == null || !Number.isFinite(num)) return
     try {
+      const currentValue = (() => {
+        if (!existing) return null
+        if (isIppt3) {
+          if (activeStation === 'situps') return existing.situps ?? null
+          if (activeStation === 'pushups') return existing.pushups ?? null
+          if (activeStation === 'run') return existing.run_2400 ?? null
+          return null
+        }
+        if (activeStation === 'situps') return existing.situps ?? null
+        if (activeStation === 'pullups') return existing.pullups ?? null
+        if (activeStation === 'broad_jump') return existing.broad_jump ?? null
+        if (activeStation === 'sit_and_reach') return existing.sit_and_reach ?? null
+        if (activeStation === 'shuttle_run') return existing.shuttle_run ?? null
+        if (activeStation === 'run') return existing.run_2400 ?? null
+        return null
+      })()
+      if (currentValue === num) {
+        showToast('success', `Unchanged\n${active.name}: ${String(num)}`)
+        return
+      }
       if (isIppt3) {
         const ipptColMap = { situps: 'situps', pushups: 'pushups', run: 'run_2400' }
         const ipptCol = ipptColMap[activeStation]
@@ -682,16 +702,28 @@ async function saveScore() {
       }
       setAttempt1('')
       setAttempt2('')
-      try {
-        if (isIppt3) {
-          const row3 = await fetchIppt3Row(supabase, sessionId, student.id)
-          // Normalize to existing-like shape for display convenience
-          setExisting(row3 ? { situps: row3.situps, pullups: undefined, broad_jump: undefined, sit_and_reach: undefined, shuttle_run: undefined, run_2400: row3.run_2400, pushups: row3.pushups } : null)
-        } else {
-          const data = await fetchScoreRow(supabase, sessionId, student.id)
-          setExisting(data || null)
-        }
-      } catch {}
+      if (isIppt3) {
+        setExisting((prev) => ({
+          ...(prev || {}),
+          situps: activeStation === 'situps' ? num : (prev?.situps ?? null),
+          pushups: activeStation === 'pushups' ? num : (prev?.pushups ?? null),
+          run_2400: activeStation === 'run' ? num : (prev?.run_2400 ?? null),
+          pullups: undefined,
+          broad_jump: undefined,
+          sit_and_reach: undefined,
+          shuttle_run: undefined,
+        }))
+      } else {
+        setExisting((prev) => ({
+          ...(prev || {}),
+          situps: activeStation === 'situps' ? num : (prev?.situps ?? null),
+          pullups: activeStation === 'pullups' ? num : (prev?.pullups ?? null),
+          broad_jump: activeStation === 'broad_jump' ? num : (prev?.broad_jump ?? null),
+          sit_and_reach: activeStation === 'sit_and_reach' ? num : (prev?.sit_and_reach ?? null),
+          shuttle_run: activeStation === 'shuttle_run' ? num : (prev?.shuttle_run ?? null),
+          run_2400: activeStation === 'run' ? num : (prev?.run_2400 ?? null),
+        }))
+      }
     } catch (e) {
       showToast('error', e.message || 'Failed to save score')
     }
