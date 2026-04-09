@@ -295,6 +295,14 @@ export default function RosterDualList({ user, session, membership, canManage, o
                     <button
                       type="button"
                       className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50"
+                      onClick={() => { setCardsMenuOpen(false); onProfileCards('a4_score_sheet_4up'); }}
+                      role="menuitem"
+                    >
+                      A4 paper (4 cards per page, write score space)
+                    </button>
+                    <button
+                      type="button"
+                      className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50"
                       onClick={() => { setCardsMenuOpen(false); onProfileCards('a4_sticker_105x74'); }}
                       role="menuitem"
                     >

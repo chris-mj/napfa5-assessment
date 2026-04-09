@@ -368,15 +368,27 @@ export default function Dashboard({ user }) {
         {/* What's new */}
         <section>
           <h2 className="text-xl font-semibold text-slate-900 mb-3">What's new</h2>
-          <div className="rounded-xl bg-white p-4 shadow-sm border border-gray-100">
-            <div className="text-sm font-semibold text-slate-900 mb-2">4 Mar 2026</div>
-            <ul className="list-disc pl-5 text-sm text-slate-700 space-y-1">
-              <li>Group score entry now supported with group QR code, and auto generated group list.</li>
-              <li>Scanner popups now include a camera switch button.</li>
-              <li>Profile outputs allow 25mm wristband / 19mm wristband / precut sticker label print format.</li>
+          <div className="space-y-3">
+            <div className="rounded-xl bg-white p-4 shadow-sm border border-gray-100">
+              <div className="text-sm font-semibold text-slate-900 mb-2">9 Apr 2026</div>
+              <ul className="list-disc pl-5 text-sm text-slate-700 space-y-1">
+                <li>Session Detail roster tab now includes A4 paper (4 cards per page, write score space) for larger handwritten profile cards.</li>
+                <li>Session Detail scores tab now supports Import PFT with preview, keep-better or full-overwrite options, and unmatched-student reporting.</li>
+                <li>Challenge Hub now refreshes on a lighter 10-second polling cycle.</li>
+                <li>Award Calculator exports now keep station points without grade columns and include Next grade recommendation.</li>
+                <li>Award Calculator now includes an Individualised Student Report as an A5 PDF.</li>
+              </ul>
+            </div>
+            <div className="rounded-xl bg-white p-4 shadow-sm border border-gray-100">
+              <div className="text-sm font-semibold text-slate-900 mb-2">4 Mar 2026</div>
+              <ul className="list-disc pl-5 text-sm text-slate-700 space-y-1">
+                <li>Group score entry now supported with group QR code, and auto generated group list.</li>
+                <li>Scanner popups now include a camera switch button.</li>
+                <li>Profile outputs allow 25mm wristband / 19mm wristband / precut sticker label print format.</li>
                 <li>Session Detail score tab now shows grades.</li>
                 <li>Testing tools added to score entry page (Stopwatch, countdown timer, reps counter)</li>
-            </ul>
+              </ul>
+            </div>
           </div>
         </section>
 
