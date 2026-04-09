@@ -13,7 +13,8 @@
         "build:run": "vite build --config apps/run/vite.config.ts",
         "preview": "vite preview",
         "generate:standards": "node scripts/generate-standards-json.js",
-        "build:ippt3:tables": "node scripts/build-ippt3-tables.mjs"
+        "build:ippt3:tables": "node scripts/build-ippt3-tables.mjs",
+        "perf:db": "node scripts/measure-db-paths.mjs"
     },
     "dependencies": {
         "@supabase/functions-js": "^2.76.1",

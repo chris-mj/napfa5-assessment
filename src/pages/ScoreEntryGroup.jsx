@@ -289,6 +289,12 @@ export default function ScoreEntryGroup({ user }) {
       return false;
     }
     const value = parsed.value;
+    const existingValue = row.existing == null || row.existing === "" ? null : row.existing;
+    const nextValue = value == null ? null : String(value);
+    if (String(existingValue ?? "") === String(nextValue ?? "")) {
+      setRows((prev) => prev.map((r) => (r.studentId === row.studentId ? { ...r, status: "Unchanged", dirty: false } : r)));
+      return true;
+    }
     try {
       if (isIppt3) {
         const colMap = { situps: "situps", pushups: "pushups", run: "run_2400" };

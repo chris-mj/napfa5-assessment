@@ -88,6 +88,7 @@ function normalizeAchievementAward(label) {
 }
 
 export default function Gamification({ user }) {
+  const SCORE_POLL_MS = 10_000;
   const [membership, setMembership] = useState(null);
   const [schoolType, setSchoolType] = useState(null);
   const [sessions, setSessions] = useState([]);
@@ -96,11 +97,12 @@ export default function Gamification({ user }) {
   const [roster, setRoster] = useState([]);
   const [scoresMap, setScoresMap] = useState(new Map());
   const [loading, setLoading] = useState(false);
+  const [refreshingScores, setRefreshingScores] = useState(false);
   const [groupBy, setGroupBy] = useState("class");
   const [leaderboardMode, setLeaderboardMode] = useState("detailed");
-  const refreshTimerRef = useRef(null);
-  const refreshCountdownRef = useRef(null);
   const [nextRefreshIn, setNextRefreshIn] = useState(null);
+  const scorePollTimeoutRef = useRef(null);
+  const scoreRefreshInFlightRef = useRef(false);
   const sessionAssessmentType = session?.assessment_type || "NAPFA5";
 
   useEffect(() => {
@@ -146,6 +148,20 @@ export default function Gamification({ user }) {
     return new Map((data || []).map((row) => [row.student_id, row]));
   }, []);
 
+  const refreshCurrentScores = useCallback(async () => {
+    if (!sessionId || !session || session.id !== sessionId) return;
+    if (scoreRefreshInFlightRef.current) return;
+    scoreRefreshInFlightRef.current = true;
+    setRefreshingScores(true);
+    try {
+      const data = await refreshScores(sessionId, sessionAssessmentType);
+      setScoresMap(data);
+    } finally {
+      scoreRefreshInFlightRef.current = false;
+      setRefreshingScores(false);
+    }
+  }, [refreshScores, sessionAssessmentType, sessionId, session]);
+
   useEffect(() => {
     let ignore = false;
     const loadSession = async () => {
@@ -185,61 +201,51 @@ export default function Gamification({ user }) {
     return () => { ignore = true; };
   }, [refreshScores, sessionId]);
 
-  // Realtime updates: listen for score changes, then refetch once after a debounce.
-  // This avoids hammering the DB with one fetch per update while keeping the view live.
   useEffect(() => {
-    if (!sessionId || !session || session.id !== sessionId) return;
-    const table = sessionAssessmentType === "IPPT3" ? "ippt3_scores" : "scores";
-    let cancelled = false;
-    const clearRefreshCountdown = () => {
-      if (refreshCountdownRef.current) {
-        clearInterval(refreshCountdownRef.current);
-        refreshCountdownRef.current = null;
-      }
+    if (!sessionId || !session || session.id !== sessionId) {
       setNextRefreshIn(null);
+      clearTimeout(scorePollTimeoutRef.current);
+      return;
+    }
+
+    let cancelled = false;
+    let nextRefreshAt = Date.now() + SCORE_POLL_MS;
+
+    const syncCountdown = () => {
+      const secondsLeft = Math.max(0, Math.ceil((nextRefreshAt - Date.now()) / 1000));
+      setNextRefreshIn(secondsLeft);
     };
-    const scheduleRefresh = () => {
-      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
-      if (refreshCountdownRef.current) clearInterval(refreshCountdownRef.current);
-      const refreshAt = Date.now() + 5000;
-      setNextRefreshIn(5);
-      refreshCountdownRef.current = setInterval(() => {
-        const remainingMs = refreshAt - Date.now();
-        if (remainingMs <= 0) {
-          clearRefreshCountdown();
+
+    const schedulePoll = (delayMs = SCORE_POLL_MS) => {
+      clearTimeout(scorePollTimeoutRef.current);
+      nextRefreshAt = Date.now() + delayMs;
+      syncCountdown();
+      scorePollTimeoutRef.current = setTimeout(async () => {
+        if (cancelled) return;
+        if (!sessionId || !session || session.id !== sessionId) return;
+        if (document.visibilityState !== "visible" || scoreRefreshInFlightRef.current) {
+          schedulePoll(1_000);
           return;
         }
-        setNextRefreshIn(Math.ceil(remainingMs / 1000));
-      }, 250);
-      refreshTimerRef.current = setTimeout(async () => {
-        refreshTimerRef.current = null;
         try {
-          const data = await refreshScores(sessionId, sessionAssessmentType);
-          if (!cancelled) {
-            setScoresMap(data);
-          }
-        } catch {}
-        if (!cancelled) clearRefreshCountdown();
-      }, 5000);
+          await refreshCurrentScores();
+          if (!cancelled) schedulePoll(SCORE_POLL_MS);
+        } catch {
+          if (!cancelled) schedulePoll(SCORE_POLL_MS * 2);
+        }
+      }, delayMs);
     };
-    const channel = supabase
-      .channel(`scores:${table}:${sessionId}`)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table, filter: `session_id=eq.${sessionId}` },
-        () => scheduleRefresh()
-      )
-      .subscribe();
+
+    const countdownId = setInterval(syncCountdown, 1000);
+    schedulePoll();
+
     return () => {
       cancelled = true;
-      if (refreshTimerRef.current) {
-        clearTimeout(refreshTimerRef.current);
-        refreshTimerRef.current = null;
-      }
-      clearRefreshCountdown();
-      supabase.removeChannel(channel);
+      clearInterval(countdownId);
+      clearTimeout(scorePollTimeoutRef.current);
+      setNextRefreshIn(null);
     };
-  }, [refreshScores, sessionAssessmentType, sessionId, session?.id]);
+  }, [refreshCurrentScores, sessionId, session?.id]);
 
   const stations = useMemo(() => {
     if ((session?.assessment_type || "NAPFA5") === "IPPT3") {
@@ -591,7 +597,9 @@ export default function Gamification({ user }) {
     <main className="w-full">
       <div className="fixed bottom-4 right-4 z-30">
         <div className="rounded-full border border-slate-200 bg-white/95 px-4 py-2 text-sm text-slate-600 shadow-lg backdrop-blur">
-          {nextRefreshIn != null ? `Next refresh in ${nextRefreshIn}s` : "Waiting for changes"}
+          {sessionId
+            ? (refreshingScores ? "Refreshing scores..." : `Next refresh in ${nextRefreshIn ?? Math.ceil(SCORE_POLL_MS / 1000)}s`)
+            : "Select a session"}
         </div>
       </div>
       <div className="max-w-6xl mx-auto px-4 py-6 space-y-6">
@@ -624,6 +632,14 @@ export default function Gamification({ user }) {
               <option value="class">Class</option>
               <option value="house">House</option>
             </select>
+            <button
+              type="button"
+              className="border rounded px-3 py-1 text-sm bg-white hover:bg-slate-50 disabled:opacity-60"
+              onClick={() => refreshCurrentScores()}
+              disabled={!sessionId || refreshingScores}
+            >
+              {refreshingScores ? "Refreshing..." : "Refresh now"}
+            </button>
           </div>
         </section>
 
