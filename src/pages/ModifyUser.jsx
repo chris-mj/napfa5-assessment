@@ -627,82 +627,83 @@ export default function difyUser({ user }) {
                 ) : members.length === 0 ? (
                     <p className="text-sm text-gray-600">No users linked to this school yet.</p>
                 ) : (
-                    <table className="min-w-full border text-sm">
-                        <thead>
-                            <tr className="bg-gray-100 text-left">
-                                <th className="border px-3 py-2">Name</th>
-                                <th className="border px-3 py-2">Email</th>
-                                <th className="border px-3 py-2">Role</th>
-                                <th className="border px-3 py-2 w-44">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {(() => {
-                                const q = query.trim().toLowerCase();
-                                const filtered = members.filter(m => (!q || (m.fullName||"").toLowerCase().includes(q) || (m.email||"").toLowerCase().includes(q)) && (!roleFilter || m.role === roleFilter));
-                                const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-                                const cur = Math.min(page, totalPages);
-                                const start = (cur - 1) * pageSize;
-                                const items = filtered.slice(start, start + pageSize);
-                                // render
-                                return items.map((member) => (
-                                <tr key={member.id}>
-                                    <td className="border px-3 py-2">{member.fullName || "--"}</td>
-                                    <td
-                                        className={`border px-3 py-2 ${member.userId === user.id ? 'cursor-pointer underline decoration-dotted' : ''}`}
-                                        title={member.userId === user.id ? 'View/edit your profile' : ''}
-                                        onClick={() => { if (member.userId === user.id) openOwnProfile(member); }}
-                                    >
-                                        {member.email}
-                                    </td>
-                                    <td className="border px-3 py-2">
-                                        <select
-                                            value={member.role}
-                                            onChange={(event) =>
-                                                handleRoleUpdate(member, event.target.value)
-                                            }
-                                            className="border rounded p-1 w-full"
-                                            disabled={pendingMemberId === member.id}
-                                            onClick={(e)=>e.stopPropagation()}
+                    <div className="w-full overflow-x-auto rounded-lg border border-slate-200 overscroll-x-contain">
+                        <table className="w-full min-w-[720px] text-sm">
+                            <thead>
+                                <tr className="bg-gray-100 text-left">
+                                    <th className="border px-3 py-2">Name</th>
+                                    <th className="border px-3 py-2">Email</th>
+                                    <th className="border px-3 py-2">Role</th>
+                                    <th className="border px-3 py-2 w-44">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {(() => {
+                                    const q = query.trim().toLowerCase();
+                                    const filtered = members.filter(m => (!q || (m.fullName||"").toLowerCase().includes(q) || (m.email||"").toLowerCase().includes(q)) && (!roleFilter || m.role === roleFilter));
+                                    const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+                                    const cur = Math.min(page, totalPages);
+                                    const start = (cur - 1) * pageSize;
+                                    const items = filtered.slice(start, start + pageSize);
+                                    return items.map((member) => (
+                                    <tr key={member.id}>
+                                        <td className="border px-3 py-2">{member.fullName || "--"}</td>
+                                        <td
+                                            className={`border px-3 py-2 ${member.userId === user.id ? 'cursor-pointer underline decoration-dotted' : ''}`}
+                                            title={member.userId === user.id ? 'View/edit your profile' : ''}
+                                            onClick={() => { if (member.userId === user.id) openOwnProfile(member); }}
                                         >
-                                            {ROLES.map((roleOption) => (
-                                                <option key={roleOption} value={roleOption}>
-                                                    {roleOption}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    </td>
-                                    <td className="border px-3 py-2">
-                                        <div className="flex flex-wrap items-center gap-3">
-                                            {canManageUsers && isQrLoginRole(member.role) && (
+                                            {member.email}
+                                        </td>
+                                        <td className="border px-3 py-2">
+                                            <select
+                                                value={member.role}
+                                                onChange={(event) =>
+                                                    handleRoleUpdate(member, event.target.value)
+                                                }
+                                                className="border rounded p-1 w-full"
+                                                disabled={pendingMemberId === member.id}
+                                                onClick={(e)=>e.stopPropagation()}
+                                            >
+                                                {ROLES.map((roleOption) => (
+                                                    <option key={roleOption} value={roleOption}>
+                                                        {roleOption}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </td>
+                                        <td className="border px-3 py-2">
+                                            <div className="flex flex-wrap items-center gap-3">
+                                                {canManageUsers && isQrLoginRole(member.role) && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleGenerateQrLogin(member)}
+                                                        className="text-blue-700 hover:underline disabled:text-blue-300"
+                                                        disabled={qrLoginBusyId === member.id}
+                                                    >
+                                                        {qrLoginBusyId === member.id ? 'Preparing QR...' : 'QR Login'}
+                                                    </button>
+                                                )}
                                                 <button
                                                     type="button"
-                                                    onClick={() => handleGenerateQrLogin(member)}
-                                                    className="text-blue-700 hover:underline disabled:text-blue-300"
-                                                    disabled={qrLoginBusyId === member.id}
+                                                    onClick={() => handleRemoveMember(member)}
+                                                    className="text-red-600 hover:underline disabled:text-red-300"
+                                                    disabled={pendingMemberId === member.id}
                                                 >
-                                                    {qrLoginBusyId === member.id ? 'Preparing QR...' : 'QR Login'}
+                                                    Remove
                                                 </button>
-                                            )}
-                                            <button
-                                                type="button"
-                                                onClick={() => handleRemoveMember(member)}
-                                                className="text-red-600 hover:underline disabled:text-red-300"
-                                                disabled={pendingMemberId === member.id}
-                                            >
-                                                Remove
-                                            </button>
-                                        </div>
-                                    </td>
-                                </tr>
-                                ))
-                            })()}
-                        </tbody>
-                    </table>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    ))
+                                })()}
+                            </tbody>
+                        </table>
+                    </div>
                 )}
                 {/* Pagination footer */}
                 {!membersLoading && members.length > 0 && (
-                  <div className="flex items-center justify-between text-sm mt-2">
+                  <div className="mt-2 flex flex-col gap-2 text-sm sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       {(() => {
                         const q = query.trim().toLowerCase();
