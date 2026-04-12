@@ -92,13 +92,20 @@ export default function AddAttempt({ user }) {
   const [roster, setRoster] = useState([])
   const [rosterLoading, setRosterLoading] = useState(false)
   const [rosterQuery, setRosterQuery] = useState('')
+  const [unsavedConfirmOpen, setUnsavedConfirmOpen] = useState(false)
+  const [unsavedConfirmMessage, setUnsavedConfirmMessage] = useState('Discard the unsaved score entry and continue?')
   const firstAttemptRef = useRef(null)
   const stopwatchStartRef = useRef(0)
   const stopwatchBaseMsRef = useRef(0)
+  const pendingUnsavedActionRef = useRef(null)
   const navigate = useNavigate()
   const active = useMemo(() => stations.find(s => s.key === activeStation), [stations, activeStation])
   const toolStationEnabled = activeStation === 'situps' || activeStation === 'pullups' || activeStation === 'shuttle_run'
   const { showToast } = useToast()
+  const hasUnsavedAttempt = useMemo(
+    () => String(attempt1 || '').trim() !== '' || String(attempt2 || '').trim() !== '',
+    [attempt1, attempt2]
+  )
 
   useEffect(() => {
     try { localStorage.setItem(SAVED_SCORES_PREF_KEY, String(savedScoresOpen)) } catch {}
@@ -107,6 +114,17 @@ export default function AddAttempt({ user }) {
   useEffect(() => {
     try { localStorage.setItem(STATION_GUIDE_PREF_KEY, String(stationGuideOpen)) } catch {}
   }, [stationGuideOpen])
+
+  useEffect(() => {
+    if (!hasUnsavedAttempt) return undefined
+    const handleBeforeUnload = (e) => {
+      e.preventDefault()
+      e.returnValue = ''
+      return ''
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [hasUnsavedAttempt])
 
   const playBeep = () => {
     try {
@@ -214,7 +232,7 @@ export default function AddAttempt({ user }) {
       const stationKey = activeStation === 'run' ? 'run' : activeStation
       const points = res3?.stations?.[stationKey]?.points ?? null
       return {
-        title: `${active?.name || 'Selected station'} Guide`,
+        title: `${active?.name || 'Selected station'} Points Table`,
         savedLabel: formatSaved(savedValue),
         summaryLabel: points == null ? '-' : `${points} pts`,
         summaryCaption: 'Saved score points',
@@ -292,7 +310,7 @@ export default function AddAttempt({ user }) {
     }
 
     return {
-      title: `${active?.name || 'Selected station'} Guide`,
+      title: `${active?.name || 'Selected station'} Points Table`,
       savedLabel: formatSaved(savedValue),
       summaryLabel: savedGrade,
       summaryCaption: 'Saved grade',
@@ -452,12 +470,31 @@ export default function AddAttempt({ user }) {
 
   const onSubmit = async (e) => {
     e.preventDefault()
+    if (hasUnsavedAttempt) {
+      pendingUnsavedActionRef.current = async () => {
+        await doSearch(studentId)
+        setTimeout(() => { try { firstAttemptRef.current?.focus() } catch {} }, 0)
+      }
+      setUnsavedConfirmMessage('Searching for another student will discard the unsaved score entry. Continue?')
+      setUnsavedConfirmOpen(true)
+      return
+    }
     await doSearch(studentId)
     setTimeout(() => { try { firstAttemptRef.current?.focus() } catch {} }, 0)
   }
 
-  const openScanner = () => setScannerOpen(true)
-  const openRoster = () => setRosterOpen(true)
+  const runWithUnsavedGuard = (action, message = 'Discard the unsaved score entry and continue?') => {
+    if (!hasUnsavedAttempt) {
+      action()
+      return
+    }
+    pendingUnsavedActionRef.current = action
+    setUnsavedConfirmMessage(message)
+    setUnsavedConfirmOpen(true)
+  }
+
+  const openScanner = () => runWithUnsavedGuard(() => setScannerOpen(true), 'Opening the scanner will discard the unsaved score entry. Continue?')
+  const openRoster = () => runWithUnsavedGuard(() => setRosterOpen(true), 'Opening the student list will discard the unsaved score entry. Continue?')
   const openTools = () => { if (toolStationEnabled) setToolsOpen(true) }
   const clearStudentEntry = () => {
     setStudentId('')
@@ -742,12 +779,12 @@ async function saveScore() {
 
   return (
     <main className="w-full">
-      <div className="max-w-5xl mx-auto pt-4 pb-8 space-y-6">
+      <div className="max-w-5xl mx-auto pt-3 pb-6 space-y-4">
       {/* Header */}
-        <header className="px-4 sm:px-6 pt-2 sm:pt-3 pb-3 sm:pb-2">
+        <header className="px-4 sm:px-6 pt-1 sm:pt-2 pb-2">
         <div className="space-y-1">
             <h1 className="text-2xl font-semibold mb-1">Score Entry</h1>
-            <p className="text-muted-foreground mb-6">
+            <p className="text-muted-foreground mb-2">
                 Select a station and record participant scores
             </p>
         </div>
@@ -759,7 +796,10 @@ async function saveScore() {
         <div className="px-1 pb-2">
           <div className="flex items-center gap-2">
             <div className="relative inline-block min-w-[260px]">
-              <Select value={sessionId} onValueChange={setSessionId}>
+              <Select value={sessionId} onValueChange={(value) => {
+                if (value === sessionId) return
+                runWithUnsavedGuard(() => setSessionId(value), 'Switching session will discard the unsaved score entry. Continue?')
+              }}>
                 <SelectTrigger aria-label="Select assessment session">
                   <span className="truncate text-left">
                     {(() => {
@@ -793,7 +833,10 @@ async function saveScore() {
           </div>
         </div>
 
-        <Tabs value={activeStation} onValueChange={setActiveStation}>
+        <Tabs value={activeStation} onValueChange={(value) => {
+          if (value === activeStation) return
+          runWithUnsavedGuard(() => setActiveStation(value), 'Switching station will discard the unsaved score entry. Continue?')
+        }}>
           <div className="flex flex-col md:flex-row md:gap-4">
             <div className="md:w-56 md:shrink-0">
               <div className="md:sticky md:top-4">
@@ -922,8 +965,8 @@ async function saveScore() {
 
             <div className="flex-1">
               {/* Active Station Card */}
-              <Card className="mt-4">
-                <CardHeader>
+              <Card className="mt-3">
+                <CardHeader className="pb-3">
                   <div className="flex items-center justify-between gap-3">
                     <CardTitle>
                       {active && <active.Icon className="h-5 w-5 text-blue-700" aria-hidden="true" />}
@@ -936,14 +979,14 @@ async function saveScore() {
                     )}
                   </div>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="pt-0">
                   <form onSubmit={onSubmit} className="grid gap-3">
                     <div className="grid gap-1.5">
                 <div className="flex items-center gap-2">
                   <label htmlFor="studentId" className="text-gray-700 text-sm">Student ID</label>
                   <button
                     type="button"
-                    onClick={clearStudentEntry}
+                    onClick={() => runWithUnsavedGuard(clearStudentEntry, 'Clearing this student will discard the unsaved score entry. Continue?')}
                     disabled={!studentId && !student}
                     className="text-xs border rounded px-2 py-1 hover:bg-gray-50 disabled:opacity-50"
                   >
@@ -979,7 +1022,7 @@ async function saveScore() {
                   </button>
                   <button
                     type="button"
-                    onClick={()=>{ if(sessionId){ setRosterOpen(true) } }}
+                    onClick={()=>{ if(sessionId){ openRoster() } }}
                     disabled={!sessionId}
                     className="border rounded-md px-3 py-2 hover:bg-gray-50 disabled:opacity-60"
                     aria-label="Select student from list"
@@ -1001,26 +1044,27 @@ async function saveScore() {
                   animate={{ opacity: 1, height: 'auto', y: 0, scaleY: 1 }}
                   exit={{ opacity: 0, height: 0, y: -12, scaleY: 0.98 }}
                   transition={{ duration: 0.24, ease: 'easeOut' }}
-                  className="mt-4 space-y-6 overflow-hidden"
+                  className="mt-3 space-y-3 overflow-hidden"
                 >
+                  <div className="grid gap-3 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] lg:items-start">
                   {/* Student Info */}
-                  <div className="bg-muted/50 border rounded-lg p-4">
+                  <div className="bg-muted/50 border rounded-lg p-3">
                     <div className="flex items-start gap-3">
-                      <div className="shrink-0 w-12 h-12 rounded-full bg-white border flex items-center justify-center">
-                        <UserCircle className="h-7 w-7 text-gray-600" aria-hidden="true" />
+                      <div className="shrink-0 w-10 h-10 rounded-full bg-white border flex items-center justify-center">
+                        <UserCircle className="h-6 w-6 text-gray-600" aria-hidden="true" />
                       </div>
                       <div className="flex-1">
-                        <div className="text-gray-900 text-base font-semibold">
+                        <div className="text-gray-900 text-sm sm:text-base font-semibold">
                           {student.name} <span className="text-gray-600 font-normal">/ {student.studentIdentifier}</span>
                         </div>
-                        <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm text-gray-700">
+                        <div className="mt-1.5 grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs sm:text-sm text-gray-700">
                           <div>
                             <span className="text-gray-500">Class:</span> <span className="font-medium">{student.className}</span>
                           </div>
                           <div>
                             <span className="text-gray-500">Gender:</span> <span className="font-medium">{student.gender || '-'}</span>
                           </div>
-                          <div className="sm:col-span-2">
+                          <div className="sm:col-span-1">
                             <span className="text-gray-500">DOB:</span> <span className="font-medium">{formatDob(student.dob)}</span>
                           </div>
                         </div>
@@ -1030,7 +1074,7 @@ async function saveScore() {
 
                   {/* Previous saved scores */}
                   {existing && (
-                    <div className="rounded-lg border border-gray-200 bg-gray-50">
+                    <div className="rounded-lg border border-gray-200 bg-gray-50 self-start">
                       <button
                         type="button"
                         onClick={() => setSavedScoresOpen((prev) => !prev)}
@@ -1038,13 +1082,13 @@ async function saveScore() {
                       >
                         <div>
                           <div className="font-medium text-sm text-slate-900">Previous saved scores</div>
-                          <div className="text-xs text-slate-500">Stored values across all stations</div>
+                          <div className="text-[11px] text-slate-500">Stored values across all stations</div>
                         </div>
                         <span className="text-xs font-medium text-blue-700">{savedScoresOpen ? 'Hide' : 'Show'}</span>
                       </button>
                       {savedScoresOpen && (
                         <div className="border-t border-gray-200 px-3 py-2">
-                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-1 text-xs">
+                          <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
                             <div>Sit-ups: <span className="font-semibold">{existing.situps ?? '-'}</span></div>
                             <div>Pull-ups: <span className="font-semibold">{existing.pullups ?? (existing.pushups ?? '-')}</span></div>
                             {!isIppt3 && (
@@ -1060,6 +1104,7 @@ async function saveScore() {
                       )}
                     </div>
                   )}
+                  </div>
 
                   {stationGuide && (
                     <div className="rounded-lg border border-blue-200 bg-blue-50/60">
@@ -1252,8 +1297,56 @@ async function saveScore() {
           }}
         />
       )}
+      <ConfirmDialog
+        open={unsavedConfirmOpen}
+        title="Discard Unsaved Score?"
+        message={unsavedConfirmMessage}
+        confirmText="Discard and Continue"
+        cancelText="Keep Editing"
+        tone="danger"
+        onCancel={() => {
+          pendingUnsavedActionRef.current = null
+          setUnsavedConfirmOpen(false)
+        }}
+        onConfirm={async () => {
+          const action = pendingUnsavedActionRef.current
+          pendingUnsavedActionRef.current = null
+          setUnsavedConfirmOpen(false)
+          setAttempt1('')
+          setAttempt2('')
+          if (action) await action()
+        }}
+      />
       </div>
     </main>
+  )
+}
+
+function ConfirmDialog({ open, title, message, confirmText, cancelText, tone, onCancel, onConfirm }) {
+  if (!open) return null
+  const confirmClass = tone === 'danger'
+    ? 'px-3 py-1.5 border rounded bg-red-600 text-white hover:bg-red-700'
+    : 'px-3 py-1.5 border rounded bg-blue-600 text-white hover:bg-blue-700'
+  return (
+    <div className="fixed inset-0 z-50">
+      <div className="absolute inset-0 bg-black/35" onClick={onCancel} />
+      <div className="absolute inset-0 flex items-center justify-center p-4">
+        <div role="dialog" aria-modal="true" className="w-full max-w-md bg-white rounded-lg shadow-lg border">
+          <div className="px-4 py-3 border-b">
+            <div className="font-medium">{title}</div>
+          </div>
+          <div className="p-4 text-sm text-gray-700">{message}</div>
+          <div className="px-4 py-3 border-t flex justify-end gap-2">
+            <button type="button" onClick={onCancel} className="px-3 py-1.5 border rounded hover:bg-gray-50">
+              {cancelText || 'Cancel'}
+            </button>
+            <button type="button" onClick={onConfirm} className={confirmClass}>
+              {confirmText || 'Confirm'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   )
 }
 

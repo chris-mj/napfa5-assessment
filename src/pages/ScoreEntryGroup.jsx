@@ -24,6 +24,8 @@ export default function ScoreEntryGroup({ user }) {
   const [saveAllBusy, setSaveAllBusy] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
   const [toolRowId, setToolRowId] = useState(null);
+  const [unsavedConfirmOpen, setUnsavedConfirmOpen] = useState(false);
+  const [unsavedConfirmMessage, setUnsavedConfirmMessage] = useState("Discard the unsaved group scores and continue?");
   const [counterValue, setCounterValue] = useState(0);
   const [countdownDefault, setCountdownDefault] = useState(60);
   const [countdownLeft, setCountdownLeft] = useState(60);
@@ -32,6 +34,7 @@ export default function ScoreEntryGroup({ user }) {
   const [stopwatchRunning, setStopwatchRunning] = useState(false);
   const stopwatchStartRef = useRef(0);
   const stopwatchBaseMsRef = useRef(0);
+  const pendingUnsavedActionRef = useRef(null);
 
   const currentSession = useMemo(() => (sessions || []).find((s) => s.id === sessionId) || null, [sessions, sessionId]);
   const isIppt3 = String(currentSession?.assessment_type || "NAPFA5").toUpperCase() === "IPPT3";
@@ -57,11 +60,36 @@ export default function ScoreEntryGroup({ user }) {
           { key: "run", name: "1.6/2.4km Run", Icon: Timer },
         ]
   ), [isIppt3]);
+  const hasUnsavedRows = useMemo(
+    () => rows.some((r) => r.dirty || String(r.scoreInput || "") !== String(r.existing || "")),
+    [rows]
+  );
 
   useEffect(() => {
     const allowed = new Set(stations.map((s) => s.key));
     if (!allowed.has(activeStation)) setActiveStation(stations[0]?.key || "situps");
   }, [stations, activeStation]);
+
+  useEffect(() => {
+    if (!hasUnsavedRows) return undefined;
+    const handleBeforeUnload = (e) => {
+      e.preventDefault();
+      e.returnValue = "";
+      return "";
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [hasUnsavedRows]);
+
+  const runWithUnsavedGuard = (action, message = "Discard the unsaved group scores and continue?") => {
+    if (!hasUnsavedRows) {
+      action();
+      return;
+    }
+    pendingUnsavedActionRef.current = action;
+    setUnsavedConfirmMessage(message);
+    setUnsavedConfirmOpen(true);
+  };
 
   useEffect(() => {
     if (activeStation === "situps" || activeStation === "pushups") {
@@ -390,7 +418,16 @@ export default function ScoreEntryGroup({ user }) {
                 {currentSession ? `${currentSession.title}${currentSession.session_date ? ` (${currentSession.session_date})` : ""}` : "Select session"}
               </span>
             </div>
-            <select className={`mt-1 w-full border rounded px-3 py-2 ${hasMultipleNapfaSessions ? "border-amber-300 focus:outline-none focus:ring-2 focus:ring-amber-400" : ""}`} value={sessionId} onChange={(e) => { setSessionId(e.target.value); setGroup(null); setRows([]); setGroupCodeInput(""); }}>
+            <select className={`mt-1 w-full border rounded px-3 py-2 ${hasMultipleNapfaSessions ? "border-amber-300 focus:outline-none focus:ring-2 focus:ring-amber-400" : ""}`} value={sessionId} onChange={(e) => {
+              const nextValue = e.target.value;
+              if (nextValue === sessionId) return;
+              runWithUnsavedGuard(() => {
+                setSessionId(nextValue);
+                setGroup(null);
+                setRows([]);
+                setGroupCodeInput("");
+              }, "Switching session will discard the unsaved group scores. Continue?");
+            }}>
               <option value="">Select active session</option>
               {sessions.map((s) => <option key={s.id} value={s.id}>{`${s.title} (${s.session_date || "-"})`}</option>)}
             </select>
@@ -413,7 +450,10 @@ export default function ScoreEntryGroup({ user }) {
               </span>
             </div>
             <div className="mt-2 relative">
-              <Select value={activeStation} onValueChange={setActiveStation}>
+              <Select value={activeStation} onValueChange={(value) => {
+                if (value === activeStation) return;
+                runWithUnsavedGuard(() => setActiveStation(value), "Switching station will discard the unsaved group scores. Continue?");
+              }}>
                 <SelectTrigger className="w-full rounded-full px-4 py-2 text-sm bg-white border-[3px] border-blue-600 text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-600">
                   <span className="flex items-center gap-2 flex-1">
                     {(() => {
@@ -443,8 +483,14 @@ export default function ScoreEntryGroup({ user }) {
               value={groupCodeInput}
               onChange={(e) => {
                 const code = e.target.value;
-                setGroupCodeInput(code);
-                if (code) fetchGroupMembers(sessionId, code);
+                if (!code) {
+                  setGroupCodeInput(code);
+                  return;
+                }
+                runWithUnsavedGuard(() => {
+                  setGroupCodeInput(code);
+                  fetchGroupMembers(sessionId, code);
+                }, "Loading another group will discard the unsaved group scores. Continue?");
               }}
             >
               <option value="">Select group from list</option>
@@ -456,10 +502,10 @@ export default function ScoreEntryGroup({ user }) {
             </select>
             <div className="mt-1 flex gap-2">
               <input value={groupCodeInput} onChange={(e) => setGroupCodeInput(e.target.value.toUpperCase())} className="border rounded px-3 py-2 w-full" placeholder="e.g. G01" />
-              <button type="button" onClick={() => fetchGroupMembers(sessionId, groupCodeInput)} className="px-3 py-2 border rounded hover:bg-gray-50">Load</button>
+              <button type="button" onClick={() => runWithUnsavedGuard(() => fetchGroupMembers(sessionId, groupCodeInput), "Loading another group will discard the unsaved group scores. Continue?")} className="px-3 py-2 border rounded hover:bg-gray-50">Load</button>
               <button
                 type="button"
-                onClick={() => setScannerOpen(true)}
+                onClick={() => runWithUnsavedGuard(() => setScannerOpen(true), "Opening the scanner will discard the unsaved group scores. Continue?")}
                 className="px-3 py-2 border rounded hover:bg-gray-50"
                 aria-label="Scan group QR"
                 title="Scan group QR"
@@ -574,6 +620,31 @@ export default function ScoreEntryGroup({ user }) {
         />
       )}
 
+      <ConfirmDialog
+        open={unsavedConfirmOpen}
+        title="Discard Unsaved Scores?"
+        message={unsavedConfirmMessage}
+        confirmText="Discard and Continue"
+        cancelText="Keep Editing"
+        tone="danger"
+        onCancel={() => {
+          pendingUnsavedActionRef.current = null;
+          setUnsavedConfirmOpen(false);
+        }}
+        onConfirm={async () => {
+          const action = pendingUnsavedActionRef.current;
+          pendingUnsavedActionRef.current = null;
+          setUnsavedConfirmOpen(false);
+          setRows((prev) => prev.map((r) => ({
+            ...r,
+            scoreInput: r.existing == null ? "" : String(r.existing),
+            dirty: false,
+            status: "",
+          })));
+          if (action) await action();
+        }}
+      />
+
       <AnimatePresence>
         {toolsOpen && (
           <StationToolsDrawer
@@ -611,6 +682,34 @@ export default function ScoreEntryGroup({ user }) {
         )}
       </AnimatePresence>
     </main>
+  );
+}
+
+function ConfirmDialog({ open, title, message, confirmText, cancelText, tone, onCancel, onConfirm }) {
+  if (!open) return null;
+  const confirmClass = tone === "danger"
+    ? "px-3 py-1.5 border rounded bg-red-600 text-white hover:bg-red-700"
+    : "px-3 py-1.5 border rounded bg-blue-600 text-white hover:bg-blue-700";
+  return (
+    <div className="fixed inset-0 z-50">
+      <div className="absolute inset-0 bg-black/35" onClick={onCancel} />
+      <div className="absolute inset-0 flex items-center justify-center p-4">
+        <div role="dialog" aria-modal="true" className="w-full max-w-md bg-white rounded-lg shadow-lg border">
+          <div className="px-4 py-3 border-b">
+            <div className="font-medium">{title}</div>
+          </div>
+          <div className="p-4 text-sm text-gray-700">{message}</div>
+          <div className="px-4 py-3 border-t flex justify-end gap-2">
+            <button type="button" onClick={onCancel} className="px-3 py-1.5 border rounded hover:bg-gray-50">
+              {cancelText || "Cancel"}
+            </button>
+            <button type="button" onClick={onConfirm} className={confirmClass}>
+              {confirmText || "Confirm"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 

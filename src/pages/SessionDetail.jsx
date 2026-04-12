@@ -26,9 +26,26 @@ const PFT_IMPORT_PREVIEW_LIMIT = 50;
 
 function normalizeImportedScoreValue(key, value) {
     if (value == null || value === "") return null;
-    const num = Number(value);
+    let num = Number(value);
     if (!Number.isFinite(num)) return null;
-    return key === 'shuttle_run' ? Number(num.toFixed(1)) : Number(num.toFixed(2));
+    const scaleDownIfNeeded = (max, decimals = 0) => {
+        if (num > max && Number.isInteger(num) && num % 100 === 0) {
+            const scaled = num / 100;
+            if (scaled <= max) num = scaled;
+        }
+        if (num < 0 || num > max) return null;
+        return decimals > 0 ? Number(num.toFixed(decimals)) : Math.round(num);
+    };
+
+    if (key === 'situps' || key === 'pullups') return scaleDownIfNeeded(60, 0);
+    if (key === 'broad_jump') return scaleDownIfNeeded(300, 0);
+    if (key === 'sit_and_reach') return scaleDownIfNeeded(80, 0);
+    if (key === 'shuttle_run') return scaleDownIfNeeded(20, 1);
+    if (key === 'run_2400') {
+        if (num < 0 || num > 30) return null;
+        return Number(num.toFixed(2));
+    }
+    return Number(num.toFixed(2));
 }
 
 function isImportedScoreBetter(key, incoming, existing) {
@@ -425,10 +442,6 @@ export default function SessionDetail({ user }) {
     const [formState, setFormState] = useState({ title: "", session_date: "" });
     const [formSubmitting, setFormSubmitting] = useState(false);
     const [flash, setFlash] = useState("");
-    const [scoresCount, setScoresCount] = useState(0);
-    const [scoredSet, setScoredSet] = useState(new Set());
-    const [inProgressSet, setInProgressSet] = useState(new Set());
-    const [completedSet, setCompletedSet] = useState(new Set());
     const [scoresByStudent, setScoresByStudent] = useState(new Map());
     const isIppt3 = (session?.assessment_type || 'NAPFA5') === 'IPPT3';
     const [scoresPage, setScoresPage] = useState(1);
@@ -522,6 +535,37 @@ export default function SessionDetail({ user }) {
         return JSON.stringify(current) !== JSON.stringify(baseline);
     };
 
+    const { scoredSet, inProgressSet, completedSet, scoresCount } = useMemo(() => {
+        const scored = new Set();
+        const completed = new Set();
+        if (!Array.isArray(roster) || roster.length === 0) {
+            return { scoredSet: scored, inProgressSet: new Set(), completedSet: completed, scoresCount: 0 };
+        }
+
+        const requiredMetrics = isIppt3
+            ? ['situps', 'pushups', 'run_2400']
+            : ['situps', 'shuttle_run', 'sit_and_reach', 'pullups', 'broad_jump'];
+
+        roster.forEach((s) => {
+            const row = scoresByStudent.get(s.id);
+            if (!row) return;
+            const recordedRequired = requiredMetrics.reduce((acc, key) => acc + (row[key] == null || row[key] === "" ? 0 : 1), 0);
+            const hasAny = isIppt3
+                ? recordedRequired > 0
+                : (recordedRequired > 0) || !(row.run_2400 == null || row.run_2400 === "");
+            if (hasAny) scored.add(s.id);
+            if (recordedRequired === requiredMetrics.length) completed.add(s.id);
+        });
+
+        const inProgress = new Set([...scored].filter((studentId) => !completed.has(studentId)));
+        return {
+            scoredSet: scored,
+            inProgressSet: inProgress,
+            completedSet: completed,
+            scoresCount: completed.size
+        };
+    }, [roster, scoresByStudent, isIppt3]);
+
     const formatDDMMYYYY = (iso) => {
         if (!iso) return "";
         const d = new Date(iso);
@@ -607,7 +651,6 @@ export default function SessionDetail({ user }) {
     useEffect(() => {
         if (!id) return;
         loadRoster();
-        loadScoresCount();
         loadScoresMap();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [id, session?.assessment_type]);
@@ -629,14 +672,6 @@ export default function SessionDetail({ user }) {
             };
         });
     }, [expandedRunConfigId, runTagMappingsByConfig]);
-
-    // Recompute counts whenever roster changes to keep progress in sync
-    useEffect(() => {
-        if (!id) return;
-        // When roster updates (often after async fetch), refresh status sets
-        loadScoresCount();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [roster, id]);
 
     // Keep tab state in sync with URL hash
     useEffect(() => {
@@ -803,7 +838,6 @@ export default function SessionDetail({ user }) {
             if (upErr) throw upErr;
 
             await loadScoresMap();
-            await loadScoresCount();
 
             setMassEdits((prev) => {
                 const next = new Map(prev);
@@ -1176,7 +1210,6 @@ export default function SessionDetail({ user }) {
             await loadRunConfigs();
             await loadRunTagMappings();
             await loadScoresMap();
-            await loadScoresCount();
         } catch (err) {
             setRunConfigFlash(err.message || "Failed to apply run timings to scores.");
         } finally {
@@ -1323,63 +1356,6 @@ export default function SessionDetail({ user }) {
         });
         return map;
     }, [sortedRoster, scoresByStudent, session?.session_date, schoolType, isIppt3]);
-
-    const loadScoresCount = async () => {
-        if ((session?.assessment_type || 'NAPFA5') === 'IPPT3') {
-            const { data: rows, error: err } = await supabase
-                .from('ippt3_scores')
-                .select('student_id, situps, pushups, run_2400')
-                .eq('session_id', id);
-            if (err) return;
-            const byStudent = new Map((rows || []).map(r => [r.student_id, r]));
-            const scored = new Set();
-            const inprog = new Set();
-            const completed = new Set();
-            (roster || []).forEach(s => {
-                const row = byStudent.get(s.id);
-                if (!row) return;
-                const required = ['situps','pushups','run_2400'];
-                const nonNull = required.reduce((acc,k)=> acc + (row[k] == null ? 0 : 1), 0);
-                const hasAny = nonNull > 0;
-                if (hasAny) scored.add(s.id);
-                if (nonNull === required.length) completed.add(s.id);
-                else inprog.add(s.id);
-            });
-            setScoredSet(scored);
-            setInProgressSet(inprog);
-            setCompletedSet(completed);
-            setScoresCount(completed.size);
-            return;
-        }
-        // NAPFA-5
-        const { data: rows, error: err } = await supabase
-            .from('scores')
-            .select('student_id, situps, shuttle_run, sit_and_reach, pullups, run_2400, broad_jump')
-            .eq('session_id', id);
-        if (err) return;
-        // Completion requires the 5 non-run stations; run is optional for completion
-        const requiredMetrics = ['situps','shuttle_run','sit_and_reach','pullups','broad_jump'];
-        const byStudent = new Map((rows || []).map(r => [r.student_id, r]));
-        const scored = new Set();
-        const inprog = new Set();
-        const completed = new Set();
-        (roster || []).forEach(s => {
-            const row = byStudent.get(s.id);
-            if (!row) return; // no row yet => not started
-            const nonNullCount = requiredMetrics.reduce((acc, k) => acc + (row[k] == null ? 0 : 1), 0);
-            const hasAny = (nonNullCount > 0) || (row.run_2400 != null);
-            if (hasAny) scored.add(s.id);
-            if (nonNullCount === requiredMetrics.length) {
-                completed.add(s.id);
-            } else if (hasAny) {
-                inprog.add(s.id);
-            }
-        });
-        setScoredSet(scored);
-        setInProgressSet(inprog);
-        setCompletedSet(completed);
-        setScoresCount(completed.size);
-    };
 
     const loadScoresMap = async () => {
         if ((session?.assessment_type || 'NAPFA5') === 'IPPT3') {
@@ -1575,6 +1551,19 @@ export default function SessionDetail({ user }) {
         }
     };
 
+    const refreshPftImportPreview = () => {
+        if (!pftImportCsvText) {
+            setPftImportErr("Choose a PFT CSV file first.");
+            return;
+        }
+        try {
+            setPftImportPreview(buildPftImportPreview(pftImportCsvText, pftImportMode === 'overwrite_all'));
+            setPftImportErr("");
+        } catch (err) {
+            setPftImportErr(err.message || "Failed to rebuild PFT import preview.");
+        }
+    };
+
     const applyPftImport = async () => {
         if (!pftImportPreview) return;
         if (!pftImportPreview.applyRows.length) {
@@ -1593,7 +1582,6 @@ export default function SessionDetail({ user }) {
                 if (upsertErr) throw upsertErr;
             }
             await loadScoresMap();
-            await loadScoresCount();
             setFlash(`Imported scores for ${pftImportPreview.rowsToImport} roster student(s).`);
             closePftImportModal();
         } catch (err) {
@@ -1625,12 +1613,7 @@ export default function SessionDetail({ user }) {
 
     useEffect(() => {
         if (!pftImportCsvText) return;
-        try {
-            setPftImportPreview(buildPftImportPreview(pftImportCsvText, pftImportMode === 'overwrite_all'));
-            setPftImportErr("");
-        } catch (err) {
-            setPftImportErr(err.message || "Failed to rebuild PFT import preview.");
-        }
+        refreshPftImportPreview();
     }, [buildPftImportPreview, pftImportCsvText, pftImportMode]);
 
     const handleEditToggle = () => {
@@ -2073,7 +2056,6 @@ export default function SessionDetail({ user }) {
             if (err) throw err;
             setFlash('Removed from roster.');
             await loadRoster();
-            await loadScoresCount();
         } catch (err) {
             setFlash(err.message || 'Failed to remove from roster.');
         }
@@ -4026,7 +4008,7 @@ export default function SessionDetail({ user }) {
                                                 <td className="px-3 py-2 border align-top">
                                                     {massEditMode && canManage
                                                         ? <span className="text-xs text-gray-400">-</span>
-                                                        : <ScoreRowActions student={s} canRecord={canRecord} sessionCompleted={sessionCompleted} onBlocked={openCompletedScoresDialog} onSaved={async () => { await loadScoresMap(); await loadScoresCount(); }} sessionId={id} isIppt3={isIppt3} />
+                                                        : <ScoreRowActions student={s} canRecord={canRecord} sessionCompleted={sessionCompleted} onBlocked={openCompletedScoresDialog} onSaved={async () => { await loadScoresMap(); }} sessionId={id} isIppt3={isIppt3} />
                                                     }
                                               </td>
                                             </tr>
@@ -4109,7 +4091,7 @@ export default function SessionDetail({ user }) {
                                                 <td className="px-3 py-2 border align-top">
                                                     {massEditMode && canManage
                                                         ? <span className="text-xs text-gray-400">-</span>
-                                                        : <ScoreRowActions student={s} canRecord={canRecord} sessionCompleted={sessionCompleted} onBlocked={openCompletedScoresDialog} onSaved={async () => { await loadScoresMap(); await loadScoresCount(); }} sessionId={id} isIppt3={isIppt3} />
+                                                        : <ScoreRowActions student={s} canRecord={canRecord} sessionCompleted={sessionCompleted} onBlocked={openCompletedScoresDialog} onSaved={async () => { await loadScoresMap(); }} sessionId={id} isIppt3={isIppt3} />
                                                     }
                                                 </td>
                                             </tr>
@@ -4193,6 +4175,16 @@ export default function SessionDetail({ user }) {
                                                 <div className="text-xs text-slate-500">Imported values replace existing scores for stations that have values in the CSV.</div>
                                             </span>
                                         </label>
+                                        <div className="pt-1">
+                                            <button
+                                                type="button"
+                                                onClick={refreshPftImportPreview}
+                                                disabled={pftImportBusy || !pftImportCsvText}
+                                                className="text-xs px-3 py-1.5 border rounded bg-white hover:bg-gray-50 disabled:opacity-60"
+                                            >
+                                                Refresh preview
+                                            </button>
+                                        </div>
                                     </div>
                                     <div>
                                         <div className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500 mb-2">Notes</div>
