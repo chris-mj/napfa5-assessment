@@ -595,6 +595,17 @@ export default function AddAttempt({ user }) {
     loadExisting()
   }, [student?.id, sessionId, isIppt3])
 
+  useEffect(() => {
+    if (!student) {
+      setAttempt1('')
+      setAttempt2('')
+      return
+    }
+    const next = getPrefillValues(activeStation, existing)
+    setAttempt1(next.attempt1)
+    setAttempt2(next.attempt2)
+  }, [activeStation, existing, student?.id])
+
   // Save score to scores table (one row per session+student)
 async function saveScore() {
     if (!student || !sessionId) return
@@ -1024,7 +1035,7 @@ async function saveScore() {
                     type="button"
                     onClick={()=>{ if(sessionId){ openRoster() } }}
                     disabled={!sessionId}
-                    className="border rounded-md px-3 py-2 hover:bg-gray-50 disabled:opacity-60"
+                    className="border rounded-md px-3 py-2 hover:bg-gray-50 disabled:opacity-60 whitespace-nowrap"
                     aria-label="Select student from list"
                     title={sessionId ? 'Select student from list' : 'Select a session first'}
                   >
@@ -1046,68 +1057,68 @@ async function saveScore() {
                   transition={{ duration: 0.24, ease: 'easeOut' }}
                   className="mt-3 space-y-3 overflow-hidden"
                 >
-                  <div className="grid gap-3 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] lg:items-start">
-                  {/* Student Info */}
-                  <div className="bg-muted/50 border rounded-lg p-3">
-                    <div className="flex items-start gap-3">
-                      <div className="shrink-0 w-10 h-10 rounded-full bg-white border flex items-center justify-center">
-                        <UserCircle className="h-6 w-6 text-gray-600" aria-hidden="true" />
-                      </div>
-                      <div className="flex-1">
-                        <div className="text-gray-900 text-sm sm:text-base font-semibold">
-                          {student.name} <span className="text-gray-600 font-normal">/ {student.studentIdentifier}</span>
+                  <div className="grid gap-3 md:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)] md:items-start">
+                  <div className="space-y-3">
+                    {/* Student Info */}
+                    <div className="bg-muted/50 border rounded-lg p-3">
+                      <div className="flex items-start gap-3">
+                        <div className="shrink-0 w-10 h-10 rounded-full bg-white border flex items-center justify-center">
+                          <UserCircle className="h-6 w-6 text-gray-600" aria-hidden="true" />
                         </div>
-                        <div className="mt-1.5 grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs sm:text-sm text-gray-700">
-                          <div>
-                            <span className="text-gray-500">Class:</span> <span className="font-medium">{student.className}</span>
+                        <div className="flex-1">
+                          <div className="text-gray-900 text-sm sm:text-base font-semibold">
+                            {student.name} <span className="text-gray-600 font-normal">/ {student.studentIdentifier}</span>
                           </div>
-                          <div>
-                            <span className="text-gray-500">Gender:</span> <span className="font-medium">{student.gender || '-'}</span>
-                          </div>
-                          <div className="sm:col-span-1">
-                            <span className="text-gray-500">DOB:</span> <span className="font-medium">{formatDob(student.dob)}</span>
+                          <div className="mt-1.5 grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs sm:text-sm text-gray-700">
+                            <div>
+                              <span className="text-gray-500">Class:</span> <span className="font-medium">{student.className}</span>
+                            </div>
+                            <div>
+                              <span className="text-gray-500">Gender:</span> <span className="font-medium">{student.gender || '-'}</span>
+                            </div>
+                            <div className="sm:col-span-1">
+                              <span className="text-gray-500">DOB:</span> <span className="font-medium">{formatDob(student.dob)}</span>
+                            </div>
                           </div>
                         </div>
                       </div>
                     </div>
-                  </div>
 
-                  {/* Previous saved scores */}
-                  {existing && (
-                    <div className="rounded-lg border border-gray-200 bg-gray-50 self-start">
-                      <button
-                        type="button"
-                        onClick={() => setSavedScoresOpen((prev) => !prev)}
-                        className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left"
-                      >
-                        <div>
-                          <div className="font-medium text-sm text-slate-900">Previous saved scores</div>
-                          <div className="text-[11px] text-slate-500">Stored values across all stations</div>
-                        </div>
-                        <span className="text-xs font-medium text-blue-700">{savedScoresOpen ? 'Hide' : 'Show'}</span>
-                      </button>
-                      {savedScoresOpen && (
-                        <div className="border-t border-gray-200 px-3 py-2">
-                          <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
-                            <div>Sit-ups: <span className="font-semibold">{existing.situps ?? '-'}</span></div>
-                            <div>Pull-ups: <span className="font-semibold">{existing.pullups ?? (existing.pushups ?? '-')}</span></div>
-                            {!isIppt3 && (
-                              <>
-                                <div>Broad Jump (cm): <span className="font-semibold">{existing.broad_jump ?? '-'}</span></div>
-                                <div>Sit & Reach (cm): <span className="font-semibold">{existing.sit_and_reach ?? '-'}</span></div>
-                                <div>Shuttle Run (s): <span className="font-semibold">{existing.shuttle_run ?? '-'}</span></div>
-                              </>
-                            )}
-                            <div>Run (mm:ss): <span className="font-semibold">{fmtRun(existing.run_2400) ?? '-'}</span></div>
+                    {/* Previous saved scores */}
+                    {existing && (
+                      <div className={`rounded-lg border border-gray-200 bg-gray-50 self-start ${stationGuide && !stationGuideOpen ? 'md:col-span-2' : ''}`}>
+                        <button
+                          type="button"
+                          onClick={() => setSavedScoresOpen((prev) => !prev)}
+                          className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left"
+                        >
+                          <div>
+                            <div className="font-medium text-sm text-slate-900">Previous saved scores</div>
                           </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
+                          <span className="text-xs font-medium text-blue-700">{savedScoresOpen ? 'Hide' : 'Show'}</span>
+                        </button>
+                        {savedScoresOpen && (
+                          <div className="border-t border-gray-200 px-3 py-2">
+                            <div className={`grid gap-x-3 gap-y-1 text-xs ${stationGuide && stationGuideOpen ? (isIppt3 ? 'grid-cols-3' : 'grid-cols-2 sm:grid-cols-3') : (isIppt3 ? 'grid-cols-3 md:grid-cols-6' : 'grid-cols-2 md:grid-cols-3 lg:grid-cols-6')}`}>
+                              <div>Sit-ups: <span className="font-semibold">{existing.situps ?? '-'}</span></div>
+                              <div>Pull-ups: <span className="font-semibold">{existing.pullups ?? (existing.pushups ?? '-')}</span></div>
+                              {!isIppt3 && (
+                                <>
+                                  <div>Broad Jump (cm): <span className="font-semibold">{existing.broad_jump ?? '-'}</span></div>
+                                  <div>Sit & Reach (cm): <span className="font-semibold">{existing.sit_and_reach ?? '-'}</span></div>
+                                  <div>Shuttle Run (s): <span className="font-semibold">{existing.shuttle_run ?? '-'}</span></div>
+                                </>
+                              )}
+                              <div>Run (mm:ss): <span className="font-semibold">{fmtRun(existing.run_2400) ?? '-'}</span></div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {stationGuide && (
-                    <div className="rounded-lg border border-blue-200 bg-blue-50/60">
+                    <div className="rounded-lg border border-blue-200 bg-blue-50/60 self-start">
                       <button
                         type="button"
                         onClick={() => setStationGuideOpen((prev) => !prev)}
@@ -1115,39 +1126,37 @@ async function saveScore() {
                       >
                         <div>
                           <div className="font-medium text-sm text-slate-900">{stationGuide.title}</div>
-                          <div className="text-xs text-slate-500">Saved result and standards for the selected station</div>
                         </div>
                         <span className="text-xs font-medium text-blue-700">{stationGuideOpen ? 'Hide' : 'Show'}</span>
                       </button>
                       {stationGuideOpen && (
-                        <div className="border-t border-blue-200 px-3 py-2.5 space-y-2">
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                            <div className="rounded-md border border-white/80 bg-white px-2.5 py-2">
+                        <div className="border-t border-blue-200 px-3 py-2 space-y-2">
+                          <div className="grid grid-cols-2 gap-2 text-xs">
+                            <div className="rounded-md border border-white/80 bg-white px-2 py-1.5">
                               <div className="uppercase tracking-wide text-slate-500">Saved score</div>
                               <div className="mt-0.5 font-semibold text-sm text-slate-900">{stationGuide.savedLabel}</div>
                             </div>
-                            <div className="rounded-md border border-white/80 bg-white px-2.5 py-2">
+                            <div className="rounded-md border border-white/80 bg-white px-2 py-1.5">
                               <div className="uppercase tracking-wide text-slate-500">{stationGuide.summaryCaption}</div>
                               <div className="mt-0.5 font-semibold text-sm text-slate-900">{stationGuide.summaryLabel}</div>
                             </div>
                           </div>
-
                           {stationGuide.rows.length > 0 ? (
                             <div className="overflow-x-auto">
                               <table className="w-full text-xs border border-blue-100 bg-white rounded-md overflow-hidden">
                                 <thead>
                                   <tr className="bg-blue-100/70 text-left">
-                                    <th className="px-2.5 py-1.5 border-b border-blue-100">Grade</th>
-                                    <th className="px-2.5 py-1.5 border-b border-blue-100">Score Needed</th>
-                                    <th className="px-2.5 py-1.5 border-b border-blue-100">Points</th>
+                                    <th className="px-2 py-1 border-b border-blue-100">Grade</th>
+                                    <th className="px-2 py-1 border-b border-blue-100">Score Needed</th>
+                                    <th className="px-2 py-1 border-b border-blue-100">Points</th>
                                   </tr>
                                 </thead>
                                 <tbody>
                                   {stationGuide.rows.map((row) => (
                                     <tr key={row.grade} className={stationGuide.highlightedGrade === row.grade ? 'bg-blue-50/80' : ''}>
-                                      <td className={`px-2.5 py-1.5 border-b border-blue-50 font-semibold text-slate-900 ${stationGuide.highlightedGrade === row.grade ? 'text-blue-900' : ''}`}>{row.grade}</td>
-                                      <td className={`px-2.5 py-1.5 border-b border-blue-50 ${stationGuide.highlightedGrade === row.grade ? 'font-medium text-blue-950' : ''}`}>{row.requirement}</td>
-                                      <td className={`px-2.5 py-1.5 border-b border-blue-50 ${stationGuide.highlightedGrade === row.grade ? 'font-medium text-blue-900' : ''}`}>{row.points}</td>
+                                      <td className={`px-2 py-1 border-b border-blue-50 font-semibold text-slate-900 ${stationGuide.highlightedGrade === row.grade ? 'text-blue-900' : ''}`}>{row.grade}</td>
+                                      <td className={`px-2 py-1 border-b border-blue-50 ${stationGuide.highlightedGrade === row.grade ? 'font-medium text-blue-950' : ''}`}>{row.requirement}</td>
+                                      <td className={`px-2 py-1 border-b border-blue-50 ${stationGuide.highlightedGrade === row.grade ? 'font-medium text-blue-900' : ''}`}>{row.points}</td>
                                     </tr>
                                   ))}
                                 </tbody>
@@ -1160,6 +1169,8 @@ async function saveScore() {
                       )}
                     </div>
                   )}
+
+                  </div>
 
                   {/* Record Attempt */}
                   <div className="space-y-2">
@@ -1504,6 +1515,33 @@ function StationToolsDrawer({
       </motion.aside>
     </div>
   )
+}
+
+function getPrefillValues(activeStation, existing) {
+  if (!existing || !activeStation) return { attempt1: '', attempt2: '' }
+
+  if (activeStation === 'situps') {
+    return { attempt1: existing.situps != null ? String(existing.situps) : '', attempt2: '' }
+  }
+  if (activeStation === 'pullups') {
+    return { attempt1: existing.pullups != null ? String(existing.pullups) : '', attempt2: '' }
+  }
+  if (activeStation === 'pushups') {
+    return { attempt1: existing.pushups != null ? String(existing.pushups) : '', attempt2: '' }
+  }
+  if (activeStation === 'broad_jump') {
+    return { attempt1: existing.broad_jump != null ? String(existing.broad_jump) : '', attempt2: '' }
+  }
+  if (activeStation === 'sit_and_reach') {
+    return { attempt1: existing.sit_and_reach != null ? String(existing.sit_and_reach) : '', attempt2: '' }
+  }
+  if (activeStation === 'shuttle_run') {
+    return { attempt1: existing.shuttle_run != null ? String(existing.shuttle_run) : '', attempt2: '' }
+  }
+  if (activeStation === 'run') {
+    return { attempt1: existing.run_2400 != null ? ((fmtRun(existing.run_2400) || '').replace(':', '')) : '', attempt2: '' }
+  }
+  return { attempt1: '', attempt2: '' }
 }
 
 function ScannerModal({ onClose, onDetected }) {
