@@ -30,6 +30,32 @@ function splitCsvLine(line) {
   return out;
 }
 
+function normalizeHeader(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\*/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function buildHeaderIndex(cols) {
+  const map = new Map();
+  cols.forEach((col, idx) => {
+    const key = normalizeHeader(col);
+    if (key && !map.has(key)) map.set(key, idx);
+  });
+  return map;
+}
+
+function getCol(headerMap, aliases, fallbackIndex = null, cols = []) {
+  for (const alias of aliases) {
+    const idx = headerMap.get(normalizeHeader(alias));
+    if (idx != null) return cols[idx] ?? '';
+  }
+  return fallbackIndex == null ? '' : (cols[fallbackIndex] ?? '');
+}
+
 function normalizeGender(val) {
   if (!val) return null;
   const v = String(val).trim().toLowerCase();
@@ -96,7 +122,13 @@ export function parseNapfaCsv(csvText, options = {}) {
   for (let i = 0; i < lines.length; i++) {
     const cols = splitCsvLine(lines[i]);
     const lineJoin = cols.join(' ').toLowerCase();
-    if (cols.length >= 8 && lineJoin.includes('name') && lineJoin.includes('id') && lineJoin.includes('gender')) {
+    if (
+      cols.length >= 8 &&
+      lineJoin.includes('name') &&
+      lineJoin.includes('id') &&
+      lineJoin.includes('gender') &&
+      (lineJoin.includes('sit-ups') || lineJoin.includes('sit ups') || lineJoin.includes('standing broad jump') || lineJoin.includes('shuttle run'))
+    ) {
       headerIdx = i;
       break;
     }
@@ -104,6 +136,8 @@ export function parseNapfaCsv(csvText, options = {}) {
   if (headerIdx === -1) headerIdx = 20; // default per spec
 
   const dataStart = headerIdx + 1;
+  const headerCols = splitCsvLine(lines[headerIdx] || '');
+  const headerMap = buildHeaderIndex(headerCols);
   const rows = [];
   for (let i = dataStart; i < lines.length; i++) {
     const raw = lines[i];
@@ -112,20 +146,18 @@ export function parseNapfaCsv(csvText, options = {}) {
     if (cols.every(c => !c || !String(c).trim())) continue;
     const excelRow = i + 1; // 1-based display
 
-    const serial = cols[0] ?? '';
-    const name = cols[1] ?? '';
-    const id = normalizeStudentId(cols[2] ?? '');
-    const klass = cols[3] ?? '';
-    const gender = normalizeGender(cols[4] ?? '');
-    const dob = parseDob(cols[5] ?? '');
-    // cols[6] attendance ignored
-    const situps = parseIntOrNull(cols[7]);
-    const broadJumpCm = parseFloatOrNull(cols[8]);
-    const sitAndReachCm = parseFloatOrNull(cols[9]);
-    const pullups = parseIntOrNull(cols[10]);
-    const shuttleRunSec = parseFloatOrNull(cols[11]);
-    const runSeconds = parseMmssToSeconds(cols[12]);
-    // cols[13] PFT Test Date (ignored)
+    const serial = getCol(headerMap, ['Sl.No', 'S/N', 'S.N', 'Serial', 'No'], 0, cols);
+    const name = getCol(headerMap, ['Name', 'Student Name'], 1, cols);
+    const id = normalizeStudentId(getCol(headerMap, ['ID', 'Student ID', 'Unique Identifier'], 2, cols));
+    const klass = getCol(headerMap, ['Class', 'Class Name'], 3, cols);
+    const gender = normalizeGender(getCol(headerMap, ['Gender', 'Sex'], 4, cols));
+    const dob = parseDob(getCol(headerMap, ['DOB', 'Date of Birth'], 5, cols));
+    const situps = parseIntOrNull(getCol(headerMap, ['Sit-ups', 'Sit Ups', 'Sit Up reps', 'Sit-up reps'], 7, cols));
+    const broadJumpCm = parseFloatOrNull(getCol(headerMap, ['Standing Broad Jump (cm)', 'Broad Jump (cm)', 'Broad Jump'], 8, cols));
+    const sitAndReachCm = parseFloatOrNull(getCol(headerMap, ['Sit & Reach (cm)', 'Sit and Reach (cm)', 'Sit & Reach', 'Sit and Reach'], 9, cols));
+    const pullups = parseIntOrNull(getCol(headerMap, ['Pull-ups', 'Pull Ups', 'Pull-up reps', 'Pullups'], 10, cols));
+    const shuttleRunSec = parseFloatOrNull(getCol(headerMap, ['Shuttle Run (sec)', 'Shuttle (s)', 'Shuttle Run', 'Shuttle Run (s)'], 11, cols));
+    const runSeconds = parseMmssToSeconds(getCol(headerMap, ['1.6/2.4 Km Run MMSS', 'Run (MM:SS)', 'Run MMSS', '2.4 Km Run MMSS', 'Run'], 12, cols));
 
     if (!id || !String(id).trim()) {
       errors.push({ row: excelRow, message: 'Missing ID (unique identifier).' });

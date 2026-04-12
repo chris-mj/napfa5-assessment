@@ -32,6 +32,7 @@ export default function ViewScore() {
       const v = localStorage.getItem('viewscore_show_ladder')
 
       if (v != null) setShowLadder(v === '1')
+      else setShowLadder(false)
 
     } catch {}
 
@@ -338,31 +339,37 @@ export default function ViewScore() {
 
           <div className="bg-white rounded shadow p-3">
 
-            <div className="flex flex-wrap justify-between gap-2">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
 
-              <div>
+              <div className="min-w-0 flex-1">
 
-                <div className="text-sm text-gray-500">Name</div>
-
-                <div className="text-lg font-semibold">{profile.name}</div>
-
-              </div>
-
-              <div>
-
-                <div className="text-sm text-gray-500">Student ID</div>
-
-                <div className="font-mono text-lg">{normalizeStudentId(profile.sid)}</div>
-
-              </div>
-
-              <div>
-
-                <div className="text-sm text-gray-500">DOB</div>
-
-                <div>{formatDate(profile.dob)}</div>
+                <div className="flex flex-wrap items-end gap-x-4 gap-y-1">
+                  <div className="min-w-0">
+                    <div className="text-xs text-gray-500">Name</div>
+                    <div className="truncate text-lg font-semibold">{profile.name}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-gray-500">Student ID</div>
+                    <div className="font-mono text-base font-semibold">{normalizeStudentId(profile.sid)}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-gray-500">DOB</div>
+                    <div className="text-sm">{formatDate(profile.dob)}</div>
+                  </div>
+                </div>
 
               </div>
+
+              {attempts.length > 0 && (
+                <div className="flex flex-col gap-1 lg:min-w-[260px]">
+                  <label className="text-xs text-gray-500">Select Test</label>
+                  <select value={selectedId || '-'} onChange={(e)=>setSelectedId(e.target.value)} className="border rounded px-2 py-1.5 text-sm bg-white">
+                    {attempts.map(a => (
+                      <option key={a.id} value={a.id}>{`${formatDate(a.test_date) || '-'} · ${(a.kind === 'IPPT3' || a.assessment_type === 'IPPT3') ? 'IPPT-3' : 'NAPFA-5'}`}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
             </div>
 
@@ -377,21 +384,6 @@ export default function ViewScore() {
           ) : (
 
             <div className="bg-white rounded shadow p-3">
-
-              <div className="flex items-center gap-2 mb-3">
-
-                <label className="text-sm">Select Test</label>
-
-                <select value={selectedId || '-'} onChange={(e)=>setSelectedId(e.target.value)} className="border rounded p-1">
-
-                  {attempts.map(a => (
-
-                    <option key={a.id} value={a.id}>{`${formatDate(a.test_date) || '-'} · ${(a.kind === 'IPPT3' || a.assessment_type === 'IPPT3') ? 'IPPT-3' : 'NAPFA-5'}`}</option>
-                  ))}
-
-                </select>
-
-              </div>
 
 
 
@@ -425,23 +417,20 @@ export default function ViewScore() {
               ) : details && (
                 <div className="space-y-3">
 
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
-
-                    <Info label="Level" value={details.level} />
-
-                    <Info label="Gender" value={details.sex || '-'} />
-
-                    <Info label="Age" value={String(details.age)} />
-
-                    <Info label="Run distance" value={`${details.runKm} km`} />
-
+                  <div className="flex flex-wrap gap-2">
+                    <StatChip label="Level" value={details.level} />
+                    <StatChip label="Gender" value={details.sex || '-'} />
+                    <StatChip label="Age" value={String(details.age)} />
+                    <StatChip label="Run distance" value={`${details.runKm} km`} />
                   </div>
 
 
 
+                  <div className="grid gap-3 lg:grid-cols-[minmax(0,1.7fr)_minmax(260px,0.85fr)] lg:items-start">
+
                   {/* Results table */}
 
-                  <div className="border rounded">
+                  <div className="border rounded bg-white">
 
                     {/* Header with total + ladder toggle */}
 
@@ -483,15 +472,15 @@ export default function ViewScore() {
 
                         <tr className="text-left text-slate-700">
 
-                          <th className="px-3 py-2 border">Station</th>
+                          <th className="px-3 py-1.5 border">Station</th>
 
-                          <th className="px-3 py-2 border">Score</th>
+                          <th className="px-3 py-1.5 border">Score</th>
 
-                          <th className="px-3 py-2 border">Grade</th>
+                          <th className="px-3 py-1.5 border">Grade</th>
 
-                          <th className="px-3 py-2 border">Points</th>
+                          <th className="px-3 py-1.5 border">Points</th>
 
-                          <th className="px-3 py-2 border">Next Grade</th>
+                          <th className="px-3 py-1.5 border">Next Grade</th>
 
                         </tr>
 
@@ -527,9 +516,11 @@ export default function ViewScore() {
 
                   </div>
 
+                  <div className="lg:sticky lg:top-4">
+                    <AwardBanner2 info={details.awardInfo} compact />
+                  </div>
 
-
-                  <AwardBanner2 info={details.awardInfo} />
+                  </div>
 
                 </div>
 
@@ -559,20 +550,13 @@ export default function ViewScore() {
 
 
 
-function Info({ label, value }) {
-
+function StatChip({ label, value }) {
   return (
-
-    <div>
-
-      <div className="text-gray-500">{label}</div>
-
-      <div className="font-medium">{value}</div>
-
+    <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-sm">
+      <span className="text-slate-500">{label}</span>
+      <span className="font-medium text-slate-900">{value}</span>
     </div>
-
   )
-
 }
 
 
@@ -583,7 +567,7 @@ function renderRow(label, key, raw, band, nextTarget, unit, isTime = false) {
 
     <tr>
 
-      <td className="px-3 py-2 border">
+      <td className="px-3 py-1.5 border">
 
         <div className="flex items-center gap-2">
 
@@ -595,13 +579,13 @@ function renderRow(label, key, raw, band, nextTarget, unit, isTime = false) {
 
       </td>
 
-      <td className="px-3 py-2 border tabular-nums text-right">{formatRaw(raw, unit, isTime)}</td>
+      <td className="px-3 py-1.5 border tabular-nums text-right">{formatRaw(raw, unit, isTime)}</td>
 
-      <td className="px-3 py-2 border">{band?.grade ? <GradeBadge grade={band.grade} /> : '-'}</td>
+      <td className="px-3 py-1.5 border">{band?.grade ? <GradeBadge grade={band.grade} /> : '-'}</td>
 
-      <td className="px-3 py-2 border">{Number.isFinite(band?.points) ? <PointsBadge points={band.points} grade={band?.grade} /> : 0}</td>
+      <td className="px-3 py-1.5 border">{Number.isFinite(band?.points) ? <PointsBadge points={band.points} grade={band?.grade} /> : 0}</td>
 
-      <td className="px-3 py-2 border">{isTime ? (nextTarget?.target_mmss || '-') : (formatRaw(nextTarget?.target, unit, isTime) || '-')}</td>
+      <td className="px-3 py-1.5 border">{isTime ? (nextTarget?.target_mmss || '-') : (formatRaw(nextTarget?.target, unit, isTime) || '-')}</td>
 
     </tr>
 
@@ -625,15 +609,15 @@ function renderRunRow(run2400Min, details) {
 
     <tr >
 
-      <td className="px-3 py-2 border"><div className="flex items-center gap-2"><Timer className="w-4 h-4" /> <span>{`Run (${details?.runKm} km)`}</span></div></td>
+      <td className="px-3 py-1.5 border"><div className="flex items-center gap-2"><Timer className="w-4 h-4" /> <span>{`Run (${details?.runKm} km)`}</span></div></td>
 
-      <td className="px-3 py-2 border tabular-nums text-right">{raw}</td>
+      <td className="px-3 py-1.5 border tabular-nums text-right">{raw}</td>
 
-      <td className="px-3 py-2 border">{band?.grade ? <GradeBadge grade={band.grade} /> : '-'}</td>
+      <td className="px-3 py-1.5 border">{band?.grade ? <GradeBadge grade={band.grade} /> : '-'}</td>
 
-      <td className="px-3 py-2 border">{Number.isFinite(band?.points) ? <PointsBadge points={band.points} grade={band?.grade} /> : 0}</td>
+      <td className="px-3 py-1.5 border">{Number.isFinite(band?.points) ? <PointsBadge points={band.points} grade={band?.grade} /> : 0}</td>
 
-      <td className="px-3 py-2 border">{nextTarget?.target_mmss || '-'}</td>
+      <td className="px-3 py-1.5 border">{nextTarget?.target_mmss || '-'}</td>
 
     </tr>
 
@@ -1217,7 +1201,7 @@ function PointsBadge({ points, grade }) {
 
 // New: Side-by-side award comparison with robust SVG ticks
 
-function AwardBanner2({ info }) {
+function AwardBanner2({ info, compact = false }) {
 
   const baseLabel = info?.hasSix ? (info?.currentAward?.label || 'No Award') : (info?.hasFive ? (info?.provisional?.label || 'No Award') : 'No Award')
 
@@ -1321,7 +1305,7 @@ function AwardBanner2({ info }) {
 
   return (
 
-    <div className={`p-3 rounded border ${style}`}>
+    <div className={`rounded border ${style} ${compact ? 'p-2.5' : 'p-3'}`}>
 
       <div className="flex items-center gap-2">
 
@@ -1337,24 +1321,26 @@ function AwardBanner2({ info }) {
 
       </div>
 
-      {reason && <div className="text-sm text-slate-700 mt-1">{reason}</div>}
+      {reason && <div className={`text-slate-700 ${compact ? 'mt-1 text-xs' : 'mt-1 text-sm'}`}>{reason}</div>}
 
-      <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div className={`grid gap-3 mt-2 ${compact ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-2'}`}>
 
         <div>
 
-          <div className="font-medium">Current Award</div>
+          <div className={compact ? 'font-medium text-sm' : 'font-medium'}>Current Award</div>
 
           <CurrentList />
 
         </div>
 
+        <div className={`${compact ? 'border-t border-slate-400/70 pt-2' : 'md:border-l md:border-slate-400/70 md:pl-3'}`}>
         <div>
 
-          {info?.next?.label && <div className="font-medium">Next Award: {info.next.label}</div>}
+          {info?.next?.label && <div className={compact ? 'font-medium text-sm' : 'font-medium'}>Next Award: {info.next.label}</div>}
 
           <NextList />
 
+        </div>
         </div>
 
       </div>
