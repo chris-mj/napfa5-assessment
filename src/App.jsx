@@ -28,8 +28,9 @@ const NotFound = lazy(() => import("./pages/NotFound"));
 const Profile = lazy(() => import("./pages/Profile"));
 const ManageStudents = lazy(() => import("./pages/ManageStudents"));
 const LearningHub = lazy(() => import("./pages/LearningHub"));
-const ChartsPage = lazy(() => import("./pages/Charts"));
+const ChartsPage = lazy(() => import("./pages/LiveCharts"));
 const Gamification = lazy(() => import("./pages/Gamification"));
+const SnapshotAnalytics = lazy(() => import("./pages/SnapshotAnalytics"));
 const SummaryData = lazy(() => import("./pages/SummaryData"));
 const PlatformOwner = lazy(() => import("./pages/PlatformOwner"));
 const RunOps = lazy(() => import("./pages/RunOps"));
@@ -256,6 +257,18 @@ function AnimatedRoutes({ user, setUser }) {
                             user ? (
                                 <PageFade>
                                   <OwnerGuard user={user}><SummaryData user={user} /></OwnerGuard>
+                                </PageFade>
+                            ) : (
+                                <Navigate to="/login" replace />
+                            )
+                        }
+                    />
+                    <Route
+                        path="/snapshot-analytics"
+                        element={
+                            user ? (
+                                <PageFade>
+                                  <OwnerGuard user={user}><SnapshotAnalytics user={user} /></OwnerGuard>
                                 </PageFade>
                             ) : (
                                 <Navigate to="/login" replace />

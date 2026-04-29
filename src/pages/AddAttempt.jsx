@@ -788,9 +788,16 @@ async function saveScore() {
     }
   }
 
+  const stationStepClass = "group relative w-full rounded-lg border border-slate-200 bg-white px-3 py-3 text-sm flex items-center gap-3 justify-start text-slate-700 transition-colors hover:border-blue-300 hover:bg-blue-50/70 data-[state=active]:border-blue-600 data-[state=active]:bg-blue-600 data-[state=active]:text-white data-[state=active]:shadow-sm"
+  const stationStepNumberClass = "inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600 ring-1 ring-slate-200 group-data-[state=active]:bg-white group-data-[state=active]:text-blue-700 group-data-[state=active]:ring-white"
+  const scoreInputClass = "h-14 w-full text-center text-2xl font-semibold tabular-nums tracking-normal sm:h-16 sm:text-3xl"
+  const recordAttempt = () => {
+    if (validation.valid) saveScore()
+  }
+
   return (
     <main className="w-full">
-      <div className="max-w-5xl mx-auto pt-3 pb-6 space-y-4">
+      <div className="max-w-5xl mx-auto px-3 pt-2 pb-28 space-y-3 sm:px-4 lg:pb-5">
       {/* Header */}
         <header className="px-4 sm:px-6 pt-1 sm:pt-2 pb-2">
         <div className="space-y-1">
@@ -802,7 +809,7 @@ async function saveScore() {
       </header>
 
       {/* Tabs */}
-      <section className="px-4 sm:px-6">
+      <section>
         {/* Session selector above tabs (overlay dropdown to avoid layout shift) */}
         <div className="px-1 pb-2">
           <div className="flex items-center gap-2">
@@ -848,11 +855,13 @@ async function saveScore() {
           if (value === activeStation) return
           runWithUnsavedGuard(() => setActiveStation(value), 'Switching station will discard the unsaved score entry. Continue?')
         }}>
-          <div className="flex flex-col md:flex-row md:gap-4">
-            <div className="md:w-56 md:shrink-0">
-              <div className="md:sticky md:top-4">
-                <div className="md:hidden mb-3">
-                  <label className="text-sm text-gray-600">Station</label>
+          <div className="flex flex-col lg:flex-row lg:gap-4">
+            <div className="lg:w-56 lg:shrink-0">
+              <div className="lg:sticky lg:top-4">
+                <div className="lg:hidden mb-2">
+                  <div className="mb-1 flex items-center justify-between gap-3">
+                    <label className="text-sm font-medium text-gray-700">Station Step</label>
+                  </div>
                   <Select value={activeStation} onValueChange={setActiveStation}>
                     <SelectTrigger className="mt-1 w-full rounded-full px-4 py-2 text-sm bg-white border-[3px] border-blue-600 text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-600">
                       <span className="flex items-center gap-2 flex-1">
@@ -870,119 +879,40 @@ async function saveScore() {
                     </SelectContent>
                   </Select>
                 </div>
-                <TabsList className="hidden md:flex bg-gray-100 rounded-lg p-1 flex-col gap-1">
-                  <TabsTrigger
-                    value="situps"
-                    className="relative rounded-full px-3 py-2 text-sm flex items-center gap-2 justify-start
-                               bg-white text-slate-700 hover:bg-slate-50 ring-1 ring-slate-200
-                               border-l-4 border-transparent transition-colors
-                               data-[state=active]:bg-blue-600 data-[state=active]:text-white
-                               data-[state=active]:border-blue-600 data-[state=active]:ring-blue-600/20 data-[state=active]:shadow-sm"
-                    aria-label="Sit-ups"
-                  >
-                    <SitupsIcon className="h-4 w-4" aria-hidden="true" />
-                    <span className="font-medium whitespace-nowrap">Sit-ups</span>
-                  </TabsTrigger>
-
-                  {isIppt3 && (
-                    <TabsTrigger
-                      value="pushups"
-                      className="relative rounded-full px-3 py-2 text-sm flex items-center gap-2 justify-start
-                                 bg-white text-slate-700 hover:bg-slate-50 ring-1 ring-slate-200
-                                 border-l-4 border-transparent transition-colors
-                                 data-[state=active]:bg-blue-600 data-[state=active]:text-white
-                                 data-[state=active]:border-blue-600 data-[state=active]:ring-blue-600/20 data-[state=active]:shadow-sm"
-                      aria-label="Push-ups"
-                    >
-                      <PushupsIcon className="h-4 w-4" aria-hidden="true" />
-                      <span className="font-medium whitespace-nowrap">Push-ups</span>
-                    </TabsTrigger>
-                  )}
-
-                  {!isIppt3 && (
-                  <TabsTrigger
-                    value="broad_jump"
-                    className="relative rounded-full px-3 py-2 text-sm flex items-center gap-2 justify-start
-                               bg-white text-slate-700 hover:bg-slate-50 ring-1 ring-slate-200
-                               border-l-4 border-transparent transition-colors
-                               data-[state=active]:bg-blue-600 data-[state=active]:text-white
-                               data-[state=active]:border-blue-600 data-[state=active]:ring-blue-600/20 data-[state=active]:shadow-sm"
-                    aria-label="Broad Jump"
-                  >
-                    <BroadJumpIcon className="h-4 w-4" aria-hidden="true" />
-                    <span className="font-medium whitespace-nowrap">Broad Jump</span>
-                  </TabsTrigger>
-                  )}
-
-                  {!isIppt3 && (
-                  <TabsTrigger
-                    value="sit_and_reach"
-                    className="relative rounded-full px-3 py-2 text-sm flex items-center gap-2 justify-start
-                               bg-white text-slate-700 hover:bg-slate-50 ring-1 ring-slate-200
-                               border-l-4 border-transparent transition-colors
-                               data-[state=active]:bg-blue-600 data-[state=active]:text-white
-                               data-[state=active]:border-blue-600 data-[state=active]:ring-blue-600/20 data-[state=active]:shadow-sm"
-                    aria-label="Sit & Reach"
-                  >
-                    <ReachIcon className="h-4 w-4" aria-hidden="true" />
-                    <span className="font-medium whitespace-nowrap">Sit & Reach</span>
-                  </TabsTrigger>
-                  )}
-
-                  {!isIppt3 && (
-                  <TabsTrigger
-                    value="pullups"
-                    className="relative rounded-full px-3 py-2 text-sm flex items-center gap-2 justify-start
-                               bg-white text-slate-700 hover:bg-slate-50 ring-1 ring-slate-200
-                               border-l-4 border-transparent transition-colors
-                               data-[state=active]:bg-blue-600 data-[state=active]:text-white
-                               data-[state=active]:border-blue-600 data-[state=active]:ring-blue-600/20 data-[state=active]:shadow-sm"
-                    aria-label="Pull-ups"
-                  >
-                    <PullupsIcon className="h-4 w-4" aria-hidden="true" />
-                    <span className="font-medium whitespace-nowrap">Pull-ups</span>
-                  </TabsTrigger>
-                  )}
-
-                  {!isIppt3 && (
-                  <TabsTrigger
-                    value="shuttle_run"
-                    className="relative rounded-full px-3 py-2 text-sm flex items-center gap-2 justify-start
-                               bg-white text-slate-700 hover:bg-slate-50 ring-1 ring-slate-200
-                               border-l-4 border-transparent transition-colors
-                               data-[state=active]:bg-blue-600 data-[state=active]:text-white
-                               data-[state=active]:border-blue-600 data-[state=active]:ring-blue-600/20 data-[state=active]:shadow-sm"
-                    aria-label="Shuttle Run"
-                  >
-                    <ShuttleIcon className="h-4 w-4" aria-hidden="true" />
-                    <span className="font-medium whitespace-nowrap">Shuttle Run</span>
-                  </TabsTrigger>
-                  )}
-                  <TabsTrigger
-                    value="run"
-                    className="relative rounded-full px-3 py-2 text-sm flex items-center gap-2 justify-start
-                               bg-white text-slate-700 hover:bg-slate-50 ring-1 ring-slate-200
-                               border-l-4 border-transparent transition-colors
-                               data-[state=active]:bg-blue-600 data-[state=active]:text-white
-                               data-[state=active]:border-blue-600 data-[state=active]:ring-blue-600/20 data-[state=active]:shadow-sm"
-                    aria-label="1.6/2.4km Run"
-                  >
-                    <Timer className="h-4 w-4" aria-hidden="true" />
-                    <span className="font-medium whitespace-nowrap">Run 1.6/2.4km</span>
-                  </TabsTrigger>
+                <TabsList className="hidden lg:flex rounded-xl border border-slate-200 bg-white p-2 flex-col gap-2 shadow-sm">
+                  {stations.map((s, index) => {
+                    const Icon = s.Icon
+                    return (
+                      <TabsTrigger
+                        key={s.key}
+                        value={s.key}
+                        className={stationStepClass}
+                        aria-label={s.name}
+                      >
+                        <span className={stationStepNumberClass}>{index + 1}</span>
+                        {Icon && <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />}
+                        <span className="font-medium whitespace-nowrap">{s.name}</span>
+                      </TabsTrigger>
+                    )
+                  })}
                 </TabsList>
               </div>
             </div>
 
             <div className="flex-1">
               {/* Active Station Card */}
-              <Card className="mt-3">
-                <CardHeader className="pb-3">
+              <Card className="mt-3 border-blue-200 shadow-sm">
+                <CardHeader className="rounded-t-lg border-b border-blue-100 bg-blue-50/60 pb-3">
                   <div className="flex items-center justify-between gap-3">
-                    <CardTitle>
-                      {active && <active.Icon className="h-5 w-5 text-blue-700" aria-hidden="true" />}
-                      <span className="font-bold">{active?.name || 'Station'}</span>
-                    </CardTitle>
+                    <div>
+                      <div className="text-xs font-semibold uppercase text-blue-700">
+                        Active Station
+                      </div>
+                      <CardTitle className="mt-1">
+                        {active && <active.Icon className="h-5 w-5 text-blue-700" aria-hidden="true" />}
+                        <span className="font-bold">{active?.name || 'Station'}</span>
+                      </CardTitle>
+                    </div>
                     {toolStationEnabled && (
                       <Button type="button" variant="outline" size="sm" onClick={openTools}>
                         Station Tools
@@ -1055,10 +985,10 @@ async function saveScore() {
                   animate={{ opacity: 1, height: 'auto', y: 0, scaleY: 1 }}
                   exit={{ opacity: 0, height: 0, y: -12, scaleY: 0.98 }}
                   transition={{ duration: 0.24, ease: 'easeOut' }}
-                  className="mt-3 space-y-3 overflow-hidden"
+                  className="mt-2 space-y-2 overflow-hidden"
                 >
-                  <div className="grid gap-3 md:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)] md:items-start">
-                  <div className="space-y-3">
+                  <div className="grid gap-2 lg:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)] lg:items-start">
+                  <div className="space-y-2">
                     {/* Student Info */}
                     <div className="bg-muted/50 border rounded-lg p-3">
                       <div className="flex items-start gap-3">
@@ -1086,7 +1016,7 @@ async function saveScore() {
 
                     {/* Previous saved scores */}
                     {existing && (
-                      <div className={`rounded-lg border border-gray-200 bg-gray-50 self-start ${stationGuide && !stationGuideOpen ? 'md:col-span-2' : ''}`}>
+                      <div className={`rounded-lg border border-gray-200 bg-gray-50 self-start ${stationGuide && !stationGuideOpen ? 'lg:col-span-2' : ''}`}>
                         <button
                           type="button"
                           onClick={() => setSavedScoresOpen((prev) => !prev)}
@@ -1099,7 +1029,7 @@ async function saveScore() {
                         </button>
                         {savedScoresOpen && (
                           <div className="border-t border-gray-200 px-3 py-2">
-                            <div className={`grid gap-x-3 gap-y-1 text-xs ${stationGuide && stationGuideOpen ? (isIppt3 ? 'grid-cols-3' : 'grid-cols-2 sm:grid-cols-3') : (isIppt3 ? 'grid-cols-3 md:grid-cols-6' : 'grid-cols-2 md:grid-cols-3 lg:grid-cols-6')}`}>
+                            <div className={`grid gap-x-3 gap-y-1 text-xs ${stationGuide && stationGuideOpen ? (isIppt3 ? 'grid-cols-3' : 'grid-cols-2 sm:grid-cols-3') : (isIppt3 ? 'grid-cols-3 lg:grid-cols-6' : 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-6')}`}>
                               <div>Sit-ups: <span className="font-semibold">{existing.situps ?? '-'}</span></div>
                               <div>Pull-ups: <span className="font-semibold">{existing.pullups ?? (existing.pushups ?? '-')}</span></div>
                               {!isIppt3 && (
@@ -1122,41 +1052,41 @@ async function saveScore() {
                       <button
                         type="button"
                         onClick={() => setStationGuideOpen((prev) => !prev)}
-                        className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left"
+                        className="flex w-full items-center justify-between gap-2 px-2.5 py-1.5 text-left"
                       >
                         <div>
-                          <div className="font-medium text-sm text-slate-900">{stationGuide.title}</div>
+                          <div className="font-medium text-xs text-slate-900">{stationGuide.title}</div>
                         </div>
                         <span className="text-xs font-medium text-blue-700">{stationGuideOpen ? 'Hide' : 'Show'}</span>
                       </button>
                       {stationGuideOpen && (
-                        <div className="border-t border-blue-200 px-3 py-2 space-y-2">
-                          <div className="grid grid-cols-2 gap-2 text-xs">
-                            <div className="rounded-md border border-white/80 bg-white px-2 py-1.5">
+                        <div className="border-t border-blue-200 px-2 py-1.5 space-y-1.5">
+                          <div className="grid grid-cols-2 gap-1.5 text-xs">
+                            <div className="rounded-md border border-white/80 bg-white px-2 py-1">
                               <div className="uppercase tracking-wide text-slate-500">Saved score</div>
-                              <div className="mt-0.5 font-semibold text-sm text-slate-900">{stationGuide.savedLabel}</div>
+                              <div className="font-semibold text-xs text-slate-900">{stationGuide.savedLabel}</div>
                             </div>
-                            <div className="rounded-md border border-white/80 bg-white px-2 py-1.5">
+                            <div className="rounded-md border border-white/80 bg-white px-2 py-1">
                               <div className="uppercase tracking-wide text-slate-500">{stationGuide.summaryCaption}</div>
-                              <div className="mt-0.5 font-semibold text-sm text-slate-900">{stationGuide.summaryLabel}</div>
+                              <div className="font-semibold text-xs text-slate-900">{stationGuide.summaryLabel}</div>
                             </div>
                           </div>
                           {stationGuide.rows.length > 0 ? (
                             <div className="overflow-x-auto">
-                              <table className="w-full text-xs border border-blue-100 bg-white rounded-md overflow-hidden">
+                              <table className="data-table text-xs border border-blue-100 bg-white rounded-md overflow-hidden">
                                 <thead>
                                   <tr className="bg-blue-100/70 text-left">
-                                    <th className="px-2 py-1 border-b border-blue-100">Grade</th>
-                                    <th className="px-2 py-1 border-b border-blue-100">Score Needed</th>
-                                    <th className="px-2 py-1 border-b border-blue-100">Points</th>
+                                    <th className="p-0 border-b border-blue-100">Grade</th>
+                                    <th className="p-0 border-b border-blue-100">Score Needed</th>
+                                    <th className="p-0 border-b border-blue-100">Points</th>
                                   </tr>
                                 </thead>
                                 <tbody>
                                   {stationGuide.rows.map((row) => (
                                     <tr key={row.grade} className={stationGuide.highlightedGrade === row.grade ? 'bg-blue-50/80' : ''}>
-                                      <td className={`px-2 py-1 border-b border-blue-50 font-semibold text-slate-900 ${stationGuide.highlightedGrade === row.grade ? 'text-blue-900' : ''}`}>{row.grade}</td>
-                                      <td className={`px-2 py-1 border-b border-blue-50 ${stationGuide.highlightedGrade === row.grade ? 'font-medium text-blue-950' : ''}`}>{row.requirement}</td>
-                                      <td className={`px-2 py-1 border-b border-blue-50 ${stationGuide.highlightedGrade === row.grade ? 'font-medium text-blue-900' : ''}`}>{row.points}</td>
+                                      <td className={`p-0 border-b border-blue-50 font-semibold text-slate-900 ${stationGuide.highlightedGrade === row.grade ? 'text-blue-900' : ''}`}>{row.grade}</td>
+                                      <td className={`p-0 border-b border-blue-50 ${stationGuide.highlightedGrade === row.grade ? 'font-medium text-blue-950' : ''}`}>{row.requirement}</td>
+                                      <td className={`p-0 border-b border-blue-50 ${stationGuide.highlightedGrade === row.grade ? 'font-medium text-blue-900' : ''}`}>{row.points}</td>
                                     </tr>
                                   ))}
                                 </tbody>
@@ -1173,11 +1103,17 @@ async function saveScore() {
                   </div>
 
                   {/* Record Attempt */}
-                  <div className="space-y-2">
+                  <div className="space-y-2 rounded-xl border-2 border-blue-200 bg-blue-50/50 p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="text-xs font-semibold uppercase text-blue-700">
+                          Record Attempt
+                        </div>
+                      </div>
+                    </div>
                     {['situps','pullups','pushups'].includes(activeStation) && (
                       <>
-                        <label htmlFor="attempt1" className="text-gray-700 text-sm">Repetitions</label>
-                        <div className="text-xs text-gray-600">Unit: reps | Example: 25</div>
+                        <label htmlFor="attempt1" className="text-gray-700 text-sm font-medium">Repetitions <span className="font-normal text-gray-500">(reps)</span></label>
                           <Input
                             ref={firstAttemptRef}
                             id="attempt1"
@@ -1186,45 +1122,42 @@ async function saveScore() {
                             onChange={(e)=> setAttempt1(onlyInt(e.target.value))}
                             onKeyDown={onAttemptKeyDown}
                             placeholder="e.g., 25"
-                            className="w-full"
+                            className={scoreInputClass}
                           />
                         <div role="status" aria-live="polite" className={(validation.valid ? "text-gray-500" : "text-red-600") + " text-xs mt-1"}>{validation.message}</div>
                       </>
                     )}
                     {['broad_jump','sit_and_reach'].includes(activeStation) && (
                       <>
-                        <label className="text-gray-700 text-sm">Scores (2 attempts, best kept)</label>
-                        <div className="text-xs text-gray-600">Unit: cm | Example: {activeStation === 'sit_and_reach' ? '34' : '190'}</div>
+                        <label className="text-gray-700 text-sm font-medium">Scores <span className="font-normal text-gray-500">(cm, best of 2)</span></label>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                          <Input ref={firstAttemptRef} inputMode="numeric" value={attempt1} onChange={(e)=> setAttempt1(onlyInt(e.target.value))} onKeyDown={onAttemptKeyDown} placeholder="Attempt 1" />
-                          <Input inputMode="numeric" value={attempt2} onChange={(e)=> setAttempt2(onlyInt(e.target.value))} onKeyDown={onAttemptKeyDown} placeholder="Attempt 2" />
+                          <Input ref={firstAttemptRef} inputMode="numeric" value={attempt1} onChange={(e)=> setAttempt1(onlyInt(e.target.value))} onKeyDown={onAttemptKeyDown} placeholder="Attempt 1" className={scoreInputClass} />
+                          <Input inputMode="numeric" value={attempt2} onChange={(e)=> setAttempt2(onlyInt(e.target.value))} onKeyDown={onAttemptKeyDown} placeholder="Attempt 2" className={scoreInputClass} />
                         </div>
                         <div role="status" aria-live="polite" className={(validation.valid ? "text-gray-500" : "text-red-600") + " text-xs mt-1"}>{validation.message}</div>
                       </>
                     )}
                     {activeStation === 'shuttle_run' && (
                       <>
-                        <label className="text-gray-700 text-sm">Times (2 attempts, lower kept)</label>
-                        <div className="text-xs text-gray-600">Unit: seconds (1 d.p.) | Example: 10.3</div>
+                        <label className="text-gray-700 text-sm font-medium">Times <span className="font-normal text-gray-500">(seconds, lower of 2)</span></label>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                          <Input ref={firstAttemptRef} inputMode="decimal" value={attempt1} onChange={(e)=> setAttempt1(oneDecimal(e.target.value))} onKeyDown={onAttemptKeyDown} placeholder="Attempt 1 (e.g., 10.3)" />
-                          <Input inputMode="decimal" value={attempt2} onChange={(e)=> setAttempt2(oneDecimal(e.target.value))} onKeyDown={onAttemptKeyDown} placeholder="Attempt 2 (e.g., 10.2)" />
+                          <Input ref={firstAttemptRef} inputMode="decimal" value={attempt1} onChange={(e)=> setAttempt1(oneDecimal(e.target.value))} onKeyDown={onAttemptKeyDown} placeholder="Attempt 1" className={scoreInputClass} />
+                          <Input inputMode="decimal" value={attempt2} onChange={(e)=> setAttempt2(oneDecimal(e.target.value))} onKeyDown={onAttemptKeyDown} placeholder="Attempt 2" className={scoreInputClass} />
                         </div>
                         <div role="status" aria-live="polite" className={(validation.valid ? "text-gray-500" : "text-red-600") + " text-xs mt-1"}>{validation.message}</div>
                       </>
                     )}
                     {activeStation === 'run' && (
                       <>
-                        <label className="text-gray-700 text-sm">Time</label>
-                        <div className="text-xs text-gray-600">Format: MSS/MMSS (digits only) | Example: 930 or 1330</div>
+                        <label className="text-gray-700 text-sm font-medium">Time <span className="font-normal text-gray-500">(MSS/MMSS digits)</span></label>
                         <div className="grid grid-cols-1 gap-2">
-                          <Input ref={firstAttemptRef} inputMode="numeric" value={attempt1} onChange={(e)=> setAttempt1(onlyInt(e.target.value))} onKeyDown={onAttemptKeyDown} placeholder="e.g., 1330 for 13:30" />
+                          <Input ref={firstAttemptRef} inputMode="numeric" value={attempt1} onChange={(e)=> setAttempt1(onlyInt(e.target.value))} onKeyDown={onAttemptKeyDown} placeholder="e.g., 1330" className={scoreInputClass} />
                         </div>
                         <div role="status" aria-live="polite" className={(validation.valid ? "text-gray-500" : "text-red-600") + " text-xs mt-1"}>{validation.message}</div>
                       </>
                     )}
-                    <Button className="w-full" disabled={!validation.valid} onClick={() => { if (validation.valid) saveScore(); }}>
-                      Save Score
+                    <Button className="hidden h-12 w-full text-base font-semibold lg:inline-flex" disabled={!validation.valid} onClick={recordAttempt}>
+                      Record Attempt
                     </Button>
                     <div className="text-xs text-gray-500">Note: This will replace any saved values.</div>
                   </div>
@@ -1243,6 +1176,23 @@ async function saveScore() {
           </div>
         </Tabs>
       </section>
+      {student && (
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 px-4 py-3 shadow-[0_-8px_24px_rgba(15,23,42,0.12)] backdrop-blur lg:hidden">
+          <div className="mx-auto flex max-w-5xl items-center gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-sm font-semibold text-slate-900">
+                {student.name}
+              </div>
+              <div className="truncate text-xs text-slate-500">
+                {active?.name || 'Station'} | {validation.message}
+              </div>
+            </div>
+            <Button className="h-12 shrink-0 px-5 text-base font-semibold" disabled={!validation.valid} onClick={recordAttempt}>
+              Record Attempt
+            </Button>
+          </div>
+        </div>
+      )}
       <AnimatePresence>
         {toolsOpen && toolStationEnabled && (
           <StationToolsDrawer
@@ -1777,7 +1727,7 @@ function RosterModal({ loading, roster, query, setQuery, onClose, onSelect }) {
             ) : filtered.length === 0 ? (
               <div className="p-3 text-sm text-gray-600">No students in this session.</div>
             ) : (
-              <table className="min-w-full text-sm">
+              <table className="data-table compact-data-table min-w-full">
                 <thead>
                   <tr className="bg-gray-100 text-left">
                     <th className="px-3 py-2 border">ID</th>

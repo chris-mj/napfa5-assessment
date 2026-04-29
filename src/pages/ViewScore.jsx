@@ -272,18 +272,18 @@ export default function ViewScore() {
   */
 
   return (
-    <div className="p-4 max-w-5xl mx-auto">
+    <div className="op-page max-w-5xl mx-auto">
 
-      <h1 className="text-2xl font-bold mb-3">View Score</h1>
+      <h1 className="text-xl font-bold sm:text-2xl">View Score</h1>
 
-      <div className="bg-white/80 backdrop-blur rounded border shadow-sm p-3 mb-4">
+      <div className="op-card">
 
       {selected && (selected.assessment_type === 'IPPT3' || selected.kind === 'IPPT3') && (
         <div className="mb-3">
           <span className="inline-flex items-center px-2 py-0.5 rounded border text-xs font-medium bg-indigo-50 text-indigo-700 border-indigo-200">IPPT-3</span>
         </div>
       )}
-        <div className="flex flex-wrap items-end gap-3">
+        <div className="flex flex-wrap items-end gap-2">
 
           <div className="flex-1 min-w-[240px]">
 
@@ -317,7 +317,7 @@ export default function ViewScore() {
 
           </div>
 
-          <div className="flex items-center gap-2 flex-1 md:flex-none">
+          <div className="flex items-center gap-2 flex-1 sm:flex-none">
 
             <button onClick={()=>handleSearch()} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700" disabled={loading}>{loading? 'Searching...' : 'Search'}</button>
 
@@ -337,7 +337,7 @@ export default function ViewScore() {
 
         <div className="space-y-3">
 
-          <div className="bg-white rounded shadow p-3">
+          <div className="op-card">
 
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
 
@@ -383,13 +383,13 @@ export default function ViewScore() {
 
           ) : (
 
-            <div className="bg-white rounded shadow p-3">
+            <div className="op-card">
 
 
 
               {(selected && (selected.kind === 'IPPT3' || selected.assessment_type === 'IPPT3')) ? (
                 <div className="space-y-3">
-                  <div className="bg-white rounded shadow p-3">
+                  <div className="op-card">
                     <div className="text-sm font-medium mb-2">IPPT-3 Summary</div>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
                       <div>
@@ -426,7 +426,7 @@ export default function ViewScore() {
 
 
 
-                  <div className="grid gap-3 lg:grid-cols-[minmax(0,1.7fr)_minmax(260px,0.85fr)] lg:items-start">
+                  <div className="grid gap-2 lg:grid-cols-[minmax(0,1.7fr)_minmax(260px,0.85fr)] lg:items-start">
 
                   {/* Results table */}
 
@@ -434,11 +434,11 @@ export default function ViewScore() {
 
                     {/* Header with total + ladder toggle */}
 
-                    <div className="px-3 py-2 border-b bg-slate-50 flex items-center justify-between gap-3">
+                    <div className="px-2 py-1.5 border-b bg-slate-50 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
 
                       <div className="text-sm font-medium">Results</div>
 
-                      <div className="flex items-center gap-4">
+                      <div className="flex flex-wrap items-center gap-2">
 
                         <label className="text-sm inline-flex items-center gap-2">
 
@@ -458,7 +458,7 @@ export default function ViewScore() {
 
                     {showLadder && (
 
-                      <div className="px-3 py-3 border-b">
+                      <div className="px-2 py-2 border-b">
 
                         <GradeLadderSection details={details} selected={selected} />
 
@@ -466,7 +466,7 @@ export default function ViewScore() {
 
                     )}
 
-                    <table className="min-w-full text-sm divide-y divide-slate-200">
+                    <table className="data-table compact-data-table min-w-[640px]">
 
                       <thead className="sticky top-0 z-10 bg-white">
 

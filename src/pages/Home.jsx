@@ -28,7 +28,7 @@ export default function Home() {
                     <span className="text-sm font-semibold text-[#0F172A]">NAPFA 5</span>
                   </div>
                   <h1 className="text-5xl md:text-6xl font-bold tracking-tight leading-tight text-[#0F172A]">Simplify Your School's NAPFA Assessments</h1>
-                  <p className="text-[#64748B] text-lg mt-4 max-w-3xl">Digital, secure, and effortless — the smarter way to manage physical fitness tests.</p>
+                  <p className="text-[#64748B] text-lg mt-4 max-w-3xl">Digital, secure, and effortless - the smarter way to manage physical fitness tests.</p>
                   <div className="flex flex-wrap items-center gap-3 pt-6">
                     <Link to="/contact" className="px-6 py-3 rounded-xl bg-blue-600 text-white font-medium hover:bg-blue-700 shadow-md hover:shadow-lg active:shadow-sm active:translate-y-[1px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30">Request a Trial</Link>
                     <Link to="/login" className="px-6 py-3 rounded-xl bg-white text-blue-700 border border-blue-100 hover:bg-blue-50 shadow-md active:translate-y-[1px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20">Login</Link>
@@ -58,7 +58,7 @@ export default function Home() {
               <img src="/napfa5 purple.png" alt="NAPFA 5" className="h-10 w-10 rounded-full ring-1 ring-gray-200/60" loading="lazy" decoding="async" />
             </div>
             {/*<div className="mt-4 text-sm text-[#64748B] leading-relaxed max-w-2xl mx-auto">*/}
-            {/*  “Scanning is smooth and the exports just work.” — PE Teacher, Primary School*/}
+            {/*  "Scanning is smooth and the exports just work." - PE Teacher, Primary School*/}
             {/*</div>*/}
           </div>
         </motion.section>
@@ -68,7 +68,7 @@ export default function Home() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
               <div className="flex items-center gap-2 text-[#64748B] text-xs uppercase tracking-wide font-semibold mb-2">
-                <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-red-50 text-red-600">❌</span>
+                <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-red-50 text-red-600">X</span>
                 The Old Way
               </div>
               <OldNewList items={[
@@ -79,11 +79,11 @@ export default function Home() {
             </div>
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
               <div className="flex items-center gap-2 text-[#64748B] text-xs uppercase tracking-wide font-semibold mb-2">
-                <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-emerald-50 text-emerald-600">✅</span>
+                <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-emerald-50 text-emerald-600">OK</span>
                 The NAPFA 5 Way
               </div>
               <OldNewList check items={[
-                'Scan cards or type — instant search with live checks',
+                'Scan cards or type - instant search with live checks',
                 'Reliable transfer between Cockpit and NAPFA-5',
                 '1-touch reports that match school-ready PFT formats'
               ]} />
@@ -146,7 +146,7 @@ export default function Home() {
         {/* Call-to-Action Band */}
         <section className="rounded-2xl bg-slate-900 text-white p-6 md:p-8 text-center shadow-md">
           <h2 className="text-2xl md:text-3xl font-bold">Bring simplicity to your next NAPFA session.</h2>
-          <p className="text-white/80 mt-2">Set up in minutes. Scan, score, export — without the chaos.</p>
+          <p className="text-white/80 mt-2">Set up in minutes. Scan, score, export - without the chaos.</p>
           <div className="mt-4 flex items-center justify-center gap-3">
             <Link to="/contact" className="px-5 py-2.5 rounded-xl bg-blue-600 text-white font-medium hover:bg-blue-700 shadow-md hover:shadow-lg active:shadow-sm active:translate-y-[1px]">Request a Trial</Link>
             <Link to="/login" className="px-5 py-2.5 rounded-xl border border-white/60 text-white hover:bg-white/10">Login</Link>
@@ -161,9 +161,9 @@ export default function Home() {
           {/*</div>*/}
           <div className="text-[#64748B] flex items-center justify-center gap-4">
             <Link to="/about" className="hover:underline">About</Link>
-            <span>•</span>
+            <span>|</span>
             <Link to="/privacy" className="hover:underline">Privacy</Link>
-            <span>•</span>
+            <span>|</span>
             <Link to="/contact" className="hover:underline">Contact</Link>
           </div>
         </footer>

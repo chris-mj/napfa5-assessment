@@ -39,7 +39,7 @@ export default function AdminGlobal({ user }) {
             {loading ? (
                 <div>Loading...</div>
             ) : (
-                <table className="min-w-full border rounded">
+                <table className="data-table min-w-full">
                     <thead>
                     <tr className="bg-gray-100 text-left">
                         <th className="border px-3 py-2">Name</th>

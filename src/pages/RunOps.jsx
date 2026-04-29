@@ -156,14 +156,14 @@ export default function RunOps({ user }) {
 
   return (
     <main className="w-full">
-      <div className="max-w-7xl mx-auto px-4 py-6 space-y-4">
-        <header>
+      <div className="max-w-7xl mx-auto op-page">
+        <header className="op-header">
           <h1 className="text-2xl font-semibold">Run Ops</h1>
           <p className="text-sm text-gray-600">Operational view over run station event ingestion.</p>
         </header>
 
-        <section className="bg-white border rounded-lg p-3 shadow-sm">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2">
+        <section className="op-card">
+          <div className="compact-grid-filters">
             <select
               className="text-sm border rounded px-2 py-1 bg-white"
               value={selectedSchool}
@@ -214,20 +214,20 @@ export default function RunOps({ user }) {
 
         {error && <div className="rounded-md border border-red-200 bg-red-50 p-3 text-red-700 text-sm">{error}</div>}
 
-        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          <div className="border rounded p-3 bg-white shadow-sm">
+        <section className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+          <div className="compact-stat">
             <div className="text-xs text-gray-500">Events</div>
-            <div className="text-2xl font-semibold">{loading ? "..." : summary.total}</div>
+            <div className="stat-value">{loading ? "..." : summary.total}</div>
           </div>
-          <div className="border rounded p-3 bg-white shadow-sm">
+          <div className="compact-stat">
             <div className="text-xs text-gray-500">Unique runners</div>
-            <div className="text-2xl font-semibold">{loading ? "..." : summary.uniqueRunners}</div>
+            <div className="stat-value">{loading ? "..." : summary.uniqueRunners}</div>
           </div>
-          <div className="border rounded p-3 bg-white shadow-sm">
+          <div className="compact-stat">
             <div className="text-xs text-gray-500">Latest event</div>
             <div className="text-sm font-medium">{loading ? "..." : formatWhen(summary.latest)}</div>
           </div>
-          <div className="border rounded p-3 bg-white shadow-sm">
+          <div className="compact-stat">
             <div className="text-xs text-gray-500">Stream status</div>
             <div className={`text-sm font-semibold ${summary.stale ? "text-amber-700" : "text-emerald-700"}`}>
               {loading ? "..." : summary.latest ? (summary.stale ? "Stale" : "Healthy") : "No data"}
@@ -235,7 +235,7 @@ export default function RunOps({ user }) {
           </div>
         </section>
 
-        <section className="bg-white border rounded-lg shadow-sm p-3">
+        <section className="op-card">
           <h2 className="text-sm font-semibold mb-2">Event Types</h2>
           <div className="flex flex-wrap gap-2">
             {typeEntries.length === 0 && <span className="text-sm text-gray-500">No events</span>}
@@ -247,8 +247,8 @@ export default function RunOps({ user }) {
           </div>
         </section>
 
-        <section className="bg-white border rounded-lg shadow-sm overflow-x-auto">
-          <table className="w-full text-sm">
+        <section className="table-scroll">
+          <table className="data-table compact-data-table min-w-[820px]">
             <thead>
               <tr className="bg-gray-100 text-left">
                 <th className="px-3 py-2 border">Occurred</th>

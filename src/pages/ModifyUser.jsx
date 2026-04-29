@@ -539,15 +539,15 @@ export default function difyUser({ user }) {
 
     return (
         <main className="w-full">
-          <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 space-y-6">
-            <header className="space-y-1">
+          <div className="max-w-6xl mx-auto op-page">
+            <header className="op-header">
               <h1 className="text-2xl font-semibold">Manage Users</h1>
               <p className="text-sm text-gray-600">Add users to your school, update roles, and remove access.</p>
             </header>
 
-            <section className="border rounded-lg p-4 bg-white shadow-sm">
-              <h2 className="text-lg font-semibold mb-3">Context</h2>
-              <div className="grid gap-3 md:grid-cols-2">
+            <section className="op-card">
+              <h2 className="text-lg font-semibold mb-2">Context</h2>
+              <div className="grid gap-2 lg:grid-cols-2">
   <label className="text-sm">
     School
     <select value={schoolId} onChange={(e)=>{ setSchoolId(e.target.value); setPage(1) }} className="border rounded p-2 w-full mt-1">
@@ -564,7 +564,7 @@ export default function difyUser({ user }) {
       })()}
     </div>
   </label>
-  <div className="text-sm border rounded p-3 bg-gray-50">
+  <div className="text-sm border rounded p-2 bg-gray-50">
     <div className="font-medium mb-1">School Abbreviation</div>
     <div className="flex items-center gap-2">
       <input
@@ -592,7 +592,7 @@ export default function difyUser({ user }) {
       <div className="text-xs text-gray-500 mt-2">Only admins or above can edit this field.</div>
     )}
   </div>
-  <div className="text-sm text-gray-700 border rounded p-3 bg-gray-50">
+  <div className="text-sm text-gray-700 border rounded p-2 bg-gray-50">
     <div className="font-medium mb-1">Role legend</div>
     <div className="flex flex-wrap gap-3">
       <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-800">admin/superadmin</span>
@@ -611,14 +611,14 @@ export default function difyUser({ user }) {
 
             {/* Add user moved to modal; use button in list header */}
 
-            <div className="border rounded p-4 bg-white shadow-sm">
-                <div className="flex items-center justify-between mb-3">
+            <div className="op-card">
+                <div className="flex items-center justify-between mb-2">
                   <h2 className="text-lg font-semibold">Existing Users</h2>
                   {(platformOwner || currentRole === 'superadmin' || currentRole === 'admin') && (
                     <button onClick={()=>setAddOpen(true)} disabled={!schoolId} className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50">Add User</button>
                   )}
                 </div>
-                <div className="flex flex-wrap items-center gap-2 mb-2">
+                <div className="compact-filter-bar mb-2">
                     <input value={query} onChange={(e)=>{ setQuery(e.target.value); setPage(1) }} placeholder="Search by name or email" className="p-2 border rounded w-full md:max-w-sm" />
                     <select value={roleFilter} onChange={(e)=>{ setRoleFilter(e.target.value); setPage(1) }} className="p-2 border rounded"><option value="">All roles</option>{ROLES.map(r => (<option key={r} value={r}>{r}</option>))}</select>
                 </div>
@@ -627,8 +627,8 @@ export default function difyUser({ user }) {
                 ) : members.length === 0 ? (
                     <p className="text-sm text-gray-600">No users linked to this school yet.</p>
                 ) : (
-                    <div className="w-full overflow-x-auto rounded-lg border border-slate-200 overscroll-x-contain">
-                        <table className="w-full min-w-[720px] text-sm">
+                    <div className="table-scroll overscroll-x-contain">
+                        <table className="data-table compact-data-table min-w-[720px]">
                             <thead>
                                 <tr className="bg-gray-100 text-left">
                                     <th className="border px-3 py-2">Name</th>

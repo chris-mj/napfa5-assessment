@@ -59,7 +59,7 @@ export default function Students() {
 
             {!loading && !error && (
                 <div className="overflow-x-auto">
-                    <table className="min-w-[720px] w-full border rounded">
+                    <table className="data-table min-w-[720px]">
                         <thead>
                         <tr className="bg-gray-100 text-left">
                             <th className="border px-3 py-2">Student ID</th>

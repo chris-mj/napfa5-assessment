@@ -97,7 +97,7 @@ export default function SessionRosterSelect({ sessionId, schoolId, onDone }) {
       </div>
       {message && <div className="text-sm">{message}</div>}
       <div className="max-h-72 overflow-auto border rounded">
-        <table className="w-full">
+        <table className="data-table">
           <thead>
             <tr className="bg-gray-100 text-left">
               <th className="px-3 py-2 border w-10"></th>

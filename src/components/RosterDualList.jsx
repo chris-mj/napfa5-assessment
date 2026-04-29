@@ -216,13 +216,13 @@ export default function RosterDualList({ user, session, membership, canManage, o
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
         {/* Left: Eligible enrollments */}
         <div className="border rounded-lg bg-white flex flex-col overflow-hidden">
           <div className="px-3 py-2 border-b bg-gray-50 text-sm font-medium">Students Enrolled — {sessionYear}</div>
           <TableFilters filter={leftFilter} setFilter={setLeftFilter} disabled={loading} />
           <div className="overflow-auto">
-            <table className="w-full text-sm">
+            <table className="data-table compact-data-table min-w-[520px]">
               <thead>
                 <tr className="bg-gray-100 text-left">
                   <th className="px-3 py-2 border w-8">
@@ -331,7 +331,7 @@ export default function RosterDualList({ user, session, membership, canManage, o
           </div>
           <TableFilters filter={rightFilter} setFilter={setRightFilter} disabled={loading} />
           <div className="overflow-auto">
-            <table className="w-full text-sm">
+            <table className="data-table compact-data-table min-w-[520px]">
               <thead>
                 <tr className="bg-gray-100 text-left">
                   <th className="px-3 py-2 border w-8">
@@ -459,7 +459,7 @@ function TableFooter({ page, setPage, total, perPage, summary }) {
   const canPrev = page > 1;
   const canNext = page < totalPages;
   return (
-    <div className="px-3 py-2 border-t bg-gray-50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs">
+    <div className="px-2 py-1.5 border-t bg-gray-50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs">
       <div className="flex items-center gap-2">
         <button onClick={() => canPrev && setPage(page - 1)} disabled={!canPrev} className="px-2 py-1 border rounded bg-white hover:bg-gray-100 disabled:opacity-50">Prev</button>
         <div>Page {page} / {totalPages}</div>

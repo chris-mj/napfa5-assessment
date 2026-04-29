@@ -24,6 +24,7 @@ export default function SessionGroups({ session, membership, canManage }) {
   const [memberMap, setMemberMap] = useState(new Map());
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const [messageArea, setMessageArea] = useState("global");
   const [selected, setSelected] = useState(new Set());
   const [filterQuery, setFilterQuery] = useState("");
   const [filterClass, setFilterClass] = useState("");
@@ -36,6 +37,7 @@ export default function SessionGroups({ session, membership, canManage }) {
   const [autoSizeInput, setAutoSizeInput] = useState("10");
   const [autoAssignNotice, setAutoAssignNotice] = useState("");
   const groupFileRef = useRef(null);
+  const workflowInitializedRef = useRef(false);
   const [groupModalOpen, setGroupModalOpen] = useState(false);
   const [groupCodeDraft, setGroupCodeDraft] = useState("");
   const [groupNameDraft, setGroupNameDraft] = useState("");
@@ -51,9 +53,13 @@ export default function SessionGroups({ session, membership, canManage }) {
   });
   const [openSections, setOpenSections] = useState({
     setup: true,
-    assign: true,
-    groups: false,
+    assign: false,
   });
+  const [maintenanceOpen, setMaintenanceOpen] = useState(false);
+  const showMessage = (area, text) => {
+    setMessageArea(area);
+    setMessage(text);
+  };
 
   const loadData = useCallback(async () => {
     if (!sessionId || !schoolId) return;
@@ -93,12 +99,17 @@ export default function SessionGroups({ session, membership, canManage }) {
       list.sort((a, b) => String(a.class || "").localeCompare(String(b.class || "")) || String(a.name || "").localeCompare(String(b.name || "")));
       setRoster(list);
       setGroups(grpRows || []);
+      if (!workflowInitializedRef.current) {
+        const hasGroups = (grpRows || []).length > 0;
+        setOpenSections({ setup: !hasGroups, assign: hasGroups });
+        workflowInitializedRef.current = true;
+      }
       const nextMap = new Map();
       ;(mRows || []).forEach((r) => nextMap.set(r.student_id, r.session_group_id));
       setMemberMap(nextMap);
       setSelected(new Set());
     } catch (e) {
-      setMessage(e.message || "Failed to load groups.");
+      showMessage("global", e.message || "Failed to load groups.");
     } finally {
       setLoading(false);
     }
@@ -131,7 +142,11 @@ export default function SessionGroups({ session, membership, canManage }) {
   const unassignedCount = Math.max(0, (roster || []).length - assignedCount);
 
   const toggleSection = (key) => {
-    setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }));
+    setOpenSections((prev) => ({
+      setup: false,
+      assign: false,
+      [key]: !prev[key],
+    }));
   };
 
   const filtered = useMemo(() => {
@@ -202,11 +217,11 @@ export default function SessionGroups({ session, membership, canManage }) {
       setLoading(true);
       setMessage("");
       const created = await createGroup(code, name);
-      setMessage(`Group ${created.group_code} created.`);
+      showMessage("groups", `Group ${created.group_code} created.`);
       if (groupModalTarget === "bulk") setBulkGroupId(created.id);
       setGroupModalOpen(false);
     } catch (e) {
-      setMessage(e.message || "Failed to create group.");
+      showMessage("groups", e.message || "Failed to create group.");
     } finally {
       setLoading(false);
     }
@@ -239,7 +254,7 @@ export default function SessionGroups({ session, membership, canManage }) {
         return next;
       });
     } catch (e) {
-      setMessage(e.message || "Failed to update group.");
+      showMessage("assign", e.message || "Failed to update group.");
     }
   };
 
@@ -262,7 +277,7 @@ export default function SessionGroups({ session, membership, canManage }) {
           ids.forEach((id) => next.delete(id));
           return next;
         });
-        setMessage(`Cleared group for ${ids.length} student(s).`);
+        showMessage("assign", `Cleared group for ${ids.length} student(s).`);
       } else {
         const payload = ids.map((id) => ({ session_id: sessionId, student_id: id, session_group_id: bulkGroupId }));
         const { error } = await supabase
@@ -274,10 +289,10 @@ export default function SessionGroups({ session, membership, canManage }) {
           ids.forEach((id) => next.set(id, bulkGroupId));
           return next;
         });
-        setMessage(`Assigned ${ids.length} student(s).`);
+        showMessage("assign", `Assigned ${ids.length} student(s).`);
       }
     } catch (e) {
-      setMessage(e.message || "Bulk update failed.");
+      showMessage("assign", e.message || "Bulk update failed.");
     } finally {
       setLoading(false);
     }
@@ -304,9 +319,9 @@ export default function SessionGroups({ session, membership, canManage }) {
         Array.from(next.entries()).forEach(([sid, gid]) => { if (gid === groupId) next.delete(sid); });
         return next;
       });
-      setMessage("Group deleted.");
+      showMessage("groups", "Group deleted.");
     } catch (e) {
-      setMessage(e.message || "Failed to delete group.");
+      showMessage("groups", e.message || "Failed to delete group.");
     } finally {
       setLoading(false);
     }
@@ -324,9 +339,9 @@ export default function SessionGroups({ session, membership, canManage }) {
       if (error) throw error;
       setMemberMap(new Map());
       setSelected(new Set());
-      setMessage("All students unassigned from groups.");
+      showMessage("groups", "All students unassigned from groups.");
     } catch (e) {
-      setMessage(e.message || "Failed to unassign students.");
+      showMessage("groups", e.message || "Failed to unassign students.");
     } finally {
       setLoading(false);
     }
@@ -352,9 +367,9 @@ export default function SessionGroups({ session, membership, canManage }) {
       setBulkGroupId("");
       setFilterGroupId("");
       setSelected(new Set());
-      setMessage("All groups and assignments cleared for this session.");
+      showMessage("groups", "All groups and assignments cleared for this session.");
     } catch (e) {
-      setMessage(e.message || "Failed to clear groups.");
+      showMessage("groups", e.message || "Failed to clear groups.");
     } finally {
       setLoading(false);
     }
@@ -486,10 +501,10 @@ export default function SessionGroups({ session, membership, canManage }) {
       const next = new Map(memberMap);
       payload.forEach((p) => next.set(p.student_id, p.session_group_id));
       setMemberMap(next);
-      setMessage(`Auto-assigned ${payload.length} student(s) into ${chunks.length} group(s).`);
+      showMessage("auto", `Auto-assigned ${payload.length} student(s) into ${chunks.length} group(s).`);
       setAutoAssignNotice(`Auto-assigned ${payload.length} student(s) into ${chunks.length} group(s).`);
     } catch (e) {
-      setMessage(e.message || "Auto-assign failed.");
+      showMessage("auto", e.message || "Auto-assign failed.");
       setAutoAssignNotice("");
     } finally {
       setLoading(false);
@@ -521,7 +536,7 @@ export default function SessionGroups({ session, membership, canManage }) {
       const text = await file.text();
       const parsed = parseGroupCsv(text);
       if (parsed.error) {
-        setMessage(parsed.error);
+        showMessage("upload", parsed.error);
         return;
       }
       const rosterById = new Map((roster || []).map((r) => [String(normalizeStudentId(r.student_identifier || "")).toUpperCase(), r]));
@@ -556,7 +571,7 @@ export default function SessionGroups({ session, membership, canManage }) {
         updates.push({ session_id: sessionId, student_id: matched.id, session_group_id: grp.id });
       });
       if (!updates.length) {
-        setMessage(errors.length ? errors.slice(0, 4).join(" ") : "No valid rows found.");
+        showMessage("upload", errors.length ? errors.slice(0, 4).join(" ") : "No valid rows found.");
         return;
       }
       const { error } = await supabase
@@ -564,9 +579,9 @@ export default function SessionGroups({ session, membership, canManage }) {
         .upsert(updates, { onConflict: "session_id,student_id" });
       if (error) throw error;
       await loadData();
-      setMessage(`Updated ${updates.length} student(s).${errors.length ? ` ${errors.length} warning(s).` : ""}`);
+      showMessage("upload", `Updated ${updates.length} student(s).${errors.length ? ` ${errors.length} warning(s).` : ""}`);
     } catch (e) {
-      setMessage(e.message || "Failed to import groups.");
+      showMessage("upload", e.message || "Failed to import groups.");
     } finally {
       setLoading(false);
       if (groupFileRef.current) groupFileRef.current.value = "";
@@ -580,7 +595,7 @@ export default function SessionGroups({ session, membership, canManage }) {
     try {
       const groupsSorted = [...groups].sort((a, b) => String(a.group_code || "").localeCompare(String(b.group_code || "")));
       if (!groupsSorted.length) {
-        setMessage("No groups to print.");
+        showMessage("export", "No groups to print.");
         return;
       }
       const membersByGroup = new Map();
@@ -673,9 +688,9 @@ export default function SessionGroups({ session, membership, canManage }) {
         }
       }
       pdf.save(`group_qr_sheet_${session?.title || "session"}.pdf`);
-      setMessage("Group QR sheet downloaded.");
+      showMessage("export", "Group QR sheet downloaded.");
     } catch (e) {
-      setMessage(e.message || "Failed to generate group sheets.");
+      showMessage("export", e.message || "Failed to generate group sheets.");
     } finally {
       setLoading(false);
     }
@@ -685,141 +700,160 @@ export default function SessionGroups({ session, membership, canManage }) {
     <section className="space-y-3">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
         <SummaryCard label="Total Students" value={String((roster || []).length)} />
+        <SummaryCard label="Groups" value={String((groups || []).length)} />
         <SummaryCard label="Assigned" value={String(assignedCount)} />
         <SummaryCard label="Unassigned" value={String(unassignedCount)} />
-        <SummaryCard label="Groups" value={String((groups || []).length)} />
       </div>
 
-      <div className="space-y-0">
-        <SectionToggle
-          title="Group Setup"
-          subtitle="Create, import, auto-assign, and print group sheets"
-          open={openSections.setup}
-          onToggle={() => toggleSection("setup")}
-          className="border-sky-200 bg-sky-100/70 hover:bg-sky-100"
-        />
-        <CollapsiblePanel open={openSections.setup}>
-          <div className="border border-sky-200 rounded-lg bg-sky-50/40 p-3 flex flex-wrap items-center gap-2">
-            <button onClick={downloadGroupRoster} className="px-3 py-1.5 rounded border bg-white hover:bg-gray-50">Download Group List</button>
-            {canManage && (
-              <>
-                <button onClick={() => groupFileRef.current?.click()} className="px-3 py-1.5 rounded border bg-white hover:bg-gray-50">Upload Group List</button>
-                <input ref={groupFileRef} type="file" accept=".csv,text/csv" onChange={(e) => onGroupCsvUpload(e.target.files?.[0])} className="hidden" />
-              </>
-            )}
-            <button onClick={exportGroupSheets} disabled={loading} className="px-3 py-1.5 rounded border bg-white hover:bg-gray-50 disabled:opacity-50">Print Group QR Sheet</button>
-          </div>
-
-          {canManage && (
-            <div className="border border-emerald-200 rounded-lg bg-emerald-50 p-3 flex flex-wrap items-center gap-2">
-              <label className="text-sm text-emerald-800 font-medium">Auto assign</label>
-              <label className="text-sm inline-flex items-center gap-1"><input type="checkbox" checked={autoByClass} onChange={(e) => setAutoByClass(e.target.checked)} />By class</label>
-              <label className="text-sm inline-flex items-center gap-1"><input type="checkbox" checked={autoByGender} onChange={(e) => setAutoByGender(e.target.checked)} />By gender</label>
-              <label className="text-sm text-emerald-800">Students/group</label>
-              <input
-                type="number"
-                min={1}
-                max={60}
-                value={autoSizeInput}
-                onChange={(e) => setAutoSizeInput(e.target.value)}
-                onBlur={() => {
-                  const parsed = parseInt(String(autoSizeInput || "").trim(), 10);
-                  const next = Math.max(1, Math.min(60, Number.isFinite(parsed) ? parsed : autoSize || 1));
-                  setAutoSize(next);
-                  setAutoSizeInput(String(next));
-                }}
-                className="border rounded px-2 py-1 w-28"
-              />
-              <div className="flex items-center gap-2">
-                <button onClick={runAutoAssign} disabled={loading} className="px-3 py-1.5 rounded border bg-white hover:bg-gray-50 disabled:opacity-50">Auto Assign</button>
-                {autoAssignNotice && <span className="text-sm text-green-700">{autoAssignNotice}</span>}
-              </div>
-            </div>
-          )}
-        </CollapsiblePanel>
-      </div>
-
-      <div className="rounded-xl border border-sky-200 bg-sky-50/60 p-2 md:p-3 space-y-2">
-        <div className="px-1">
-          <div className="text-sm font-semibold text-sky-900">Group Management Flow</div>
-          <div className="text-xs text-sky-800">Use Groups List first, then Assignments to place students.</div>
-        </div>
-
+      <div className="rounded-xl border border-sky-200 bg-sky-50/60 p-2 space-y-2">
         <div className="space-y-0">
           <SectionToggle
-            title="Groups List (Step 1 of 2)"
-            subtitle="Review groups and run maintenance actions"
-            open={openSections.groups}
-            onToggle={() => toggleSection("groups")}
+            step="1"
+            title="Manage Groups"
+            subtitle="Create groups, import a list, or auto-assign students"
+            open={openSections.setup}
+            onToggle={() => toggleSection("setup")}
             className="border-sky-200 bg-sky-100/70 hover:bg-sky-100"
           />
-          <CollapsiblePanel open={openSections.groups}>
-          <div className="border rounded-lg bg-white p-3">
-          <div className="mb-2 flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <div className="text-sm font-medium text-gray-700">Groups</div>
-              {canManage && (
-                <button
-                  type="button"
-                  onClick={() => openGroupModal("create")}
-                  disabled={loading}
-                  className="text-xs px-2.5 py-1 border rounded bg-white hover:bg-gray-50 disabled:opacity-50"
-                >
-                  Create Group
-                </button>
+          <CollapsiblePanel open={openSections.setup}>
+          <div className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.65fr)]">
+            <div className="border rounded-lg bg-white p-2">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <div>
+                  <div className="text-sm font-medium text-gray-700">Groups</div>
+                  <div className="text-xs text-gray-500">{groups.length ? "Review group codes and membership counts." : "Create or import groups before assigning students."}</div>
+                </div>
+                <div className="relative">
+                  {canManage && (
+                    <button
+                      type="button"
+                      onClick={() => setMaintenanceOpen((v) => !v)}
+                      disabled={loading}
+                      className="text-xs px-2.5 py-1 border rounded bg-white hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      More actions
+                    </button>
+                  )}
+                  {maintenanceOpen && (
+                    <div className="absolute right-0 top-full z-20 mt-1 w-56 rounded border bg-white py-1 shadow-lg">
+                      <button
+                        type="button"
+                        onClick={() => { setMaintenanceOpen(false); confirmUnassignAll(); }}
+                        disabled={loading}
+                        className="w-full px-3 py-2 text-left text-xs text-amber-800 hover:bg-amber-50 disabled:opacity-50"
+                      >
+                        Unassign all students
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setMaintenanceOpen(false); confirmClearDeleteAll(); }}
+                        disabled={loading}
+                        className="w-full px-3 py-2 text-left text-xs text-red-700 hover:bg-red-50 disabled:opacity-50"
+                      >
+                        Clear & delete all groups
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+              {groups.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {groups.map((g) => (
+                    <div key={g.id} className="flex items-center gap-2 border rounded px-2 py-1 bg-white">
+                      <span className="text-sm">{g.group_code}{g.group_name ? ` - ${g.group_name}` : ""} ({groupedCounts.get(g.id) || 0})</span>
+                      {canManage && <button onClick={() => confirmDeleteGroup(g.id)} className="text-xs px-2 py-0.5 border rounded hover:bg-gray-50">Delete</button>}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded border border-dashed border-slate-300 bg-slate-50 px-3 py-4 text-sm text-gray-600">No groups created yet.</div>
               )}
             </div>
-            {canManage && (
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={confirmUnassignAll}
-                  disabled={loading}
-                  className="text-xs px-2.5 py-1 border rounded border-amber-300 text-amber-800 hover:bg-amber-50 disabled:opacity-50"
-                  title="Remove all student assignments but keep groups"
-                >
-                  Unassign all students
-                </button>
-                <button
-                  type="button"
-                  onClick={confirmClearDeleteAll}
-                  disabled={loading}
-                  className="text-xs px-2.5 py-1 border rounded border-red-300 text-red-700 hover:bg-red-50 disabled:opacity-50"
-                  title="Delete all groups and assignments in this session"
-                >
-                  Clear & delete all groups
-                </button>
-              </div>
-            )}
-          </div>
-          {groups.length > 0 ? (
-            <div className="flex flex-wrap gap-2">
-              {groups.map((g) => (
-                <div key={g.id} className="flex items-center gap-2 border rounded px-2 py-1 bg-white">
-                  <span className="text-sm">{g.group_code}{g.group_name ? ` - ${g.group_name}` : ""} ({groupedCounts.get(g.id) || 0})</span>
-                  {canManage && <button onClick={() => confirmDeleteGroup(g.id)} className="text-xs px-2 py-0.5 border rounded hover:bg-gray-50">Delete</button>}
+
+            <div className="space-y-2">
+              {canManage && (
+                <div className="border rounded-lg bg-white p-2 space-y-2">
+                  <div className="text-sm font-medium text-gray-700">Create or import</div>
+                  <div className="flex flex-wrap gap-2">
+                    <button type="button" onClick={() => openGroupModal("create")} disabled={loading} className="px-3 py-1.5 rounded border bg-white hover:bg-gray-50 disabled:opacity-50">Create Group</button>
+                    <button onClick={() => groupFileRef.current?.click()} className="px-3 py-1.5 rounded border bg-white hover:bg-gray-50">Upload Group List</button>
+                    <input ref={groupFileRef} type="file" accept=".csv,text/csv" onChange={(e) => onGroupCsvUpload(e.target.files?.[0])} className="hidden" />
+                  </div>
+                  <div className="text-xs text-gray-500">Upload uses the same CSV format as Download Group List.</div>
+                  {message && (messageArea === "upload" || messageArea === "groups") && (
+                    <div className="text-sm text-gray-700">{message}</div>
+                  )}
                 </div>
-              ))}
+              )}
+
+              {canManage && (
+                <div className="border border-emerald-200 rounded-lg bg-emerald-50 p-2 space-y-2">
+                  <div className="text-sm text-emerald-800 font-medium">Auto assign</div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <label className="text-sm inline-flex items-center gap-1"><input type="checkbox" checked={autoByClass} onChange={(e) => setAutoByClass(e.target.checked)} />By class</label>
+                    <label className="text-sm inline-flex items-center gap-1"><input type="checkbox" checked={autoByGender} onChange={(e) => setAutoByGender(e.target.checked)} />By gender</label>
+                    <label className="text-sm text-emerald-800">Students/group</label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={60}
+                      value={autoSizeInput}
+                      onChange={(e) => setAutoSizeInput(e.target.value)}
+                      onBlur={() => {
+                        const parsed = parseInt(String(autoSizeInput || "").trim(), 10);
+                        const next = Math.max(1, Math.min(60, Number.isFinite(parsed) ? parsed : autoSize || 1));
+                        setAutoSize(next);
+                        setAutoSizeInput(String(next));
+                      }}
+                      className="border rounded px-2 py-1 w-24"
+                    />
+                    <button onClick={runAutoAssign} disabled={loading} className="px-3 py-1.5 rounded border bg-white hover:bg-gray-50 disabled:opacity-50">Auto Assign</button>
+                  </div>
+                  {autoAssignNotice && <div className="text-sm text-green-700">{autoAssignNotice}</div>}
+                  {message && messageArea === "auto" && !autoAssignNotice && (
+                    <div className="text-sm text-gray-700">{message}</div>
+                  )}
+                </div>
+              )}
+
+              <div className="border rounded-lg bg-white p-2 space-y-2">
+                <div>
+                  <div className="text-sm font-medium text-gray-700">Print / Export</div>
+                  <div className="text-xs text-gray-500">
+                    {assignedCount} assigned, {unassignedCount} unassigned, {groups.length} groups.
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button onClick={exportGroupSheets} disabled={loading} className="px-3 py-1.5 rounded border bg-white hover:bg-gray-50 disabled:opacity-50">Print Group QR Sheet</button>
+                  <button onClick={downloadGroupRoster} className="px-3 py-1.5 rounded border bg-white hover:bg-gray-50">Download Group List</button>
+                </div>
+                {message && messageArea === "export" && (
+                  <div className="text-sm text-gray-700">{message}</div>
+                )}
+              </div>
             </div>
-          ) : (
-            <div className="text-sm text-gray-500">No groups created yet.</div>
-          )}
           </div>
           </CollapsiblePanel>
         </div>
 
         <div className="space-y-0">
           <SectionToggle
-            title="Assignments (Step 2 of 2)"
-            subtitle="Assign students to groups and edit membership"
+            step="2"
+            title="Assign Students"
+            subtitle="Assign selected students in bulk or edit each row directly"
             open={openSections.assign}
             onToggle={() => toggleSection("assign")}
             className="border-sky-200 bg-sky-100/70 hover:bg-sky-100"
           />
           <CollapsiblePanel open={openSections.assign}>
           <>
-          {canManage && (
-            <div className="border rounded-lg bg-white p-3 flex items-center flex-wrap gap-2">
+          {groups.length === 0 && (
+            <div className="border border-amber-200 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              Create groups before assigning students.
+            </div>
+          )}
+          {canManage && selected.size > 0 && (
+            <div className="border rounded-lg bg-white p-2 flex items-center flex-wrap gap-2">
               <label className="text-sm text-gray-600">Set group for selected</label>
               <select
                 className="border rounded px-2 py-1 text-sm bg-white"
@@ -840,11 +874,14 @@ export default function SessionGroups({ session, membership, canManage }) {
                 <option value="__new__">Add new...</option>
               </select>
               <button onClick={applyBulkGroup} disabled={selected.size === 0 || loading} className="px-3 py-1.5 rounded border bg-white hover:bg-gray-50 disabled:opacity-50">Apply</button>
+              {message && messageArea === "assign" && (
+                <span className="text-sm text-gray-700">{message}</span>
+              )}
             </div>
           )}
 
-          <div className="border rounded-lg bg-white overflow-x-auto">
-            <div className="p-2 border-b bg-white grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2 text-sm">
+          <div className="table-scroll">
+            <div className="p-2 border-b bg-white grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 text-sm">
               <div className="flex items-center gap-2">
                 <label className="text-gray-600">Search</label>
                 <input type="text" value={filterQuery} onChange={(e) => setFilterQuery(e.target.value)} placeholder="Name or ID" className="border rounded px-2 py-1 bg-white w-full" />
@@ -872,7 +909,7 @@ export default function SessionGroups({ session, membership, canManage }) {
                 </select>
               </div>
             </div>
-            <table className="w-full text-sm">
+            <table className="data-table compact-data-table min-w-[720px]">
               <thead>
                 <tr className="bg-gray-100 text-left">
                   <th className="px-3 py-2 border w-8">
@@ -920,7 +957,7 @@ export default function SessionGroups({ session, membership, canManage }) {
         </div>
       </div>
 
-      {message && <div className="text-sm text-gray-700">{message}</div>}
+      {message && messageArea === "global" && <div className="text-sm text-gray-700">{message}</div>}
       <GroupPromptModal
         open={groupModalOpen}
         code={groupCodeDraft}
@@ -952,7 +989,7 @@ function SummaryCard({ label, value }) {
   );
 }
 
-function SectionToggle({ title, subtitle, open, onToggle, className = "" }) {
+function SectionToggle({ step, title, subtitle, open, onToggle, className = "" }) {
   return (
     <button
       type="button"
@@ -961,9 +998,16 @@ function SectionToggle({ title, subtitle, open, onToggle, className = "" }) {
       aria-expanded={open}
     >
       <div className="flex items-center justify-between gap-3">
-        <div>
+        <div className="flex min-w-0 items-start gap-2">
+          {step ? (
+            <span className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white text-xs font-semibold text-sky-700 ring-1 ring-sky-200">
+              {step}
+            </span>
+          ) : null}
+          <div className="min-w-0">
           <div className="text-sm font-medium text-gray-800">{title}</div>
           {subtitle ? <div className="text-xs text-gray-500">{subtitle}</div> : null}
+          </div>
         </div>
         <span className="text-xs text-gray-500">{open ? "Hide" : "Show"}</span>
       </div>

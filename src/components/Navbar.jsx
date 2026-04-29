@@ -5,8 +5,11 @@ import { supabase } from "../lib/supabaseClient";
 
 export default function Navbar({ user, onLogout }) {
   const [open, setOpen] = useState(false);
-  const link = "px-3 py-2 rounded-md border border-slate-200 bg-white/80 text-slate-700 hover:text-blue-900 hover:bg-blue-50/70 hover:border-blue-200 transition";
-  const active = "bg-blue-100/70 text-blue-900 border-blue-300 shadow-sm";
+  const link = "px-3 py-2 rounded-md text-sm font-medium text-slate-600 hover:text-blue-900 hover:bg-slate-100 transition";
+  const active = "bg-blue-50 text-blue-900";
+  const menuHeading = "mx-2 mt-2 rounded bg-slate-100 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-600";
+  const menuLink = "mx-2 mt-1 block rounded-md px-3 py-2 text-sm text-slate-700 hover:bg-blue-50";
+  const mobileSectionButton = "flex w-full items-center justify-between rounded-md px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 hover:bg-slate-100";
   const isOwner = isPlatformOwner(user);
   const location = useLocation();
   const [canManageUsers, setCanManageUsers] = useState(false);
@@ -18,15 +21,24 @@ export default function Navbar({ user, onLogout }) {
   const [learnOpen, setLearnOpen] = useState(false);
   const [manageOpen, setManageOpen] = useState(false);
   const [insightsOpen, setInsightsOpen] = useState(false);
+  const [mobileSections, setMobileSections] = useState({
+    assess: false,
+    manage: false,
+    insights: false,
+    learn: false,
+  });
   const showAssess = canManageUsers || canScoreEntry || canViewScore;
   const showManage = canManageUsers || isOwner;
   const showInsights = canManageUsers || isOwner;
   const pathname = location?.pathname || "";
-  const isAssessActive = ["/sessions", "/add-attempt", "/add-attempt-group", "/pft-calculator", "/view-score", "/platform-owner"].some(p => pathname.startsWith(p));
+  const isAssessActive = ["/sessions", "/add-attempt", "/add-attempt-group", "/pft-calculator", "/view-score", "/platform-owner", "/gamification"].some(p => pathname.startsWith(p));
   const isManageActive = ["/manage-students", "/modify-user"].some(p => pathname.startsWith(p));
   const isLearnActive = ["/target-score", "/learning-hub"].some(p => pathname.startsWith(p));
-  const isInsightsActive = ["/charts", "/audit", "/gamification", "/run-ops"].some(p => pathname.startsWith(p));
+  const isInsightsActive = ["/charts", "/snapshot-analytics", "/summary-data", "/audit", "/run-ops"].some(p => pathname.startsWith(p));
   const isContactActive = ["/contact", "/user-guide"].some(p => pathname.startsWith(p));
+  const toggleMobileSection = (key) => {
+    setMobileSections((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
 
   useEffect(() => {
     let ignore = false;
@@ -64,6 +76,16 @@ export default function Navbar({ user, onLogout }) {
     load();
     return () => { ignore = true };
   }, [user?.id]);
+
+  useEffect(() => {
+    if (!open) return;
+    setMobileSections({
+      assess: isAssessActive,
+      manage: isManageActive,
+      insights: isInsightsActive,
+      learn: isLearnActive,
+    });
+  }, [open, pathname, isAssessActive, isManageActive, isInsightsActive, isLearnActive]);
 
   return (
     <header className="sticky top-0 z-50 bg-white/85 backdrop-blur border-b border-slate-200 shadow-sm">
@@ -119,24 +141,38 @@ export default function Navbar({ user, onLogout }) {
                         </svg>
                       </button>
                       {assessOpen && (
-                        <div className="absolute left-0 top-full -mt-px w-56 bg-white border border-slate-200 rounded-md shadow-lg ring-1 ring-black/5 z-50" role="menu" aria-label="Assess menu">
+                        <div className="absolute left-0 top-full -mt-px w-72 bg-white border border-slate-200 rounded-lg shadow-lg ring-1 ring-black/5 z-50 py-2" role="menu" aria-label="Assess menu">
                           {(canManageUsers || isOwner) && (
-                            <NavLink to="/sessions" onClick={() => setAssessOpen(false)} className={({ isActive }) => `block px-3 py-2 text-slate-700 hover:bg-blue-50 ${isActive ? 'bg-blue-100/70 text-blue-900' : ''}`} role="menuitem">NAPFA Sessions</NavLink>
+                            <>
+                              <div className={menuHeading}>Plan</div>
+                              <NavLink to="/sessions" onClick={() => setAssessOpen(false)} className={({ isActive }) => `${menuLink} ${isActive ? 'bg-blue-100 text-blue-900 font-medium' : ''}`} role="menuitem">NAPFA Sessions</NavLink>
+                            </>
                           )}
-                          {canScoreEntry && (
-                            <NavLink to="/add-attempt" onClick={() => setAssessOpen(false)} className={({ isActive }) => `block px-3 py-2 text-slate-700 hover:bg-blue-50 ${isActive ? 'bg-blue-100/70 text-blue-900' : ''}`} role="menuitem">Score Entry</NavLink>
-                          )}
-                          {canScoreEntry && (
-                            <NavLink to="/add-attempt-group" onClick={() => setAssessOpen(false)} className={({ isActive }) => `block px-3 py-2 text-slate-700 hover:bg-blue-50 ${isActive ? 'bg-blue-100/70 text-blue-900' : ''}`} role="menuitem">Score Entry (Group)</NavLink>
-                          )}
-                          {canViewScore && (
-                            <NavLink to="/view-score" onClick={() => setAssessOpen(false)} className={({ isActive }) => `block px-3 py-2 text-slate-700 hover:bg-blue-50 ${isActive ? 'bg-blue-100/70 text-blue-900' : ''}`} role="menuitem">View Score</NavLink>
+                          {(canScoreEntry || canViewScore || canManageUsers || isOwner) && (
+                            <>
+                              <div className={menuHeading}>Assess</div>
+                              {canScoreEntry && (
+                                <NavLink to="/add-attempt" onClick={() => setAssessOpen(false)} className={({ isActive }) => `${menuLink} ${isActive ? 'bg-blue-100 text-blue-900 font-medium' : ''}`} role="menuitem">Score Entry</NavLink>
+                              )}
+                              {canScoreEntry && (
+                                <NavLink to="/add-attempt-group" onClick={() => setAssessOpen(false)} className={({ isActive }) => `${menuLink} ${isActive ? 'bg-blue-100 text-blue-900 font-medium' : ''}`} role="menuitem">Score Entry (Group)</NavLink>
+                              )}
+                              {canViewScore && (
+                                <NavLink to="/view-score" onClick={() => setAssessOpen(false)} className={({ isActive }) => `${menuLink} ${isActive ? 'bg-blue-100 text-blue-900 font-medium' : ''}`} role="menuitem">View Score</NavLink>
+                              )}
+                              {(canManageUsers || isOwner) && (
+                                <NavLink to="/gamification" onClick={() => setAssessOpen(false)} className={({ isActive }) => `${menuLink} ${isActive ? 'bg-blue-100 text-blue-900 font-medium' : ''}`} role="menuitem">Challenge Hub</NavLink>
+                              )}
+                            </>
                           )}
                           {(canManageUsers || isOwner) && (
-                            <NavLink to="/pft-calculator" onClick={() => setAssessOpen(false)} className={({ isActive }) => `block px-3 py-2 text-slate-700 hover:bg-blue-50 ${isActive ? 'bg-blue-100/70 text-blue-900' : ''}`} role="menuitem">Award Calculator</NavLink>
-                          )}
-                          {isOwner && (
-                            <NavLink to="/platform-owner" onClick={() => setAssessOpen(false)} className={({ isActive }) => `block px-3 py-2 text-slate-700 hover:bg-blue-50 ${isActive ? 'bg-blue-100/70 text-blue-900' : ''}`} role="menuitem">Platform Owner</NavLink>
+                            <>
+                              <div className={menuHeading}>Evaluate</div>
+                              <NavLink to="/pft-calculator" onClick={() => setAssessOpen(false)} className={({ isActive }) => `${menuLink} ${isActive ? 'bg-blue-100 text-blue-900 font-medium' : ''}`} role="menuitem">Award Calculator</NavLink>
+                              {isOwner && (
+                                <NavLink to="/platform-owner" onClick={() => setAssessOpen(false)} className={({ isActive }) => `${menuLink} ${isActive ? 'bg-blue-100 text-blue-900 font-medium' : ''}`} role="menuitem">Platform Owner</NavLink>
+                              )}
+                            </>
                           )}
                         </div>
                       )}
@@ -204,13 +240,12 @@ export default function Navbar({ user, onLogout }) {
                       </button>
                       {insightsOpen && (
                         <div className="absolute left-0 top-full -mt-px w-52 bg-white border border-slate-200 rounded-md shadow-lg ring-1 ring-black/5 z-50" role="menu" aria-label="Insights menu">
-                          <NavLink to="/gamification" onClick={() => setInsightsOpen(false)} className={({ isActive }) => `block px-3 py-2 text-slate-700 hover:bg-blue-50 ${isActive ? 'bg-blue-100/70 text-blue-900' : ''}`} role="menuitem">Challenge Hub</NavLink>
                           <NavLink to="/charts" onClick={() => setInsightsOpen(false)} className={({ isActive }) => `block px-3 py-2 text-slate-700 hover:bg-blue-50 ${isActive ? 'bg-blue-100/70 text-blue-900' : ''}`} role="menuitem">Charts</NavLink>
+                          {isOwner && (
+                            <NavLink to="/snapshot-analytics" onClick={() => setInsightsOpen(false)} className={({ isActive }) => `block px-3 py-2 text-slate-700 hover:bg-blue-50 ${isActive ? 'bg-blue-100/70 text-blue-900' : ''}`} role="menuitem">Snapshot Analytics</NavLink>
+                          )}
                           <NavLink to="/audit" onClick={() => setInsightsOpen(false)} className={({ isActive }) => `block px-3 py-2 text-slate-700 hover:bg-blue-50 ${isActive ? 'bg-blue-100/70 text-blue-900' : ''}`} role="menuitem">Audit</NavLink>
                           <NavLink to="/run-ops" onClick={() => setInsightsOpen(false)} className={({ isActive }) => `block px-3 py-2 text-slate-700 hover:bg-blue-50 ${isActive ? 'bg-blue-100/70 text-blue-900' : ''}`} role="menuitem">Run Ops</NavLink>
-                          {isOwner && (
-                            <NavLink to="/summary-data" onClick={() => setInsightsOpen(false)} className={({ isActive }) => `block px-3 py-2 text-slate-700 hover:bg-blue-50 ${isActive ? 'bg-blue-100/70 text-blue-900' : ''}`} role="menuitem">Summary Data</NavLink>
-                          )}
                         </div>
                       )}
                     </div>
@@ -300,7 +335,7 @@ export default function Navbar({ user, onLogout }) {
       </nav>
             {/* Animated mobile panel */}
             <div className="md:hidden px-3">
-                <div className={open ? "border-t pb-3 space-y-2 transition-all duration-200" : "border-t pb-0 h-0 overflow-hidden transition-all duration-200"}>
+                <div className={open ? "max-h-[calc(100vh-56px)] overflow-y-auto overscroll-contain border-t pb-3 space-y-2 transition-all duration-200" : "border-t pb-0 max-h-0 overflow-hidden transition-all duration-200"}>
                   {!user && (
                     <NavLink to="/" end className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Home</NavLink>
                   )}
@@ -312,57 +347,98 @@ export default function Navbar({ user, onLogout }) {
                       </div>
                       {showAssess && (
                         <div className="pt-1">
-                          <div className="text-xs uppercase tracking-wide text-gray-400 px-1">Assess</div>
-                          {(canManageUsers || isOwner) && (
-                            <NavLink to="/sessions" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>NAPFA Sessions</NavLink>
-                          )}
-                          {canScoreEntry && (
-                            <NavLink to="/add-attempt" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Score Entry</NavLink>
-                          )}
-                          {canScoreEntry && (
-                            <NavLink to="/add-attempt-group" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Score Entry (Group)</NavLink>
-                          )}
-                          {canViewScore && (
-                            <NavLink to="/view-score" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>View Score</NavLink>
-                          )}
-                          {(canManageUsers || isOwner) && (
-                            <NavLink to="/pft-calculator" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Award Calculator</NavLink>
-                          )}
-                          {isOwner && (
-                            <NavLink to="/platform-owner" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Platform Owner</NavLink>
+                          <button type="button" className={`${mobileSectionButton} ${isAssessActive ? active : ""}`} aria-expanded={mobileSections.assess} onClick={() => toggleMobileSection("assess")}>
+                            <span>Assess</span>
+                            <span aria-hidden="true">{mobileSections.assess ? "Hide" : "Show"}</span>
+                          </button>
+                          {mobileSections.assess && (
+                            <div className="space-y-1">
+                              {(canManageUsers || isOwner) && (
+                                <>
+                                  <div className="mt-2 rounded bg-slate-100 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-600">Plan</div>
+                                  <NavLink to="/sessions" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>NAPFA Sessions</NavLink>
+                                </>
+                              )}
+                              {(canScoreEntry || canViewScore || canManageUsers || isOwner) && (
+                                <>
+                                  <div className="mt-2 rounded bg-slate-100 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-600">Assess</div>
+                                  {canScoreEntry && (
+                                    <NavLink to="/add-attempt" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Score Entry</NavLink>
+                                  )}
+                                  {canScoreEntry && (
+                                    <NavLink to="/add-attempt-group" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Score Entry (Group)</NavLink>
+                                  )}
+                                  {canViewScore && (
+                                    <NavLink to="/view-score" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>View Score</NavLink>
+                                  )}
+                                  {(canManageUsers || isOwner) && (
+                                    <NavLink to="/gamification" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Challenge Hub</NavLink>
+                                  )}
+                                </>
+                              )}
+                              {(canManageUsers || isOwner) && (
+                                <>
+                                  <div className="mt-2 rounded bg-slate-100 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-600">Evaluate</div>
+                                  <NavLink to="/pft-calculator" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Award Calculator</NavLink>
+                                  {isOwner && (
+                                    <NavLink to="/platform-owner" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Platform Owner</NavLink>
+                                  )}
+                                </>
+                              )}
+                            </div>
                           )}
                         </div>
                       )}
                       {showManage && (
                         <div className="pt-1">
-                          <div className="text-xs uppercase tracking-wide text-gray-400 px-1">Manage</div>
-                          {(canManageUsers || isOwner) && (
-                            <NavLink to="/manage-students" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Student Enrollment</NavLink>
-                          )}
-                          {(canManageUsers || isOwner) && (
-                            <NavLink to="/modify-user" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Manage Users</NavLink>
+                          <button type="button" className={`${mobileSectionButton} ${isManageActive ? active : ""}`} aria-expanded={mobileSections.manage} onClick={() => toggleMobileSection("manage")}>
+                            <span>Manage</span>
+                            <span aria-hidden="true">{mobileSections.manage ? "Hide" : "Show"}</span>
+                          </button>
+                          {mobileSections.manage && (
+                            <div className="space-y-1">
+                              {(canManageUsers || isOwner) && (
+                                <NavLink to="/manage-students" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Student Enrollment</NavLink>
+                              )}
+                              {(canManageUsers || isOwner) && (
+                                <NavLink to="/modify-user" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Manage Users</NavLink>
+                              )}
+                            </div>
                           )}
                         </div>
                       )}
                     </>
                   )}
-                  <div className="pt-1">
-                    <div className="text-xs uppercase tracking-wide text-gray-400 px-1">Learn</div>
-                    <NavLink to="/target-score" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Target Score</NavLink>
-                    <NavLink to="/learning-hub" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Learning Hub</NavLink>
-                  </div>
                   {showInsights && (
                     <div className="pt-1">
-                      <div className="text-xs uppercase tracking-wide text-gray-400 px-1">Insights</div>
-                      <NavLink to="/gamification" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Challenge Hub</NavLink>
-                      <NavLink to="/charts" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Charts</NavLink>
-                      <NavLink to="/audit" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Audit</NavLink>
-                      <NavLink to="/run-ops" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Run Ops</NavLink>
-                      {isOwner && (
-                        <NavLink to="/summary-data" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Summary Data</NavLink>
+                      <button type="button" className={`${mobileSectionButton} ${isInsightsActive ? active : ""}`} aria-expanded={mobileSections.insights} onClick={() => toggleMobileSection("insights")}>
+                        <span>Insights</span>
+                        <span aria-hidden="true">{mobileSections.insights ? "Hide" : "Show"}</span>
+                      </button>
+                      {mobileSections.insights && (
+                        <div className="space-y-1">
+                          <NavLink to="/charts" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Charts</NavLink>
+                          {isOwner && (
+                            <NavLink to="/snapshot-analytics" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Snapshot Analytics</NavLink>
+                          )}
+                          <NavLink to="/audit" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Audit</NavLink>
+                          <NavLink to="/run-ops" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Run Ops</NavLink>
+                        </div>
                       )}
                     </div>
                   )}
+                  <div className="pt-1">
+                    <button type="button" className={`${mobileSectionButton} ${isLearnActive ? active : ""}`} aria-expanded={mobileSections.learn} onClick={() => toggleMobileSection("learn")}>
+                      <span>Learn</span>
+                      <span aria-hidden="true">{mobileSections.learn ? "Hide" : "Show"}</span>
+                    </button>
+                    {mobileSections.learn && (
+                      <div className="space-y-1">
+                        <NavLink to="/target-score" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Target Score</NavLink>
+                        <NavLink to="/learning-hub" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Learning Hub</NavLink>
+                      </div>
+                    )}
+                  </div>
                   <NavLink to="/contact" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>Contact Us</NavLink>
                   <NavLink to="/user-guide" className={({ isActive }) => `${link} ${isActive ? active : ""} block`} onClick={() => setOpen(false)}>User Guide & FAQ</NavLink>
                   <div className="pt-2 flex items-center justify-between gap-2">

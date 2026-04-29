@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useCallback } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import { supabase } from "../lib/supabaseClient";
 import { fetchSessionRosterWithStudents } from "../lib/sessionRoster";
 import { normalizeStudentId } from "../utils/ids";
@@ -18,6 +19,7 @@ export default function SessionHouses({ session, membership, canManage }) {
   const [roster, setRoster] = useState([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const [messageArea, setMessageArea] = useState("global");
   const [houseOptions, setHouseOptions] = useState([]);
   const [bulkHouse, setBulkHouse] = useState("");
   const [selected, setSelected] = useState(new Set());
@@ -29,9 +31,15 @@ export default function SessionHouses({ session, membership, canManage }) {
   const [sortBy2, setSortBy2] = useState("name");
   const [sortDir, setSortDir] = useState("asc");
   const houseFileRef = useRef(null);
+  const workflowInitializedRef = useRef(false);
   const [houseModalOpen, setHouseModalOpen] = useState(false);
   const [newHouseName, setNewHouseName] = useState("");
   const [houseModalTarget, setHouseModalTarget] = useState({ mode: "bulk", studentId: null });
+  const [openSections, setOpenSections] = useState({ setup: true, assign: false });
+  const showMessage = (area, text) => {
+    setMessageArea(area);
+    setMessage(text);
+  };
 
   const loadData = useCallback(async () => {
     if (!sessionId || !schoolId) return;
@@ -57,16 +65,36 @@ export default function SessionHouses({ session, membership, canManage }) {
       });
       list.sort((a,b)=> String(a.class||'').localeCompare(String(b.class||'')) || String(a.name||'').localeCompare(String(b.name||'')));
       setRoster(list);
-      setHouseOptions(Array.from(new Set(list.map(r => String(r.house || '').trim()).filter(Boolean))).sort((a,b)=>a.localeCompare(b)));
+      const nextHouseOptions = Array.from(new Set(list.map(r => String(r.house || '').trim()).filter(Boolean))).sort((a,b)=>a.localeCompare(b));
+      setHouseOptions(nextHouseOptions);
+      if (!workflowInitializedRef.current) {
+        const hasHouses = nextHouseOptions.length > 0;
+        setOpenSections({ setup: !hasHouses, assign: hasHouses });
+        workflowInitializedRef.current = true;
+      }
       setSelected(new Set());
     } catch (e) {
-      setMessage(e.message || "Failed to load session roster.");
+      showMessage("global", e.message || "Failed to load session roster.");
     } finally {
       setLoading(false);
     }
   }, [schoolId, sessionId, sessionYear]);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  const assignedCount = useMemo(
+    () => (roster || []).reduce((acc, r) => acc + (String(r.house || "").trim() ? 1 : 0), 0),
+    [roster]
+  );
+  const unassignedCount = Math.max(0, (roster || []).length - assignedCount);
+
+  const toggleSection = (key) => {
+    setOpenSections((prev) => ({
+      setup: false,
+      assign: false,
+      [key]: !prev[key],
+    }));
+  };
 
   const filtered = useMemo(() => {
     const q = (filterQuery || "").trim().toLowerCase();
@@ -143,7 +171,7 @@ export default function SessionHouses({ session, membership, canManage }) {
         setHouseOptions(prev => Array.from(new Set([...prev, value])).sort((a,b)=>a.localeCompare(b)));
       }
     } catch (e) {
-      setMessage(e.message || "Failed to update house.");
+      showMessage("assign", e.message || "Failed to update house.");
     }
   };
 
@@ -160,9 +188,9 @@ export default function SessionHouses({ session, membership, canManage }) {
       if (error) throw error;
       setRoster(prev => prev.map(r => (ids.includes(r.id) ? { ...r, house: value } : r)));
       setHouseOptions(prev => Array.from(new Set([...prev, value])).sort((a,b)=>a.localeCompare(b)));
-      setMessage(`Updated house for ${ids.length} student(s).`);
+      showMessage("assign", `Updated house for ${ids.length} student(s).`);
     } catch (e) {
-      setMessage(e.message || "Failed to update houses.");
+      showMessage("assign", e.message || "Failed to update houses.");
     } finally {
       setLoading(false);
     }
@@ -186,9 +214,9 @@ export default function SessionHouses({ session, membership, canManage }) {
         });
         return Array.from(remaining).sort((a,b)=>a.localeCompare(b));
       });
-      setMessage(`Cleared house for ${ids.length} student(s).`);
+      showMessage("assign", `Cleared house for ${ids.length} student(s).`);
     } catch (e) {
-      setMessage(e.message || "Failed to clear houses.");
+      showMessage("assign", e.message || "Failed to clear houses.");
     } finally {
       setLoading(false);
     }
@@ -209,9 +237,9 @@ export default function SessionHouses({ session, membership, canManage }) {
       setRoster(prev => prev.map(r => (r.house === houseName ? { ...r, house: "" } : r)));
       setHouseOptions(prev => prev.filter(h => h !== houseName));
       if (bulkHouse === houseName) setBulkHouse("");
-      setMessage(`Deleted house "${houseName}".`);
+      showMessage("houses", `Deleted house "${houseName}".`);
     } catch (e) {
-      setMessage(e.message || "Failed to delete house.");
+      showMessage("houses", e.message || "Failed to delete house.");
     } finally {
       setLoading(false);
     }
@@ -256,7 +284,7 @@ export default function SessionHouses({ session, membership, canManage }) {
       const text = await file.text();
       const parsed = parseHouseCsv(text);
       if (parsed.error) {
-        setMessage(parsed.error);
+        showMessage("upload", parsed.error);
         return;
       }
       const rosterById = new Map((roster || []).map(r => [String(normalizeStudentId(r.student_identifier || "")).toUpperCase(), r]));
@@ -274,16 +302,16 @@ export default function SessionHouses({ session, membership, canManage }) {
         updates.push({ session_id: sessionId, student_id: match.id, house: house || null });
       });
       if (!updates.length) {
-        setMessage(errors.length ? errors.slice(0, 5).join(" ") : "No valid rows found.");
+        showMessage("upload", errors.length ? errors.slice(0, 5).join(" ") : "No valid rows found.");
         return;
       }
       const { error } = await supabase.from("session_roster").upsert(updates, { onConflict: "session_id,student_id" });
       if (error) throw error;
       await loadData();
       const note = errors.length ? `Completed with ${errors.length} warning(s).` : "Upload complete.";
-      setMessage(`Updated ${updates.length} student(s). ${note}`);
+      showMessage("upload", `Updated ${updates.length} student(s). ${note}`);
     } catch (e) {
-      setMessage(e.message || "Failed to import houses.");
+      showMessage("upload", e.message || "Failed to import houses.");
     } finally {
       setLoading(false);
       if (houseFileRef.current) houseFileRef.current.value = "";
@@ -292,53 +320,31 @@ export default function SessionHouses({ session, membership, canManage }) {
 
   return (
     <section className="space-y-3">
-      <div className="border border-sky-200 rounded-lg bg-sky-50/40 p-3 flex flex-wrap items-center gap-2">
-        <button onClick={downloadHouseRoster} className="px-3 py-1.5 rounded border bg-white hover:bg-gray-50">Download House List</button>
-        {canManage && (
-          <>
-            <button onClick={() => houseFileRef.current?.click()} className="px-3 py-1.5 rounded border bg-white hover:bg-gray-50">Upload House List</button>
-            <input ref={houseFileRef} type="file" accept=".csv,text/csv" onChange={(e) => onHouseCsvUpload(e.target.files?.[0])} className="hidden" />
-          </>
-        )}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+        <SummaryCard label="Total Students" value={String((roster || []).length)} />
+        <SummaryCard label="Houses" value={String(houseOptions.length)} />
+        <SummaryCard label="Assigned" value={String(assignedCount)} />
+        <SummaryCard label="Unassigned" value={String(unassignedCount)} />
       </div>
 
-      {canManage && (
-        <div className="border border-emerald-200 rounded-lg bg-emerald-50 p-3 flex items-center flex-wrap gap-2">
-          <label className="text-sm text-emerald-800 font-medium">Set house for selected</label>
-          <select
-            className="border rounded px-2 py-1 text-sm bg-white"
-            value={bulkHouse}
-            onChange={(e) => {
-              const val = e.target.value;
-              if (val === "__new__") {
-                openNewHouseModal("bulk");
-              } else {
-                setBulkHouse(val);
-              }
-            }}
-          >
-            <option value="">Select house</option>
-            {houseOptions.map(h => (
-              <option key={h} value={h}>{h}</option>
-            ))}
-            <option value="__new__">Add new...</option>
-          </select>
-          <button onClick={applyBulkHouse} disabled={!bulkHouse || selected.size === 0 || loading} className="px-3 py-1.5 rounded border bg-white hover:bg-gray-50 disabled:opacity-50">Apply</button>
-          <button onClick={clearBulkHouse} disabled={selected.size === 0 || loading} className="px-3 py-1.5 rounded border bg-white hover:bg-gray-50 disabled:opacity-50">Clear</button>
-        </div>
-      )}
-
-      <div className="rounded-xl border border-sky-200 bg-sky-50/60 p-2 md:p-3 space-y-2">
-        <div className="px-1">
-          <div className="text-sm font-semibold text-sky-900">House Management Flow</div>
-          <div className="text-xs text-sky-800">Review houses first, then assign students in the table.</div>
-        </div>
-
-        {canManage && houseOptions.length > 0 && (
-          <div className="space-y-1">
-            <div className="text-xs font-medium text-sky-800 px-1">Step 1 of 2: Houses List</div>
-            <div className="border border-sky-200 rounded-lg bg-white p-3">
-              <div className="text-sm font-medium text-gray-700 mb-2">Houses</div>
+      <div className="rounded-xl border border-sky-200 bg-sky-50/60 p-2 space-y-2">
+        <div className="space-y-0">
+          <SectionToggle
+            step="1"
+            title="Manage Houses"
+            subtitle="Create houses, import a list, or export the current list"
+            open={openSections.setup}
+            onToggle={() => toggleSection("setup")}
+            className="border-sky-200 bg-sky-100/70 hover:bg-sky-100"
+          />
+          <CollapsiblePanel open={openSections.setup}>
+            <div className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.65fr)]">
+              <div className="border border-sky-200 rounded-lg bg-white p-2">
+              <div className="mb-2">
+                <div className="text-sm font-medium text-gray-700">Houses</div>
+                <div className="text-xs text-gray-500">{houseOptions.length ? "Review house names used in this session." : "Create or import houses before assigning students."}</div>
+              </div>
+              {houseOptions.length > 0 ? (
               <div className="flex flex-wrap gap-2">
                 {houseOptions.map(h => (
                   <div key={h} className="flex items-center gap-2 border rounded px-2 py-1 bg-white">
@@ -347,14 +353,86 @@ export default function SessionHouses({ session, membership, canManage }) {
                   </div>
                 ))}
               </div>
-            </div>
-          </div>
-        )}
+              ) : (
+                <div className="rounded border border-dashed border-slate-300 bg-slate-50 px-3 py-4 text-sm text-gray-600">No houses created yet.</div>
+              )}
+              </div>
 
-        <div className="space-y-1">
-          <div className="text-xs font-medium text-sky-800 px-1">Step 2 of 2: Assignments</div>
-          <div className="border border-sky-200 rounded-lg bg-white overflow-x-auto">
-            <div className="p-2 border-b bg-white grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-2 text-sm">
+              <div className="space-y-2">
+                {canManage && (
+                  <div className="border rounded-lg bg-white p-2 space-y-2">
+                    <div className="text-sm font-medium text-gray-700">Create or import</div>
+                  <div className="flex flex-wrap gap-2">
+                    <button onClick={() => openNewHouseModal("bulk")} className="px-3 py-1.5 rounded border bg-white hover:bg-gray-50">Create House</button>
+                    <button onClick={() => houseFileRef.current?.click()} className="px-3 py-1.5 rounded border bg-white hover:bg-gray-50">Upload House List</button>
+                    <input ref={houseFileRef} type="file" accept=".csv,text/csv" onChange={(e) => onHouseCsvUpload(e.target.files?.[0])} className="hidden" />
+                  </div>
+                  <div className="text-xs text-gray-500">Upload uses the same CSV format as Download House List.</div>
+                  {message && (messageArea === "upload" || messageArea === "houses") && (
+                    <div className="text-sm text-gray-700">{message}</div>
+                  )}
+                </div>
+              )}
+                <div className="border rounded-lg bg-white p-2 space-y-2">
+                  <div>
+                    <div className="text-sm font-medium text-gray-700">Export</div>
+                    <div className="text-xs text-gray-500">
+                      {assignedCount} assigned, {unassignedCount} unassigned, {houseOptions.length} houses.
+                    </div>
+                  </div>
+                  <button onClick={downloadHouseRoster} className="px-3 py-1.5 rounded border bg-white hover:bg-gray-50">Download House List</button>
+                </div>
+              </div>
+            </div>
+          </CollapsiblePanel>
+        </div>
+
+        <div className="space-y-0">
+          <SectionToggle
+            step="2"
+            title="Assign Students"
+            subtitle="Assign selected students in bulk or edit each row directly"
+            open={openSections.assign}
+            onToggle={() => toggleSection("assign")}
+            className="border-sky-200 bg-sky-100/70 hover:bg-sky-100"
+          />
+          <CollapsiblePanel open={openSections.assign}>
+          <>
+          {houseOptions.length === 0 && (
+            <div className="border border-amber-200 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              Create houses before assigning students.
+            </div>
+          )}
+          {canManage && selected.size > 0 && (
+            <div className="border border-emerald-200 rounded-lg bg-emerald-50 p-2 flex items-center flex-wrap gap-2">
+              <label className="text-sm text-emerald-800 font-medium">Set house for selected</label>
+              <select
+                className="border rounded px-2 py-1 text-sm bg-white"
+                value={bulkHouse}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val === "__new__") {
+                    openNewHouseModal("bulk");
+                  } else {
+                    setBulkHouse(val);
+                  }
+                }}
+              >
+                <option value="">Select house</option>
+                {houseOptions.map(h => (
+                  <option key={h} value={h}>{h}</option>
+                ))}
+                <option value="__new__">Add new...</option>
+              </select>
+              <button onClick={applyBulkHouse} disabled={!bulkHouse || selected.size === 0 || loading} className="px-3 py-1.5 rounded border bg-white hover:bg-gray-50 disabled:opacity-50">Apply</button>
+              <button onClick={clearBulkHouse} disabled={selected.size === 0 || loading} className="px-3 py-1.5 rounded border bg-white hover:bg-gray-50 disabled:opacity-50">Clear</button>
+              {message && messageArea === "assign" && (
+                <span className="text-sm text-gray-700">{message}</span>
+              )}
+            </div>
+          )}
+          <div className="table-scroll border-sky-200">
+            <div className="p-2 border-b bg-white grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2 text-sm">
           <div className="flex items-center gap-2">
             <label className="text-gray-600">Search</label>
             <input
@@ -415,7 +493,7 @@ export default function SessionHouses({ session, membership, canManage }) {
             </button>
           </div>
             </div>
-            <table className="w-full text-sm">
+            <table className="data-table compact-data-table min-w-[760px]">
               <thead>
                 <tr className="bg-gray-100 text-left">
                   <th className="px-3 py-2 border w-8">
@@ -473,10 +551,12 @@ export default function SessionHouses({ session, membership, canManage }) {
               </tbody>
             </table>
           </div>
+          </>
+          </CollapsiblePanel>
         </div>
       </div>
 
-      {message && <div className="text-sm text-gray-700">{message}</div>}
+      {message && messageArea === "global" && <div className="text-sm text-gray-700">{message}</div>}
       <NamePromptModal
         open={houseModalOpen}
         title="Add New House"
@@ -488,6 +568,59 @@ export default function SessionHouses({ session, membership, canManage }) {
         confirmText="Add"
       />
     </section>
+  );
+}
+
+function SummaryCard({ label, value }) {
+  return (
+    <div className="border rounded-lg bg-white px-3 py-2">
+      <div className="text-xs text-gray-500">{label}</div>
+      <div className="text-lg font-semibold text-gray-900">{value}</div>
+    </div>
+  );
+}
+
+function SectionToggle({ step, title, subtitle, open, onToggle, className = "" }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      className={`w-full border rounded-lg bg-white px-3 py-2 text-left hover:bg-gray-50 ${className}`}
+      aria-expanded={open}
+    >
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-start gap-2">
+          {step ? (
+            <span className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white text-xs font-semibold text-sky-700 ring-1 ring-sky-200">
+              {step}
+            </span>
+          ) : null}
+          <div className="min-w-0">
+            <div className="text-sm font-medium text-gray-800">{title}</div>
+            {subtitle ? <div className="text-xs text-gray-500">{subtitle}</div> : null}
+          </div>
+        </div>
+        <span className="text-xs text-gray-500">{open ? "Hide" : "Show"}</span>
+      </div>
+    </button>
+  );
+}
+
+function CollapsiblePanel({ open, children }) {
+  return (
+    <AnimatePresence initial={false}>
+      {open && (
+        <motion.div
+          initial={{ height: 0, opacity: 0 }}
+          animate={{ height: "auto", opacity: 1 }}
+          exit={{ height: 0, opacity: 0 }}
+          transition={{ duration: 0.2, ease: "easeOut" }}
+          className="overflow-hidden"
+        >
+          <div className="space-y-0">{children}</div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }
 

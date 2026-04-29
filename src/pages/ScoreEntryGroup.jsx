@@ -403,14 +403,14 @@ export default function ScoreEntryGroup({ user }) {
   }
 
   return (
-    <main className="max-w-6xl mx-auto p-4 space-y-4">
-      <section>
+    <main className="max-w-6xl mx-auto op-page">
+      <section className="op-header">
         <h1 className="text-2xl font-semibold mb-1">Score Entry (Group)</h1>
         <p className="text-sm text-gray-600">Scan a group QR to load students, then save scores per student or save all changed rows.</p>
       </section>
 
-      <section className="border rounded-lg bg-white p-3 space-y-3">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <section className="op-card space-y-2">
+        <div className="grid grid-cols-1 gap-2 lg:grid-cols-3">
           <div className={`rounded-lg border p-2 ${hasMultipleNapfaSessions ? "border-amber-300 bg-amber-50/60" : "border-blue-200 bg-blue-50/40"}`}>
             <div className="flex items-center justify-between gap-2">
               <label className={`text-sm font-semibold ${hasMultipleNapfaSessions ? "text-amber-900" : "text-slate-800"}`}>Session</label>
@@ -474,7 +474,7 @@ export default function ScoreEntryGroup({ user }) {
                 </SelectContent>
               </Select>
             </div>
-            <div className="mt-1 text-xs text-blue-800">Check the selected station before entering scores.</div>
+            <div className="mt-1 text-xs text-blue-800">Verify station before scoring.</div>
           </div>
           <div>
             <label className="text-sm text-gray-700">Group Code</label>
@@ -523,9 +523,9 @@ export default function ScoreEntryGroup({ user }) {
         {error && <div className="text-sm text-red-600">{error}</div>}
       </section>
 
-      <section className="border rounded-lg bg-white overflow-x-auto">
-        <div className="px-3 py-2 border-b bg-gray-50 flex items-center justify-between">
-          <div className="flex items-center gap-2">
+      <section className="table-scroll">
+        <div className="px-2 py-1.5 border-b bg-gray-50 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap items-center gap-2">
             <div className="text-sm font-medium">Group Students</div>
             <span className="text-xs font-semibold text-blue-900 bg-blue-100 border border-blue-300 rounded-full px-2 py-0.5">
               Now scoring: {stations.find((s) => s.key === activeStation)?.name || "-"}
@@ -536,7 +536,7 @@ export default function ScoreEntryGroup({ user }) {
               </span>
             )}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {toolStationEnabled && (
               <button
                 type="button"
@@ -553,13 +553,13 @@ export default function ScoreEntryGroup({ user }) {
             </button>
           </div>
         </div>
-        <table className="w-full text-sm">
+        <table className="data-table compact-data-table min-w-[760px]">
           <thead>
             <tr className="bg-gray-100 text-left">
               <th className="px-3 py-2 border">ID</th>
               <th className="px-3 py-2 border">Name</th>
               <th className="px-3 py-2 border">Class</th>
-              <th className="px-3 py-2 border">Score</th>
+              <th className="px-3 py-2 border num">Score</th>
               <th className="px-3 py-2 border">Status</th>
               <th className="px-3 py-2 border w-28">Action</th>
             </tr>

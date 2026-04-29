@@ -136,12 +136,17 @@ function computeNapfaProvisionalAward(res) {
     return { label: 'No Award', reason: `Five-station subtotal ${total} points or minimum grade conditions not met.` };
 }
 
-function getNapfaAwardDisplay(res) {
-    if (sixCompleted(res)) {
+function getNapfaAwardDisplay(res, recorded = null) {
+    const hasRecordedFive = recorded
+        ? !!(recorded.situps && recorded.broad_jump_cm && recorded.sit_and_reach_cm && recorded.pullups && recorded.shuttle_s)
+        : fiveCompleted(res);
+    const hasRecordedSix = hasRecordedFive && (recorded ? !!recorded.run : sixCompleted(res));
+
+    if (hasRecordedSix) {
         const currentAward = computeNapfaAward(res);
         return { label: currentAward.label, reason: currentAward.reason, kind: 'final' };
     }
-    if (fiveCompleted(res)) {
+    if (hasRecordedFive) {
         const provisional = computeNapfaProvisionalAward(res);
         return {
             label: provisional.label,
@@ -1342,6 +1347,14 @@ export default function SessionDetail({ user }) {
             if (broad != null) measures.broad_jump_cm = broad;
             if (runMin != null) measures.run_seconds = Math.round(runMin * 60);
             const res = evaluateNapfa({ level: levelLabel, sex, age, run_km: runKm }, measures);
+            const recorded = {
+                situps: situps != null,
+                shuttle_s: shuttle != null,
+                sit_and_reach_cm: reach != null,
+                pullups: pullups != null,
+                broad_jump_cm: broad != null,
+                run: runMin != null,
+            };
             map.set(s.id, {
                 napfa: {
                     situps: res?.stations?.situps?.grade ?? null,
@@ -1350,7 +1363,7 @@ export default function SessionDetail({ user }) {
                     pullups: res?.stations?.pullups?.grade ?? null,
                     broad: res?.stations?.broad_jump_cm?.grade ?? null,
                     run: res?.stations?.run?.grade ?? null,
-                    award: getNapfaAwardDisplay(res),
+                    award: getNapfaAwardDisplay(res, recorded),
                 }
             });
         });
@@ -1435,8 +1448,17 @@ export default function SessionDetail({ user }) {
             let skippedForSame = 0;
             NAPFA_IMPORT_FIELDS.forEach((key) => {
                 const incoming = normalizeImportedScoreValue(key, row[key]);
-                if (incoming == null) return;
                 const current = normalizeImportedScoreValue(key, nextRow[key]);
+                if (overwriteAll) {
+                    if (current === incoming) {
+                        skippedForSame += 1;
+                        return;
+                    }
+                    nextRow[key] = incoming;
+                    changedStations.push(incoming == null ? `${key} (cleared)` : key);
+                    return;
+                }
+                if (incoming == null) return;
                 if (!overwriteAll && !isImportedScoreBetter(key, incoming, current)) {
                     if (current === incoming) skippedForSame += 1;
                     else skippedForWorse += 1;
@@ -2657,7 +2679,7 @@ export default function SessionDetail({ user }) {
                 const cellW = (pageW - margin * 2) / cols;
                 const cellH = (pageH - margin * 2) / rows;
                 const perPage = cols * rows;
-                const qrSize = 20;
+                const qrSize = 32;
                 const bcCanvas = document.createElement('canvas');
                 const titleLine = String(session?.title || "");
                 const schoolLine = String(schoolName || "");
@@ -2733,27 +2755,27 @@ export default function SessionDetail({ user }) {
                     const qrX = cardX + cardW - qrSize - 5;
                     const qrY = cardY + 5;
                     const textX = cardX + 5;
-                    const textW = qrX - textX - 4;
+                    const textW = Math.max(26, qrX - textX - 6);
 
-                    const schoolLabel = truncateToWidth(schoolLine, textW, 8.5);
-                    const sessionLabel = truncateToWidth(titleLine, textW, 8.5);
-                    const idLabel = truncateToWidth(idNorm, textW, 13);
-                    const [nameLine1, nameLine2] = wrapNameTwoLines(s.name || '', textW, 11.5);
-                    const classLabel = truncateToWidth(s.class || '', textW, 10.5);
+                    const schoolLabel = truncateToWidth(schoolLine, textW, 7.5);
+                    const sessionLabel = truncateToWidth(titleLine, textW, 7.5);
+                    const idLabel = truncateToWidth(idNorm, textW, 11.5);
+                    const [nameLine1, nameLine2] = wrapNameTwoLines(s.name || '', textW, 10.2);
+                    const classLabel = truncateToWidth(s.class || '', textW, 9.5);
 
-                    scoreDoc.setFontSize(8.5);
+                    scoreDoc.setFontSize(7.5);
                     if (schoolLabel) scoreDoc.text(schoolLabel, textX, cardY + 8);
                     if (sessionLabel) scoreDoc.text(sessionLabel, textX, cardY + 12);
-                    scoreDoc.setFontSize(13);
-                    if (idLabel) scoreDoc.text(idLabel, textX, cardY + 20);
                     scoreDoc.setFontSize(11.5);
-                    if (nameLine1) scoreDoc.text(nameLine1, textX, cardY + 28);
-                    if (nameLine2) scoreDoc.text(nameLine2, textX, cardY + 33);
-                    scoreDoc.setFontSize(10.5);
-                    if (classLabel) scoreDoc.text(classLabel, textX, cardY + (nameLine2 ? 40 : 35));
+                    if (idLabel) scoreDoc.text(idLabel, textX, cardY + 19);
+                    scoreDoc.setFontSize(10.2);
+                    if (nameLine1) scoreDoc.text(nameLine1, textX, cardY + 26);
+                    if (nameLine2) scoreDoc.text(nameLine2, textX, cardY + 31);
+                    scoreDoc.setFontSize(9.5);
+                    if (classLabel) scoreDoc.text(classLabel, textX, cardY + (nameLine2 ? 37 : 32));
 
                     try {
-                        const qrUrl = await drawQrDataUrl(idNorm, 220, 'M', 1);
+                        const qrUrl = await drawQrDataUrl(idNorm, 240, 'M', 1);
                         scoreDoc.addImage(qrUrl, 'PNG', qrX, qrY, qrSize, qrSize);
                     } catch {}
 
@@ -3026,14 +3048,14 @@ export default function SessionDetail({ user }) {
     }
 
     return (
-        <div className="p-6 space-y-6">
+        <div className="op-page">
             <button onClick={() => navigate(-1)} className="text-sm text-blue-600 hover:underline">
                 Back
             </button>
-            <div className="sticky top-0 z-30 -mx-6 px-6 bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60 border-b">
-                <header className="py-3 space-y-2">
+            <div className="sticky top-0 z-30 -mx-3 px-3 bg-white/85 backdrop-blur supports-[backdrop-filter]:bg-white/70 border-b sm:-mx-4 sm:px-4 lg:-mx-6 lg:px-6">
+                <header className="py-2 space-y-1.5">
                     <div className="flex items-center gap-3 flex-wrap">
-                        <h1 className="text-3xl font-semibold text-gray-800">{session.title}</h1>
+                        <h1 className="text-xl font-semibold text-gray-800 sm:text-2xl">{session.title}</h1>
                         <span className="text-sm text-gray-600">
                             {(() => { const d = new Date(session.session_date); const dd=String(d.getDate()).padStart(2,'0'); const mm=String(d.getMonth()+1).padStart(2,'0'); const yyyy=d.getFullYear(); return `${dd}/${mm}/${yyyy}`; })()}
                         </span>
@@ -3105,7 +3127,7 @@ export default function SessionDetail({ user }) {
                     </button>
                 </div>
                 {/* Summary (sticky). Visible on sm+, toggle on mobile */}
-                <div className={(summaryOpen ? '' : 'hidden ') + 'sm:block pb-3 space-y-2'}>
+                <div className={(summaryOpen ? '' : 'hidden ') + 'sm:block pb-2 space-y-1.5'}>
                     {(() => {
                         const total = roster?.length || 0;
                         const completed = completedSet.size;
@@ -3115,26 +3137,26 @@ export default function SessionDetail({ user }) {
                         const pctCompleted = pct(completed);
                         return (
                             <>
-                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-                                    <div className="border rounded-lg bg-white px-3 py-2">
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                                    <div className="border rounded-lg bg-white px-2 py-1.5">
                                         <div className="text-gray-500">Total</div>
                                         <div className="text-base font-semibold">{total}</div>
                                     </div>
-                                    <div className="border rounded-lg bg-white px-3 py-2">
+                                    <div className="border rounded-lg bg-white px-2 py-1.5">
                                         <div className="text-gray-500">Not started</div>
                                         <div className="text-base font-semibold">{notStarted}</div>
                                     </div>
-                                    <div className="border rounded-lg bg-white px-3 py-2">
+                                    <div className="border rounded-lg bg-white px-2 py-1.5">
                                         <div className="text-gray-500">In progress</div>
                                         <div className="text-base font-semibold">{inProgress}</div>
                                     </div>
-                                    <div className="border rounded-lg bg-white px-3 py-2">
+                                    <div className="border rounded-lg bg-white px-2 py-1.5">
                                         <div className="text-gray-500">Completed</div>
                                         <div className="text-base font-semibold">{completed}</div>
                                     </div>
                                 </div>
                                 {/* Stacked progress bar: Not started | In progress | Completed */}
-                                <div className="mt-2">
+                                <div className="mt-1.5">
                                     {(() => {
                                         const pctInProgress = pct(inProgress);
                                         const pctNotStarted = pct(notStarted);
@@ -3193,7 +3215,7 @@ export default function SessionDetail({ user }) {
                 )}
             </div>
 
-            <section className="space-y-4">
+            <section className="space-y-3">
                 {canManage ? (
                     editMode ? (
                         <form className="space-y-3 max-w-md" onSubmit={handleUpdate}>
@@ -3256,7 +3278,7 @@ export default function SessionDetail({ user }) {
 
             
             {/* Tabs (outside sticky header) */}
-            <nav className="pb-2 overflow-x-auto">
+            <nav className="pb-1 overflow-x-auto">
                 <div role="tablist" aria-label="Session sections" className="inline-flex rounded-lg bg-gray-100 p-1 text-sm">
                     <button
                         role="tab"
@@ -3796,10 +3818,10 @@ export default function SessionDetail({ user }) {
                 </div>
                 </section>
             ) : (
-                <section className="space-y-4">
-                    <div className="border rounded-lg overflow-x-auto bg-white">
-                        <div className="px-3 py-2 border-b bg-gray-50 text-sm font-medium flex items-center justify-between gap-3">
-                            <div className="flex items-center gap-3 flex-wrap">
+                <section className="space-y-3">
+                    <div className="table-scroll">
+                        <div className="px-2 py-1.5 border-b bg-gray-50 text-sm font-medium flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                            <div className="compact-filter-bar">
                                 <span>Scores</span>
                                 <div className="flex items-center gap-2">
                                     <label className="text-xs text-gray-600">Class</label>
@@ -3820,7 +3842,7 @@ export default function SessionDetail({ user }) {
                                         className="text-xs border rounded px-2 py-1 bg-white"
                                     />
                                 </div>
-                                <div className="flex items-center gap-3 text-xs">
+                                <div className="flex flex-wrap items-center gap-2 text-xs">
                                     <label className="inline-flex items-center gap-1">
                                         <input type="checkbox" className="align-middle" checked={showCompleted} onChange={e => { setScoresPage(1); setShowCompleted(e.target.checked) }} />
                                         <span>Show completed</span>
@@ -3830,10 +3852,10 @@ export default function SessionDetail({ user }) {
                                         <span>Show incomplete</span>
                                     </label>
                                 </div>
-                                <div className="text-xs text-gray-500">Sorting: Class (A-Z), Name (A-Z)</div>
+                                <div className="text-xs text-gray-500">Sort: Class, Name</div>
                             </div>
                             {canManage && (
-                                <div className="flex gap-2">
+                                <div className="flex flex-wrap gap-2">
                                     {!isIppt3 && (
                                         <button
                                             onClick={() => {
@@ -3905,16 +3927,16 @@ export default function SessionDetail({ user }) {
                                 {massEditErr ? <span className="text-red-700">{massEditErr}</span> : (massEditNotice ? <span className="text-green-700">{massEditNotice}</span> : null)}
                             </div>
                         )}
-                        <table className="w-full">
+                        <table className="data-table compact-data-table min-w-[980px]">
                             <thead>
                             {((session?.assessment_type || 'NAPFA5') === 'IPPT3') ? (
                                 <tr className="bg-gray-100 text-left">
                                     <th className="px-3 py-2 border">Student ID</th>
                                     <th className="px-3 py-2 border">Name</th>
                                     <th className="px-3 py-2 border">Class</th>
-                                    <th className="px-3 py-2 border">Sit-ups</th>
-                                    <th className="px-3 py-2 border">Push-ups</th>
-                                    <th className="px-3 py-2 border">2.4km Run (mm:ss)</th>
+                                    <th className="px-3 py-2 border num">Sit-ups</th>
+                                    <th className="px-3 py-2 border num">Push-ups</th>
+                                    <th className="px-3 py-2 border num">2.4km Run (mm:ss)</th>
                                     <th className="px-3 py-2 border">Award</th>
                                     <th className="px-3 py-2 border w-40">Actions</th>
                                 </tr>
@@ -3923,12 +3945,12 @@ export default function SessionDetail({ user }) {
                                     <th className="px-3 py-2 border">Student ID</th>
                                     <th className="px-3 py-2 border">Name</th>
                                     <th className="px-3 py-2 border">Class</th>
-                                    <th className="px-3 py-2 border">Sit-ups</th>
-                                    <th className="px-3 py-2 border">Shuttle Run</th>
-                                    <th className="px-3 py-2 border">Sit & Reach</th>
-                                    <th className="px-3 py-2 border">Pull-ups</th>
-                                    <th className="px-3 py-2 border">Broad Jump</th>
-                                    <th className="px-3 py-2 border">Run (mm:ss)</th>
+                                    <th className="px-3 py-2 border num">Sit-ups</th>
+                                    <th className="px-3 py-2 border num">Shuttle Run</th>
+                                    <th className="px-3 py-2 border num">Sit & Reach</th>
+                                    <th className="px-3 py-2 border num">Pull-ups</th>
+                                    <th className="px-3 py-2 border num">Broad Jump</th>
+                                    <th className="px-3 py-2 border num">Run (mm:ss)</th>
                                     <th className="px-3 py-2 border">Award</th>
                                     <th className="px-3 py-2 border w-40">Actions</th>
                                 </tr>
@@ -4172,7 +4194,7 @@ export default function SessionDetail({ user }) {
                                             />
                                             <span>
                                                 Uploaded PFT will fully overwrite all scores
-                                                <div className="text-xs text-slate-500">Imported values replace existing scores for stations that have values in the CSV.</div>
+                                                <div className="text-xs text-slate-500">All station cells in the uploaded row replace current scores. Blank cells clear existing scores.</div>
                                             </span>
                                         </label>
                                         <div className="pt-1">
@@ -4190,7 +4212,7 @@ export default function SessionDetail({ user }) {
                                         <div className="text-xs font-medium uppercase tracking-[0.14em] text-slate-500 mb-2">Notes</div>
                                         <ul className="list-disc pl-4 space-y-1 text-[11px] leading-4 text-slate-600">
                                             <li>Students not in session roster will be skipped.</li>
-                                            <li>Blank CSV cells do not clear existing scores.</li>
+                                            <li>In overwrite mode, blank CSV cells clear existing scores.</li>
                                             <li>Duplicate CSV rows are merged by best station result.</li>
                                         </ul>
                                     </div>
@@ -4253,8 +4275,8 @@ export default function SessionDetail({ user }) {
                                             Download Preview Summary CSV
                                         </button>
                                     </div>
-                                    <div className="border rounded overflow-auto max-h-[48vh]">
-                                        <table className="w-full text-sm">
+                                    <div className="table-scroll max-h-[48vh]">
+                                        <table className="data-table compact-data-table min-w-[760px]">
                                             <thead className="bg-gray-100 sticky top-0 z-10">
                                                 <tr>
                                                     <th className="text-left px-3 py-2 border-b">ID</th>

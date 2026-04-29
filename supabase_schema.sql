@@ -1547,6 +1547,16 @@ begin
     raise exception 'Not authorized to remove student for this school';
   end if;
 
+  begin
+    perform *
+    from preserve_student_delete_analytics_in_school(
+      p_student,
+      p_school,
+      'delete_student_in_school',
+      true
+    );
+  exception when others then null; end;
+
   -- Delete scores linked to sessions from this school
   with s_ids as (
     select sc.id
@@ -1627,6 +1637,10 @@ begin
   if not v_allowed then
     raise exception 'Not authorized to delete student globally';
   end if;
+
+  begin
+    perform preserve_student_delete_analytics_global(p_student);
+  exception when others then null; end;
 
   -- Delete dependents explicitly under definer
   with del as (
@@ -2046,6 +2060,1940 @@ exception when others then null; end $$;
 
 create index if not exists assessment_award_agg_school_year_idx
   on assessment_award_agg (school_id, academic_year);
+
+-- Snapshot batches for owner-only historical analytics lineage
+create table if not exists analytics_snapshot_batches (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  triggered_by_user_id uuid null,
+  source_kind text not null check (source_kind in ('live_snapshot','delete_preserve')),
+  scope_kind text not null check (scope_kind in ('session','school_year','delete_student_in_school','delete_student_global')),
+  school_id uuid null references schools(id) on delete set null,
+  session_id uuid null references sessions(id) on delete set null,
+  academic_year integer null,
+  reason text null,
+  details jsonb not null default '{}'::jsonb
+);
+
+create index if not exists analytics_snapshot_batches_school_year_idx
+  on analytics_snapshot_batches (school_id, academic_year, created_at desc);
+
+create index if not exists analytics_snapshot_batches_session_idx
+  on analytics_snapshot_batches (session_id, created_at desc);
+
+-- Owner-only session-level station distribution snapshots
+create table if not exists analytics_session_station_snapshot (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  snapshot_batch_id uuid not null references analytics_snapshot_batches(id) on delete cascade,
+  source_kind text not null check (source_kind in ('live_snapshot','delete_preserve')),
+  snapshot_reason text null,
+  school_id uuid not null references schools(id) on delete cascade,
+  school_type text null,
+  academic_year integer not null,
+  assessment_type text not null,
+  session_id uuid not null references sessions(id) on delete cascade,
+  session_date date null,
+  session_title text null,
+  class_name text null,
+  gender text null,
+  age_years integer null,
+  completion_scope text not null check (completion_scope in ('completed_only','include_incomplete')),
+  station_code text not null,
+  student_count integer not null default 0,
+  scored_count integer not null default 0,
+  avg_value numeric null,
+  min_value numeric null,
+  p25_value numeric null,
+  p50_value numeric null,
+  p75_value numeric null,
+  max_value numeric null,
+  stddev_value numeric null
+);
+
+do $$ begin
+  create unique index analytics_session_station_snapshot_unique
+    on analytics_session_station_snapshot (
+      snapshot_batch_id, school_id, academic_year, assessment_type,
+      session_id, class_name, gender, age_years, completion_scope, station_code
+    );
+exception when others then null; end $$;
+
+create index if not exists analytics_session_station_snapshot_lookup_idx
+  on analytics_session_station_snapshot (
+    school_id, academic_year, session_id, assessment_type, class_name, gender, age_years, completion_scope, station_code
+  );
+
+-- Owner-only session-level summary snapshots
+create table if not exists analytics_session_summary_snapshot (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  snapshot_batch_id uuid not null references analytics_snapshot_batches(id) on delete cascade,
+  source_kind text not null check (source_kind in ('live_snapshot','delete_preserve')),
+  snapshot_reason text null,
+  school_id uuid not null references schools(id) on delete cascade,
+  school_type text null,
+  academic_year integer not null,
+  assessment_type text not null,
+  session_id uuid not null references sessions(id) on delete cascade,
+  session_date date null,
+  session_title text null,
+  class_name text null,
+  gender text null,
+  age_years integer null,
+  completion_scope text not null check (completion_scope in ('completed_only','include_incomplete')),
+  roster_count integer not null default 0,
+  attempted_any_count integer not null default 0,
+  completed_5_count integer not null default 0,
+  incomplete_count integer not null default 0,
+  run_present_count integer not null default 0,
+  award_fail_count integer not null default 0,
+  award_bronze_count integer not null default 0,
+  award_silver_count integer not null default 0,
+  award_gold_count integer not null default 0,
+  avg_total_points numeric null,
+  p50_total_points numeric null
+);
+
+do $$ begin
+  create unique index analytics_session_summary_snapshot_unique
+    on analytics_session_summary_snapshot (
+      snapshot_batch_id, school_id, academic_year, assessment_type,
+      session_id, class_name, gender, age_years, completion_scope
+    );
+exception when others then null; end $$;
+
+create index if not exists analytics_session_summary_snapshot_lookup_idx
+  on analytics_session_summary_snapshot (
+    school_id, academic_year, session_id, assessment_type, class_name, gender, age_years, completion_scope
+  );
+
+-- Owner-only school-year station snapshots for longitudinal and across-school comparison
+create table if not exists analytics_school_year_station_snapshot (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  snapshot_batch_id uuid not null references analytics_snapshot_batches(id) on delete cascade,
+  source_kind text not null check (source_kind in ('live_snapshot','delete_preserve')),
+  snapshot_reason text null,
+  school_id uuid not null references schools(id) on delete cascade,
+  school_type text null,
+  academic_year integer not null,
+  assessment_type text not null,
+  class_name text null,
+  gender text null,
+  age_years integer null,
+  completion_scope text not null check (completion_scope in ('completed_only','include_incomplete')),
+  station_code text not null,
+  session_count integer not null default 0,
+  class_count integer not null default 0,
+  student_count integer not null default 0,
+  scored_count integer not null default 0,
+  avg_value numeric null,
+  min_value numeric null,
+  p25_value numeric null,
+  p50_value numeric null,
+  p75_value numeric null,
+  max_value numeric null,
+  stddev_value numeric null
+);
+
+do $$ begin
+  create unique index analytics_school_year_station_snapshot_unique
+    on analytics_school_year_station_snapshot (
+      snapshot_batch_id, school_id, academic_year, assessment_type,
+      class_name, gender, age_years, completion_scope, station_code
+    );
+exception when others then null; end $$;
+
+create index if not exists analytics_school_year_station_snapshot_lookup_idx
+  on analytics_school_year_station_snapshot (
+    academic_year, school_id, school_type, assessment_type, class_name, gender, age_years, completion_scope, station_code
+  );
+
+-- RLS: snapshot tables are owner-only backend analytics
+alter table if exists analytics_snapshot_batches enable row level security;
+alter table if exists analytics_session_station_snapshot enable row level security;
+alter table if exists analytics_session_summary_snapshot enable row level security;
+alter table if exists analytics_school_year_station_snapshot enable row level security;
+
+do $$ begin
+  create policy analytics_snapshot_batches_owner_select
+  on analytics_snapshot_batches for select
+  using (
+    exists (
+      select 1 from memberships m
+      where m.user_id = auth.uid()
+        and m.role = 'superadmin'
+    )
+  );
+exception when duplicate_object then null; end $$;
+
+do $$ begin
+  create policy analytics_session_station_snapshot_owner_select
+  on analytics_session_station_snapshot for select
+  using (
+    exists (
+      select 1 from memberships m
+      where m.user_id = auth.uid()
+        and m.role = 'superadmin'
+    )
+  );
+exception when duplicate_object then null; end $$;
+
+do $$ begin
+  create policy analytics_session_summary_snapshot_owner_select
+  on analytics_session_summary_snapshot for select
+  using (
+    exists (
+      select 1 from memberships m
+      where m.user_id = auth.uid()
+        and m.role = 'superadmin'
+    )
+  );
+exception when duplicate_object then null; end $$;
+
+do $$ begin
+  create policy analytics_school_year_station_snapshot_owner_select
+  on analytics_school_year_station_snapshot for select
+  using (
+    exists (
+      select 1 from memberships m
+      where m.user_id = auth.uid()
+        and m.role = 'superadmin'
+    )
+  );
+exception when duplicate_object then null; end $$;
+
+-- Session summary snapshot function for owner-only analytics tables
+do $$ begin
+create or replace function snapshot_session_summary(p_session uuid)
+returns table (
+  snapshot_batch_id uuid,
+  inserted_rows integer
+)
+language plpgsql
+security definer
+set search_path = public
+as $fn$
+declare
+  v_allowed boolean := false;
+  v_school uuid;
+  v_school_type text;
+  v_session_date date;
+  v_session_title text;
+  v_academic_year integer;
+  v_assessment_type text := 'NAPFA5';
+  v_has_assessment_type boolean := false;
+  v_has_ippt3 boolean := false;
+  v_batch uuid;
+  v_rows integer := 0;
+begin
+  select exists (
+    select 1
+    from sessions s
+    join memberships m on m.school_id = s.school_id
+    where s.id = p_session
+      and m.user_id = auth.uid()
+      and m.role in ('admin','superadmin')
+  ) into v_allowed;
+
+  if not v_allowed then
+    raise exception 'NOT_AUTHORIZED' using errcode = 'P0001';
+  end if;
+
+  select exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'sessions'
+      and column_name = 'assessment_type'
+  ) into v_has_assessment_type;
+
+  select to_regclass('public.ippt3_scores') is not null into v_has_ippt3;
+
+  if v_has_assessment_type then
+    execute $sql$
+      select s.school_id,
+             sc.type,
+             s.session_date,
+             extract(year from s.session_date)::int,
+             s.title,
+             coalesce(s.assessment_type, 'NAPFA5')
+      from sessions s
+      left join schools sc on sc.id = s.school_id
+      where s.id = $1
+    $sql$
+    into v_school, v_school_type, v_session_date, v_academic_year, v_session_title, v_assessment_type
+    using p_session;
+  else
+    select s.school_id,
+           sc.type,
+           s.session_date,
+           extract(year from s.session_date)::int,
+           s.title
+    into v_school, v_school_type, v_session_date, v_academic_year, v_session_title
+    from sessions s
+    left join schools sc on sc.id = s.school_id
+    where s.id = p_session;
+  end if;
+
+  if v_school is null then
+    raise exception 'SESSION_NOT_FOUND' using errcode = 'P0001';
+  end if;
+
+  insert into analytics_snapshot_batches (
+    triggered_by_user_id,
+    source_kind,
+    scope_kind,
+    school_id,
+    session_id,
+    academic_year,
+    reason,
+    details
+  ) values (
+    auth.uid(),
+    'live_snapshot',
+    'session',
+    v_school,
+    p_session,
+    v_academic_year,
+    'snapshot_session_summary',
+    jsonb_build_object('assessment_type', v_assessment_type)
+  )
+  returning id into v_batch;
+
+  delete from analytics_session_summary_snapshot
+  where session_id = p_session
+    and source_kind = 'live_snapshot';
+
+  if v_assessment_type = 'IPPT3' and not v_has_ippt3 then
+    return query select v_batch, 0;
+    return;
+  end if;
+
+  if v_assessment_type = 'IPPT3' then
+    with roster_base as (
+      select
+        r.student_id,
+        coalesce(ec.class, '__UNCLASSIFIED__') as class_name,
+        coalesce(nullif(st.gender, ''), 'U') as gender,
+        case
+          when st.dob is null then null
+          else extract(year from age(v_session_date, st.dob))::int
+        end as age_years,
+        case when coalesce(ip.situps is not null, false)
+               or coalesce(ip.pushups is not null, false)
+               or coalesce(ip.run_2400 is not null, false)
+             then 1 else 0 end as attempted_any,
+        case when coalesce(ip.situps is not null, false)
+               and coalesce(ip.pushups is not null, false)
+               and coalesce(ip.run_2400 is not null, false)
+             then 1 else 0 end as completed_required,
+        case when coalesce(ip.run_2400 is not null, false) then 1 else 0 end as run_present
+      from session_roster r
+      join students st on st.id = r.student_id
+      left join lateral (
+        select e.class
+        from enrollments e
+        where e.student_id = r.student_id
+          and e.school_id = v_school
+          and (e.academic_year = v_academic_year or e.academic_year is null)
+        order by
+          case when e.academic_year = v_academic_year then 0 else 1 end,
+          case when e.is_active then 0 else 1 end,
+          e.created_at desc
+        limit 1
+      ) ec on true
+      left join ippt3_scores ip
+        on ip.session_id = p_session
+       and ip.student_id = r.student_id
+      where r.session_id = p_session
+    ),
+    include_incomplete as (
+      select
+        v_batch as snapshot_batch_id,
+        'live_snapshot'::text as source_kind,
+        'snapshot_session_summary'::text as snapshot_reason,
+        v_school as school_id,
+        v_school_type as school_type,
+        v_academic_year as academic_year,
+        v_assessment_type as assessment_type,
+        p_session as session_id,
+        v_session_date as session_date,
+        v_session_title as session_title,
+        class_name,
+        gender,
+        age_years,
+        'include_incomplete'::text as completion_scope,
+        count(*)::integer as roster_count,
+        sum(attempted_any)::integer as attempted_any_count,
+        sum(completed_required)::integer as completed_5_count,
+        sum(case when attempted_any = 1 and completed_required = 0 then 1 else 0 end)::integer as incomplete_count,
+        sum(run_present)::integer as run_present_count,
+        0::integer as award_fail_count,
+        0::integer as award_bronze_count,
+        0::integer as award_silver_count,
+        0::integer as award_gold_count,
+        null::numeric as avg_total_points,
+        null::numeric as p50_total_points
+      from roster_base
+      group by class_name, gender, age_years
+    ),
+    completed_only as (
+      select
+        v_batch as snapshot_batch_id,
+        'live_snapshot'::text as source_kind,
+        'snapshot_session_summary'::text as snapshot_reason,
+        v_school as school_id,
+        v_school_type as school_type,
+        v_academic_year as academic_year,
+        v_assessment_type as assessment_type,
+        p_session as session_id,
+        v_session_date as session_date,
+        v_session_title as session_title,
+        class_name,
+        gender,
+        age_years,
+        'completed_only'::text as completion_scope,
+        count(*)::integer as roster_count,
+        count(*)::integer as attempted_any_count,
+        count(*)::integer as completed_5_count,
+        0::integer as incomplete_count,
+        sum(run_present)::integer as run_present_count,
+        0::integer as award_fail_count,
+        0::integer as award_bronze_count,
+        0::integer as award_silver_count,
+        0::integer as award_gold_count,
+        null::numeric as avg_total_points,
+        null::numeric as p50_total_points
+      from roster_base
+      where completed_required = 1
+      group by class_name, gender, age_years
+    )
+    insert into analytics_session_summary_snapshot (
+      snapshot_batch_id,
+      source_kind,
+      snapshot_reason,
+      school_id,
+      school_type,
+      academic_year,
+      assessment_type,
+      session_id,
+      session_date,
+      session_title,
+      class_name,
+      gender,
+      age_years,
+      completion_scope,
+      roster_count,
+      attempted_any_count,
+      completed_5_count,
+      incomplete_count,
+      run_present_count,
+      award_fail_count,
+      award_bronze_count,
+      award_silver_count,
+      award_gold_count,
+      avg_total_points,
+      p50_total_points
+    )
+    select * from include_incomplete
+    union all
+    select * from completed_only;
+  else
+    with roster_base as (
+      select
+        r.student_id,
+        coalesce(ec.class, '__UNCLASSIFIED__') as class_name,
+        coalesce(nullif(st.gender, ''), 'U') as gender,
+        case
+          when st.dob is null then null
+          else extract(year from age(v_session_date, st.dob))::int
+        end as age_years,
+        case when coalesce(sc.situps is not null, false)
+               or coalesce(sc.shuttle_run is not null, false)
+               or coalesce(sc.sit_and_reach is not null, false)
+               or coalesce(sc.pullups is not null, false)
+               or coalesce(sc.broad_jump is not null, false)
+               or coalesce(sc.run_2400 is not null, false)
+             then 1 else 0 end as attempted_any,
+        case when coalesce(sc.situps is not null, false)
+               and coalesce(sc.shuttle_run is not null, false)
+               and coalesce(sc.sit_and_reach is not null, false)
+               and coalesce(sc.pullups is not null, false)
+               and coalesce(sc.broad_jump is not null, false)
+             then 1 else 0 end as completed_required,
+        case when coalesce(sc.run_2400 is not null, false) then 1 else 0 end as run_present
+      from session_roster r
+      join students st on st.id = r.student_id
+      left join lateral (
+        select e.class
+        from enrollments e
+        where e.student_id = r.student_id
+          and e.school_id = v_school
+          and (e.academic_year = v_academic_year or e.academic_year is null)
+        order by
+          case when e.academic_year = v_academic_year then 0 else 1 end,
+          case when e.is_active then 0 else 1 end,
+          e.created_at desc
+        limit 1
+      ) ec on true
+      left join scores sc
+        on sc.session_id = p_session
+       and sc.student_id = r.student_id
+      where r.session_id = p_session
+    ),
+    include_incomplete as (
+      select
+        v_batch as snapshot_batch_id,
+        'live_snapshot'::text as source_kind,
+        'snapshot_session_summary'::text as snapshot_reason,
+        v_school as school_id,
+        v_school_type as school_type,
+        v_academic_year as academic_year,
+        v_assessment_type as assessment_type,
+        p_session as session_id,
+        v_session_date as session_date,
+        v_session_title as session_title,
+        class_name,
+        gender,
+        age_years,
+        'include_incomplete'::text as completion_scope,
+        count(*)::integer as roster_count,
+        sum(attempted_any)::integer as attempted_any_count,
+        sum(completed_required)::integer as completed_5_count,
+        sum(case when attempted_any = 1 and completed_required = 0 then 1 else 0 end)::integer as incomplete_count,
+        sum(run_present)::integer as run_present_count,
+        0::integer as award_fail_count,
+        0::integer as award_bronze_count,
+        0::integer as award_silver_count,
+        0::integer as award_gold_count,
+        null::numeric as avg_total_points,
+        null::numeric as p50_total_points
+      from roster_base
+      group by class_name, gender, age_years
+    ),
+    completed_only as (
+      select
+        v_batch as snapshot_batch_id,
+        'live_snapshot'::text as source_kind,
+        'snapshot_session_summary'::text as snapshot_reason,
+        v_school as school_id,
+        v_school_type as school_type,
+        v_academic_year as academic_year,
+        v_assessment_type as assessment_type,
+        p_session as session_id,
+        v_session_date as session_date,
+        v_session_title as session_title,
+        class_name,
+        gender,
+        age_years,
+        'completed_only'::text as completion_scope,
+        count(*)::integer as roster_count,
+        count(*)::integer as attempted_any_count,
+        count(*)::integer as completed_5_count,
+        0::integer as incomplete_count,
+        sum(run_present)::integer as run_present_count,
+        0::integer as award_fail_count,
+        0::integer as award_bronze_count,
+        0::integer as award_silver_count,
+        0::integer as award_gold_count,
+        null::numeric as avg_total_points,
+        null::numeric as p50_total_points
+      from roster_base
+      where completed_required = 1
+      group by class_name, gender, age_years
+    )
+    insert into analytics_session_summary_snapshot (
+    snapshot_batch_id,
+    source_kind,
+    snapshot_reason,
+    school_id,
+    school_type,
+    academic_year,
+    assessment_type,
+    session_id,
+    session_date,
+    session_title,
+    class_name,
+    gender,
+    age_years,
+    completion_scope,
+    roster_count,
+    attempted_any_count,
+    completed_5_count,
+    incomplete_count,
+    run_present_count,
+    award_fail_count,
+    award_bronze_count,
+    award_silver_count,
+    award_gold_count,
+    avg_total_points,
+    p50_total_points
+  )
+  select * from include_incomplete
+  union all
+  select * from completed_only;
+  end if;
+
+  get diagnostics v_rows = row_count;
+
+  begin
+    perform public.audit_log_event(
+      'analytics_snapshot',
+      'snapshot_session_summary',
+      p_session::text,
+      null,
+      null,
+      jsonb_build_object(
+        'snapshot_batch_id', v_batch,
+        'session_id', p_session,
+        'inserted_rows', v_rows,
+        'assessment_type', v_assessment_type
+      ),
+      v_school,
+      p_session,
+      null,
+      null
+    );
+  exception when others then null; end;
+
+  return query select v_batch, v_rows;
+end;
+$fn$;
+exception when others then null; end $$;
+
+do $$ begin
+  grant execute on function snapshot_session_summary(uuid) to authenticated;
+  revoke execute on function snapshot_session_summary(uuid) from anon;
+exception when others then null; end $$;
+
+-- Session station snapshot function for owner-only analytics tables
+do $$ begin
+create or replace function snapshot_session_station(p_session uuid)
+returns table (
+  snapshot_batch_id uuid,
+  inserted_rows integer
+)
+language plpgsql
+security definer
+set search_path = public
+as $fn$
+declare
+  v_allowed boolean := false;
+  v_school uuid;
+  v_school_type text;
+  v_session_date date;
+  v_session_title text;
+  v_academic_year integer;
+  v_assessment_type text := 'NAPFA5';
+  v_has_assessment_type boolean := false;
+  v_has_ippt3 boolean := false;
+  v_batch uuid;
+  v_rows integer := 0;
+begin
+  select exists (
+    select 1
+    from sessions s
+    join memberships m on m.school_id = s.school_id
+    where s.id = p_session
+      and m.user_id = auth.uid()
+      and m.role in ('admin','superadmin')
+  ) into v_allowed;
+
+  if not v_allowed then
+    raise exception 'NOT_AUTHORIZED' using errcode = 'P0001';
+  end if;
+
+  select exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'sessions'
+      and column_name = 'assessment_type'
+  ) into v_has_assessment_type;
+
+  select to_regclass('public.ippt3_scores') is not null into v_has_ippt3;
+
+  if v_has_assessment_type then
+    execute $sql$
+      select s.school_id,
+             sc.type,
+             s.session_date,
+             extract(year from s.session_date)::int,
+             s.title,
+             coalesce(s.assessment_type, 'NAPFA5')
+      from sessions s
+      left join schools sc on sc.id = s.school_id
+      where s.id = $1
+    $sql$
+    into v_school, v_school_type, v_session_date, v_academic_year, v_session_title, v_assessment_type
+    using p_session;
+  else
+    select s.school_id,
+           sc.type,
+           s.session_date,
+           extract(year from s.session_date)::int,
+           s.title
+    into v_school, v_school_type, v_session_date, v_academic_year, v_session_title
+    from sessions s
+    left join schools sc on sc.id = s.school_id
+    where s.id = p_session;
+  end if;
+
+  if v_school is null then
+    raise exception 'SESSION_NOT_FOUND' using errcode = 'P0001';
+  end if;
+
+  insert into analytics_snapshot_batches (
+    triggered_by_user_id,
+    source_kind,
+    scope_kind,
+    school_id,
+    session_id,
+    academic_year,
+    reason,
+    details
+  ) values (
+    auth.uid(),
+    'live_snapshot',
+    'session',
+    v_school,
+    p_session,
+    v_academic_year,
+    'snapshot_session_station',
+    jsonb_build_object('assessment_type', v_assessment_type)
+  )
+  returning id into v_batch;
+
+  delete from analytics_session_station_snapshot
+  where session_id = p_session
+    and source_kind = 'live_snapshot';
+
+  if v_assessment_type = 'IPPT3' and not v_has_ippt3 then
+    return query select v_batch, 0;
+    return;
+  end if;
+
+  if v_assessment_type = 'IPPT3' then
+    with roster_base as (
+      select
+        r.student_id,
+        coalesce(ec.class, '__UNCLASSIFIED__') as class_name,
+        coalesce(nullif(st.gender, ''), 'U') as gender,
+        case
+          when st.dob is null then null
+          else extract(year from age(v_session_date, st.dob))::int
+        end as age_years,
+        case when coalesce(ip.situps is not null, false)
+               or coalesce(ip.pushups is not null, false)
+               or coalesce(ip.run_2400 is not null, false)
+             then 1 else 0 end as attempted_any,
+        case when coalesce(ip.situps is not null, false)
+               and coalesce(ip.pushups is not null, false)
+               and coalesce(ip.run_2400 is not null, false)
+             then 1 else 0 end as completed_required
+      from session_roster r
+      join students st on st.id = r.student_id
+      left join lateral (
+        select e.class
+        from enrollments e
+        where e.student_id = r.student_id
+          and e.school_id = v_school
+          and (e.academic_year = v_academic_year or e.academic_year is null)
+        order by
+          case when e.academic_year = v_academic_year then 0 else 1 end,
+          case when e.is_active then 0 else 1 end,
+          e.created_at desc
+        limit 1
+      ) ec on true
+      left join ippt3_scores ip
+        on ip.session_id = p_session
+       and ip.student_id = r.student_id
+      where r.session_id = p_session
+    ),
+    scope_counts as (
+      select class_name, gender, age_years, 'include_incomplete'::text as completion_scope,
+             sum(attempted_any)::integer as student_count
+      from roster_base
+      group by class_name, gender, age_years
+      union all
+      select class_name, gender, age_years, 'completed_only'::text as completion_scope,
+             count(*)::integer as student_count
+      from roster_base
+      where completed_required = 1
+      group by class_name, gender, age_years
+    ),
+    station_rows as (
+      select rb.class_name, rb.gender, rb.age_years, 'include_incomplete'::text as completion_scope, 'situps'::text as station_code, ip.situps::numeric as value
+      from roster_base rb
+      join ippt3_scores ip on ip.session_id = p_session and ip.student_id = rb.student_id
+      where rb.attempted_any = 1 and ip.situps is not null
+      union all
+      select rb.class_name, rb.gender, rb.age_years, 'include_incomplete', 'pushups', ip.pushups::numeric
+      from roster_base rb
+      join ippt3_scores ip on ip.session_id = p_session and ip.student_id = rb.student_id
+      where rb.attempted_any = 1 and ip.pushups is not null
+      union all
+      select rb.class_name, rb.gender, rb.age_years, 'include_incomplete', 'run_2400', ip.run_2400::numeric
+      from roster_base rb
+      join ippt3_scores ip on ip.session_id = p_session and ip.student_id = rb.student_id
+      where rb.attempted_any = 1 and ip.run_2400 is not null
+      union all
+      select rb.class_name, rb.gender, rb.age_years, 'completed_only', 'situps', ip.situps::numeric
+      from roster_base rb
+      join ippt3_scores ip on ip.session_id = p_session and ip.student_id = rb.student_id
+      where rb.completed_required = 1 and ip.situps is not null
+      union all
+      select rb.class_name, rb.gender, rb.age_years, 'completed_only', 'pushups', ip.pushups::numeric
+      from roster_base rb
+      join ippt3_scores ip on ip.session_id = p_session and ip.student_id = rb.student_id
+      where rb.completed_required = 1 and ip.pushups is not null
+      union all
+      select rb.class_name, rb.gender, rb.age_years, 'completed_only', 'run_2400', ip.run_2400::numeric
+      from roster_base rb
+      join ippt3_scores ip on ip.session_id = p_session and ip.student_id = rb.student_id
+      where rb.completed_required = 1 and ip.run_2400 is not null
+    )
+    insert into analytics_session_station_snapshot (
+      snapshot_batch_id,
+      source_kind,
+      snapshot_reason,
+      school_id,
+      school_type,
+      academic_year,
+      assessment_type,
+      session_id,
+      session_date,
+      session_title,
+      class_name,
+      gender,
+      age_years,
+      completion_scope,
+      station_code,
+      student_count,
+      scored_count,
+      avg_value,
+      min_value,
+      p25_value,
+      p50_value,
+      p75_value,
+      max_value,
+      stddev_value
+    )
+    select
+      v_batch,
+      'live_snapshot',
+      'snapshot_session_station',
+      v_school,
+      v_school_type,
+      v_academic_year,
+      v_assessment_type,
+      p_session,
+      v_session_date,
+      v_session_title,
+      sr.class_name,
+      sr.gender,
+      sr.age_years,
+      sr.completion_scope,
+      sr.station_code,
+      coalesce(sc.student_count, 0),
+      count(*)::integer as scored_count,
+      avg(sr.value),
+      min(sr.value),
+      percentile_cont(0.25) within group (order by sr.value),
+      percentile_cont(0.50) within group (order by sr.value),
+      percentile_cont(0.75) within group (order by sr.value),
+      max(sr.value),
+      stddev_pop(sr.value)
+    from station_rows sr
+    left join scope_counts sc
+      on sc.class_name = sr.class_name
+     and sc.gender = sr.gender
+     and sc.age_years is not distinct from sr.age_years
+     and sc.completion_scope = sr.completion_scope
+    group by sr.class_name, sr.gender, sr.age_years, sr.completion_scope, sr.station_code, sc.student_count;
+  else
+    with roster_base as (
+      select
+        r.student_id,
+        coalesce(ec.class, '__UNCLASSIFIED__') as class_name,
+        coalesce(nullif(st.gender, ''), 'U') as gender,
+        case
+          when st.dob is null then null
+          else extract(year from age(v_session_date, st.dob))::int
+        end as age_years,
+        case when coalesce(sc.situps is not null, false)
+               or coalesce(sc.shuttle_run is not null, false)
+               or coalesce(sc.sit_and_reach is not null, false)
+               or coalesce(sc.pullups is not null, false)
+               or coalesce(sc.broad_jump is not null, false)
+               or coalesce(sc.run_2400 is not null, false)
+             then 1 else 0 end as attempted_any,
+        case when coalesce(sc.situps is not null, false)
+               and coalesce(sc.shuttle_run is not null, false)
+               and coalesce(sc.sit_and_reach is not null, false)
+               and coalesce(sc.pullups is not null, false)
+               and coalesce(sc.broad_jump is not null, false)
+             then 1 else 0 end as completed_required
+      from session_roster r
+      join students st on st.id = r.student_id
+      left join lateral (
+        select e.class
+        from enrollments e
+        where e.student_id = r.student_id
+          and e.school_id = v_school
+          and (e.academic_year = v_academic_year or e.academic_year is null)
+        order by
+          case when e.academic_year = v_academic_year then 0 else 1 end,
+          case when e.is_active then 0 else 1 end,
+          e.created_at desc
+        limit 1
+      ) ec on true
+      left join scores sc
+        on sc.session_id = p_session
+       and sc.student_id = r.student_id
+      where r.session_id = p_session
+    ),
+    scope_counts as (
+      select class_name, gender, age_years, 'include_incomplete'::text as completion_scope,
+             sum(attempted_any)::integer as student_count
+      from roster_base
+      group by class_name, gender, age_years
+      union all
+      select class_name, gender, age_years, 'completed_only'::text as completion_scope,
+             count(*)::integer as student_count
+      from roster_base
+      where completed_required = 1
+      group by class_name, gender, age_years
+    ),
+    station_rows as (
+      select rb.class_name, rb.gender, rb.age_years, 'include_incomplete'::text as completion_scope, 'situps'::text as station_code, sc.situps::numeric as value
+      from roster_base rb
+      join scores sc on sc.session_id = p_session and sc.student_id = rb.student_id
+      where rb.attempted_any = 1 and sc.situps is not null
+      union all
+      select rb.class_name, rb.gender, rb.age_years, 'include_incomplete', 'shuttle_run', sc.shuttle_run::numeric
+      from roster_base rb
+      join scores sc on sc.session_id = p_session and sc.student_id = rb.student_id
+      where rb.attempted_any = 1 and sc.shuttle_run is not null
+      union all
+      select rb.class_name, rb.gender, rb.age_years, 'include_incomplete', 'sit_and_reach', sc.sit_and_reach::numeric
+      from roster_base rb
+      join scores sc on sc.session_id = p_session and sc.student_id = rb.student_id
+      where rb.attempted_any = 1 and sc.sit_and_reach is not null
+      union all
+      select rb.class_name, rb.gender, rb.age_years, 'include_incomplete', 'pullups', sc.pullups::numeric
+      from roster_base rb
+      join scores sc on sc.session_id = p_session and sc.student_id = rb.student_id
+      where rb.attempted_any = 1 and sc.pullups is not null
+      union all
+      select rb.class_name, rb.gender, rb.age_years, 'include_incomplete', 'broad_jump', sc.broad_jump::numeric
+      from roster_base rb
+      join scores sc on sc.session_id = p_session and sc.student_id = rb.student_id
+      where rb.attempted_any = 1 and sc.broad_jump is not null
+      union all
+      select rb.class_name, rb.gender, rb.age_years, 'include_incomplete', 'run_2400', sc.run_2400::numeric
+      from roster_base rb
+      join scores sc on sc.session_id = p_session and sc.student_id = rb.student_id
+      where rb.attempted_any = 1 and sc.run_2400 is not null
+      union all
+      select rb.class_name, rb.gender, rb.age_years, 'completed_only', 'situps', sc.situps::numeric
+      from roster_base rb
+      join scores sc on sc.session_id = p_session and sc.student_id = rb.student_id
+      where rb.completed_required = 1 and sc.situps is not null
+      union all
+      select rb.class_name, rb.gender, rb.age_years, 'completed_only', 'shuttle_run', sc.shuttle_run::numeric
+      from roster_base rb
+      join scores sc on sc.session_id = p_session and sc.student_id = rb.student_id
+      where rb.completed_required = 1 and sc.shuttle_run is not null
+      union all
+      select rb.class_name, rb.gender, rb.age_years, 'completed_only', 'sit_and_reach', sc.sit_and_reach::numeric
+      from roster_base rb
+      join scores sc on sc.session_id = p_session and sc.student_id = rb.student_id
+      where rb.completed_required = 1 and sc.sit_and_reach is not null
+      union all
+      select rb.class_name, rb.gender, rb.age_years, 'completed_only', 'pullups', sc.pullups::numeric
+      from roster_base rb
+      join scores sc on sc.session_id = p_session and sc.student_id = rb.student_id
+      where rb.completed_required = 1 and sc.pullups is not null
+      union all
+      select rb.class_name, rb.gender, rb.age_years, 'completed_only', 'broad_jump', sc.broad_jump::numeric
+      from roster_base rb
+      join scores sc on sc.session_id = p_session and sc.student_id = rb.student_id
+      where rb.completed_required = 1 and sc.broad_jump is not null
+      union all
+      select rb.class_name, rb.gender, rb.age_years, 'completed_only', 'run_2400', sc.run_2400::numeric
+      from roster_base rb
+      join scores sc on sc.session_id = p_session and sc.student_id = rb.student_id
+      where rb.completed_required = 1 and sc.run_2400 is not null
+    )
+    insert into analytics_session_station_snapshot (
+      snapshot_batch_id,
+      source_kind,
+      snapshot_reason,
+      school_id,
+      school_type,
+      academic_year,
+      assessment_type,
+      session_id,
+      session_date,
+      session_title,
+      class_name,
+      gender,
+      age_years,
+      completion_scope,
+      station_code,
+      student_count,
+      scored_count,
+      avg_value,
+      min_value,
+      p25_value,
+      p50_value,
+      p75_value,
+      max_value,
+      stddev_value
+    )
+    select
+      v_batch,
+      'live_snapshot',
+      'snapshot_session_station',
+      v_school,
+      v_school_type,
+      v_academic_year,
+      v_assessment_type,
+      p_session,
+      v_session_date,
+      v_session_title,
+      sr.class_name,
+      sr.gender,
+      sr.age_years,
+      sr.completion_scope,
+      sr.station_code,
+      coalesce(sc.student_count, 0),
+      count(*)::integer as scored_count,
+      avg(sr.value),
+      min(sr.value),
+      percentile_cont(0.25) within group (order by sr.value),
+      percentile_cont(0.50) within group (order by sr.value),
+      percentile_cont(0.75) within group (order by sr.value),
+      max(sr.value),
+      stddev_pop(sr.value)
+    from station_rows sr
+    left join scope_counts sc
+      on sc.class_name = sr.class_name
+     and sc.gender = sr.gender
+     and sc.age_years is not distinct from sr.age_years
+     and sc.completion_scope = sr.completion_scope
+    group by sr.class_name, sr.gender, sr.age_years, sr.completion_scope, sr.station_code, sc.student_count;
+  end if;
+
+  get diagnostics v_rows = row_count;
+
+  begin
+    perform public.audit_log_event(
+      'analytics_snapshot',
+      'snapshot_session_station',
+      p_session::text,
+      null,
+      null,
+      jsonb_build_object(
+        'snapshot_batch_id', v_batch,
+        'session_id', p_session,
+        'inserted_rows', v_rows,
+        'assessment_type', v_assessment_type
+      ),
+      v_school,
+      p_session,
+      null,
+      null
+    );
+  exception when others then null; end;
+
+  return query select v_batch, v_rows;
+end;
+$fn$;
+exception when others then null; end $$;
+
+do $$ begin
+  grant execute on function snapshot_session_station(uuid) to authenticated;
+  revoke execute on function snapshot_session_station(uuid) from anon;
+exception when others then null; end $$;
+
+-- School-year station snapshot function for owner-only longitudinal analytics
+do $$ begin
+create or replace function snapshot_school_year_station(p_school uuid, p_academic_year integer)
+returns table (
+  snapshot_batch_id uuid,
+  inserted_rows integer
+)
+language plpgsql
+security definer
+set search_path = public
+as $fn$
+declare
+  v_allowed boolean := false;
+  v_school_type text;
+  v_has_assessment_type boolean := false;
+  v_has_ippt3 boolean := false;
+  v_batch uuid;
+  v_rows integer := 0;
+begin
+  select exists (
+    select 1 from memberships m
+    where m.user_id = auth.uid()
+      and m.school_id = p_school
+      and m.role in ('admin','superadmin')
+  ) into v_allowed;
+
+  if not v_allowed then
+    raise exception 'NOT_AUTHORIZED' using errcode = 'P0001';
+  end if;
+
+  select sc.type
+  into v_school_type
+  from schools sc
+  where sc.id = p_school;
+
+  if v_school_type is null then
+    raise exception 'SCHOOL_NOT_FOUND' using errcode = 'P0001';
+  end if;
+
+  select exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'sessions'
+      and column_name = 'assessment_type'
+  ) into v_has_assessment_type;
+
+  select to_regclass('public.ippt3_scores') is not null into v_has_ippt3;
+
+  insert into analytics_snapshot_batches (
+    triggered_by_user_id,
+    source_kind,
+    scope_kind,
+    school_id,
+    session_id,
+    academic_year,
+    reason,
+    details
+  ) values (
+    auth.uid(),
+    'live_snapshot',
+    'school_year',
+    p_school,
+    null,
+    p_academic_year,
+    'snapshot_school_year_station',
+    jsonb_build_object('school_type', v_school_type)
+  )
+  returning id into v_batch;
+
+  delete from analytics_school_year_station_snapshot
+  where school_id = p_school
+    and academic_year = p_academic_year
+    and source_kind = 'live_snapshot';
+
+  if v_has_ippt3 then
+    with sess as (
+      select
+        s.id as session_id,
+        s.session_date,
+        extract(year from s.session_date)::int as academic_year,
+        coalesce(s.assessment_type, 'NAPFA5') as assessment_type
+      from sessions s
+      where s.school_id = p_school
+        and extract(year from s.session_date)::int = p_academic_year
+    ),
+    roster_base as (
+      select
+        sess.session_id,
+        sess.session_date,
+        sess.assessment_type,
+        r.student_id,
+        coalesce(ec.class, '__UNCLASSIFIED__') as class_name,
+        coalesce(nullif(st.gender, ''), 'U') as gender,
+        case
+          when st.dob is null then null
+          else extract(year from age(sess.session_date, st.dob))::int
+        end as age_years,
+        case
+          when sess.assessment_type = 'IPPT3' then
+            case when coalesce(ip.situps is not null, false)
+                   or coalesce(ip.pushups is not null, false)
+                   or coalesce(ip.run_2400 is not null, false)
+                 then 1 else 0 end
+          else
+            case when coalesce(sc.situps is not null, false)
+                   or coalesce(sc.shuttle_run is not null, false)
+                   or coalesce(sc.sit_and_reach is not null, false)
+                   or coalesce(sc.pullups is not null, false)
+                   or coalesce(sc.broad_jump is not null, false)
+                   or coalesce(sc.run_2400 is not null, false)
+                 then 1 else 0 end
+        end as attempted_any,
+        case
+          when sess.assessment_type = 'IPPT3' then
+            case when coalesce(ip.situps is not null, false)
+                   and coalesce(ip.pushups is not null, false)
+                   and coalesce(ip.run_2400 is not null, false)
+                 then 1 else 0 end
+          else
+            case when coalesce(sc.situps is not null, false)
+                   and coalesce(sc.shuttle_run is not null, false)
+                   and coalesce(sc.sit_and_reach is not null, false)
+                   and coalesce(sc.pullups is not null, false)
+                   and coalesce(sc.broad_jump is not null, false)
+                 then 1 else 0 end
+        end as completed_required
+      from sess
+      join session_roster r on r.session_id = sess.session_id
+      join students st on st.id = r.student_id
+      left join lateral (
+        select e.class
+        from enrollments e
+        where e.student_id = r.student_id
+          and e.school_id = p_school
+          and (e.academic_year = p_academic_year or e.academic_year is null)
+        order by
+          case when e.academic_year = p_academic_year then 0 else 1 end,
+          case when e.is_active then 0 else 1 end,
+          e.created_at desc
+        limit 1
+      ) ec on true
+      left join scores sc
+        on sess.assessment_type <> 'IPPT3'
+       and sc.session_id = sess.session_id
+       and sc.student_id = r.student_id
+      left join ippt3_scores ip
+        on sess.assessment_type = 'IPPT3'
+       and ip.session_id = sess.session_id
+       and ip.student_id = r.student_id
+    ),
+    scope_counts as (
+      select assessment_type, class_name, gender, age_years, 'include_incomplete'::text as completion_scope,
+             count(distinct session_id)::integer as session_count,
+             count(distinct class_name)::integer as class_count,
+             sum(attempted_any)::integer as student_count
+      from roster_base
+      group by assessment_type, class_name, gender, age_years
+      union all
+      select assessment_type, class_name, gender, age_years, 'completed_only'::text as completion_scope,
+             count(distinct session_id)::integer as session_count,
+             count(distinct class_name)::integer as class_count,
+             count(*)::integer as student_count
+      from roster_base
+      where completed_required = 1
+      group by assessment_type, class_name, gender, age_years
+    ),
+    station_rows as (
+      select rb.session_id, rb.assessment_type, rb.class_name, rb.gender, rb.age_years, 'include_incomplete'::text as completion_scope, 'situps'::text as station_code,
+             case when rb.assessment_type = 'IPPT3' then ip.situps::numeric else sc.situps::numeric end as value
+      from roster_base rb
+      left join scores sc on rb.assessment_type <> 'IPPT3' and sc.session_id = rb.session_id and sc.student_id = rb.student_id
+      left join ippt3_scores ip on rb.assessment_type = 'IPPT3' and ip.session_id = rb.session_id and ip.student_id = rb.student_id
+      where rb.attempted_any = 1
+        and (
+          (rb.assessment_type = 'IPPT3' and ip.situps is not null) or
+          (rb.assessment_type <> 'IPPT3' and sc.situps is not null)
+        )
+      union all
+      select rb.session_id, rb.assessment_type, rb.class_name, rb.gender, rb.age_years, 'include_incomplete', 'pushups', ip.pushups::numeric
+      from roster_base rb
+      join ippt3_scores ip on rb.assessment_type = 'IPPT3' and ip.session_id = rb.session_id and ip.student_id = rb.student_id
+      where rb.attempted_any = 1 and ip.pushups is not null
+      union all
+      select rb.session_id, rb.assessment_type, rb.class_name, rb.gender, rb.age_years, 'include_incomplete', 'shuttle_run', sc.shuttle_run::numeric
+      from roster_base rb
+      join scores sc on rb.assessment_type <> 'IPPT3' and sc.session_id = rb.session_id and sc.student_id = rb.student_id
+      where rb.attempted_any = 1 and sc.shuttle_run is not null
+      union all
+      select rb.session_id, rb.assessment_type, rb.class_name, rb.gender, rb.age_years, 'include_incomplete', 'sit_and_reach', sc.sit_and_reach::numeric
+      from roster_base rb
+      join scores sc on rb.assessment_type <> 'IPPT3' and sc.session_id = rb.session_id and sc.student_id = rb.student_id
+      where rb.attempted_any = 1 and sc.sit_and_reach is not null
+      union all
+      select rb.session_id, rb.assessment_type, rb.class_name, rb.gender, rb.age_years, 'include_incomplete', 'pullups', sc.pullups::numeric
+      from roster_base rb
+      join scores sc on rb.assessment_type <> 'IPPT3' and sc.session_id = rb.session_id and sc.student_id = rb.student_id
+      where rb.attempted_any = 1 and sc.pullups is not null
+      union all
+      select rb.session_id, rb.assessment_type, rb.class_name, rb.gender, rb.age_years, 'include_incomplete', 'broad_jump', sc.broad_jump::numeric
+      from roster_base rb
+      join scores sc on rb.assessment_type <> 'IPPT3' and sc.session_id = rb.session_id and sc.student_id = rb.student_id
+      where rb.attempted_any = 1 and sc.broad_jump is not null
+      union all
+      select rb.session_id, rb.assessment_type, rb.class_name, rb.gender, rb.age_years, 'include_incomplete', 'run_2400',
+             case when rb.assessment_type = 'IPPT3' then ip.run_2400::numeric else sc.run_2400::numeric end
+      from roster_base rb
+      left join scores sc on rb.assessment_type <> 'IPPT3' and sc.session_id = rb.session_id and sc.student_id = rb.student_id
+      left join ippt3_scores ip on rb.assessment_type = 'IPPT3' and ip.session_id = rb.session_id and ip.student_id = rb.student_id
+      where rb.attempted_any = 1
+        and (
+          (rb.assessment_type = 'IPPT3' and ip.run_2400 is not null) or
+          (rb.assessment_type <> 'IPPT3' and sc.run_2400 is not null)
+        )
+      union all
+      select rb.session_id, rb.assessment_type, rb.class_name, rb.gender, rb.age_years, 'completed_only', 'situps',
+             case when rb.assessment_type = 'IPPT3' then ip.situps::numeric else sc.situps::numeric end
+      from roster_base rb
+      left join scores sc on rb.assessment_type <> 'IPPT3' and sc.session_id = rb.session_id and sc.student_id = rb.student_id
+      left join ippt3_scores ip on rb.assessment_type = 'IPPT3' and ip.session_id = rb.session_id and ip.student_id = rb.student_id
+      where rb.completed_required = 1
+        and (
+          (rb.assessment_type = 'IPPT3' and ip.situps is not null) or
+          (rb.assessment_type <> 'IPPT3' and sc.situps is not null)
+        )
+      union all
+      select rb.session_id, rb.assessment_type, rb.class_name, rb.gender, rb.age_years, 'completed_only', 'pushups', ip.pushups::numeric
+      from roster_base rb
+      join ippt3_scores ip on rb.assessment_type = 'IPPT3' and ip.session_id = rb.session_id and ip.student_id = rb.student_id
+      where rb.completed_required = 1 and ip.pushups is not null
+      union all
+      select rb.session_id, rb.assessment_type, rb.class_name, rb.gender, rb.age_years, 'completed_only', 'shuttle_run', sc.shuttle_run::numeric
+      from roster_base rb
+      join scores sc on rb.assessment_type <> 'IPPT3' and sc.session_id = rb.session_id and sc.student_id = rb.student_id
+      where rb.completed_required = 1 and sc.shuttle_run is not null
+      union all
+      select rb.session_id, rb.assessment_type, rb.class_name, rb.gender, rb.age_years, 'completed_only', 'sit_and_reach', sc.sit_and_reach::numeric
+      from roster_base rb
+      join scores sc on rb.assessment_type <> 'IPPT3' and sc.session_id = rb.session_id and sc.student_id = rb.student_id
+      where rb.completed_required = 1 and sc.sit_and_reach is not null
+      union all
+      select rb.session_id, rb.assessment_type, rb.class_name, rb.gender, rb.age_years, 'completed_only', 'pullups', sc.pullups::numeric
+      from roster_base rb
+      join scores sc on rb.assessment_type <> 'IPPT3' and sc.session_id = rb.session_id and sc.student_id = rb.student_id
+      where rb.completed_required = 1 and sc.pullups is not null
+      union all
+      select rb.session_id, rb.assessment_type, rb.class_name, rb.gender, rb.age_years, 'completed_only', 'broad_jump', sc.broad_jump::numeric
+      from roster_base rb
+      join scores sc on rb.assessment_type <> 'IPPT3' and sc.session_id = rb.session_id and sc.student_id = rb.student_id
+      where rb.completed_required = 1 and sc.broad_jump is not null
+      union all
+      select rb.session_id, rb.assessment_type, rb.class_name, rb.gender, rb.age_years, 'completed_only', 'run_2400',
+             case when rb.assessment_type = 'IPPT3' then ip.run_2400::numeric else sc.run_2400::numeric end
+      from roster_base rb
+      left join scores sc on rb.assessment_type <> 'IPPT3' and sc.session_id = rb.session_id and sc.student_id = rb.student_id
+      left join ippt3_scores ip on rb.assessment_type = 'IPPT3' and ip.session_id = rb.session_id and ip.student_id = rb.student_id
+      where rb.completed_required = 1
+        and (
+          (rb.assessment_type = 'IPPT3' and ip.run_2400 is not null) or
+          (rb.assessment_type <> 'IPPT3' and sc.run_2400 is not null)
+        )
+    )
+    insert into analytics_school_year_station_snapshot (
+      snapshot_batch_id,
+      source_kind,
+      snapshot_reason,
+      school_id,
+      school_type,
+      academic_year,
+      assessment_type,
+      class_name,
+      gender,
+      age_years,
+      completion_scope,
+      station_code,
+      session_count,
+      class_count,
+      student_count,
+      scored_count,
+      avg_value,
+      min_value,
+      p25_value,
+      p50_value,
+      p75_value,
+      max_value,
+      stddev_value
+    )
+    select
+      v_batch,
+      'live_snapshot',
+      'snapshot_school_year_station',
+      p_school,
+      v_school_type,
+      p_academic_year,
+      sr.assessment_type,
+      sr.class_name,
+      sr.gender,
+      sr.age_years,
+      sr.completion_scope,
+      sr.station_code,
+      count(distinct sr.session_id)::integer as session_count,
+      coalesce(sc.class_count, 0),
+      coalesce(sc.student_count, 0),
+      count(*)::integer as scored_count,
+      avg(sr.value),
+      min(sr.value),
+      percentile_cont(0.25) within group (order by sr.value),
+      percentile_cont(0.50) within group (order by sr.value),
+      percentile_cont(0.75) within group (order by sr.value),
+      max(sr.value),
+      stddev_pop(sr.value)
+    from station_rows sr
+    left join scope_counts sc
+      on sc.assessment_type = sr.assessment_type
+     and sc.class_name = sr.class_name
+     and sc.gender = sr.gender
+     and sc.age_years is not distinct from sr.age_years
+     and sc.completion_scope = sr.completion_scope
+    group by sr.assessment_type, sr.class_name, sr.gender, sr.age_years, sr.completion_scope, sr.station_code, sc.class_count, sc.student_count;
+  else
+    with sess as (
+      select
+        s.id as session_id,
+        s.session_date,
+        extract(year from s.session_date)::int as academic_year,
+        'NAPFA5'::text as assessment_type
+      from sessions s
+      where s.school_id = p_school
+        and extract(year from s.session_date)::int = p_academic_year
+    ),
+    roster_base as (
+      select
+        sess.session_id,
+        sess.session_date,
+        sess.assessment_type,
+        r.student_id,
+        coalesce(ec.class, '__UNCLASSIFIED__') as class_name,
+        coalesce(nullif(st.gender, ''), 'U') as gender,
+        case
+          when st.dob is null then null
+          else extract(year from age(sess.session_date, st.dob))::int
+        end as age_years,
+        case when coalesce(sc.situps is not null, false)
+               or coalesce(sc.shuttle_run is not null, false)
+               or coalesce(sc.sit_and_reach is not null, false)
+               or coalesce(sc.pullups is not null, false)
+               or coalesce(sc.broad_jump is not null, false)
+               or coalesce(sc.run_2400 is not null, false)
+             then 1 else 0 end as attempted_any,
+        case when coalesce(sc.situps is not null, false)
+               and coalesce(sc.shuttle_run is not null, false)
+               and coalesce(sc.sit_and_reach is not null, false)
+               and coalesce(sc.pullups is not null, false)
+               and coalesce(sc.broad_jump is not null, false)
+             then 1 else 0 end as completed_required
+      from sess
+      join session_roster r on r.session_id = sess.session_id
+      join students st on st.id = r.student_id
+      left join lateral (
+        select e.class
+        from enrollments e
+        where e.student_id = r.student_id
+          and e.school_id = p_school
+          and (e.academic_year = p_academic_year or e.academic_year is null)
+        order by
+          case when e.academic_year = p_academic_year then 0 else 1 end,
+          case when e.is_active then 0 else 1 end,
+          e.created_at desc
+        limit 1
+      ) ec on true
+      left join scores sc
+        on sc.session_id = sess.session_id
+       and sc.student_id = r.student_id
+    ),
+    scope_counts as (
+      select assessment_type, class_name, gender, age_years, 'include_incomplete'::text as completion_scope,
+             count(distinct session_id)::integer as session_count,
+             count(distinct class_name)::integer as class_count,
+             sum(attempted_any)::integer as student_count
+      from roster_base
+      group by assessment_type, class_name, gender, age_years
+      union all
+      select assessment_type, class_name, gender, age_years, 'completed_only'::text as completion_scope,
+             count(distinct session_id)::integer as session_count,
+             count(distinct class_name)::integer as class_count,
+             count(*)::integer as student_count
+      from roster_base
+      where completed_required = 1
+      group by assessment_type, class_name, gender, age_years
+    ),
+    station_rows as (
+      select rb.session_id, rb.assessment_type, rb.class_name, rb.gender, rb.age_years, 'include_incomplete'::text as completion_scope, 'situps'::text as station_code, sc.situps::numeric as value
+      from roster_base rb
+      join scores sc on sc.session_id = rb.session_id and sc.student_id = rb.student_id
+      where rb.attempted_any = 1 and sc.situps is not null
+      union all
+      select rb.session_id, rb.assessment_type, rb.class_name, rb.gender, rb.age_years, 'include_incomplete', 'shuttle_run', sc.shuttle_run::numeric
+      from roster_base rb
+      join scores sc on sc.session_id = rb.session_id and sc.student_id = rb.student_id
+      where rb.attempted_any = 1 and sc.shuttle_run is not null
+      union all
+      select rb.session_id, rb.assessment_type, rb.class_name, rb.gender, rb.age_years, 'include_incomplete', 'sit_and_reach', sc.sit_and_reach::numeric
+      from roster_base rb
+      join scores sc on sc.session_id = rb.session_id and sc.student_id = rb.student_id
+      where rb.attempted_any = 1 and sc.sit_and_reach is not null
+      union all
+      select rb.session_id, rb.assessment_type, rb.class_name, rb.gender, rb.age_years, 'include_incomplete', 'pullups', sc.pullups::numeric
+      from roster_base rb
+      join scores sc on sc.session_id = rb.session_id and sc.student_id = rb.student_id
+      where rb.attempted_any = 1 and sc.pullups is not null
+      union all
+      select rb.session_id, rb.assessment_type, rb.class_name, rb.gender, rb.age_years, 'include_incomplete', 'broad_jump', sc.broad_jump::numeric
+      from roster_base rb
+      join scores sc on sc.session_id = rb.session_id and sc.student_id = rb.student_id
+      where rb.attempted_any = 1 and sc.broad_jump is not null
+      union all
+      select rb.session_id, rb.assessment_type, rb.class_name, rb.gender, rb.age_years, 'include_incomplete', 'run_2400', sc.run_2400::numeric
+      from roster_base rb
+      join scores sc on sc.session_id = rb.session_id and sc.student_id = rb.student_id
+      where rb.attempted_any = 1 and sc.run_2400 is not null
+      union all
+      select rb.session_id, rb.assessment_type, rb.class_name, rb.gender, rb.age_years, 'completed_only', 'situps', sc.situps::numeric
+      from roster_base rb
+      join scores sc on sc.session_id = rb.session_id and sc.student_id = rb.student_id
+      where rb.completed_required = 1 and sc.situps is not null
+      union all
+      select rb.session_id, rb.assessment_type, rb.class_name, rb.gender, rb.age_years, 'completed_only', 'shuttle_run', sc.shuttle_run::numeric
+      from roster_base rb
+      join scores sc on sc.session_id = rb.session_id and sc.student_id = rb.student_id
+      where rb.completed_required = 1 and sc.shuttle_run is not null
+      union all
+      select rb.session_id, rb.assessment_type, rb.class_name, rb.gender, rb.age_years, 'completed_only', 'sit_and_reach', sc.sit_and_reach::numeric
+      from roster_base rb
+      join scores sc on sc.session_id = rb.session_id and sc.student_id = rb.student_id
+      where rb.completed_required = 1 and sc.sit_and_reach is not null
+      union all
+      select rb.session_id, rb.assessment_type, rb.class_name, rb.gender, rb.age_years, 'completed_only', 'pullups', sc.pullups::numeric
+      from roster_base rb
+      join scores sc on sc.session_id = rb.session_id and sc.student_id = rb.student_id
+      where rb.completed_required = 1 and sc.pullups is not null
+      union all
+      select rb.session_id, rb.assessment_type, rb.class_name, rb.gender, rb.age_years, 'completed_only', 'broad_jump', sc.broad_jump::numeric
+      from roster_base rb
+      join scores sc on sc.session_id = rb.session_id and sc.student_id = rb.student_id
+      where rb.completed_required = 1 and sc.broad_jump is not null
+      union all
+      select rb.session_id, rb.assessment_type, rb.class_name, rb.gender, rb.age_years, 'completed_only', 'run_2400', sc.run_2400::numeric
+      from roster_base rb
+      join scores sc on sc.session_id = rb.session_id and sc.student_id = rb.student_id
+      where rb.completed_required = 1 and sc.run_2400 is not null
+    )
+    insert into analytics_school_year_station_snapshot (
+      snapshot_batch_id,
+      source_kind,
+      snapshot_reason,
+      school_id,
+      school_type,
+      academic_year,
+      assessment_type,
+      class_name,
+      gender,
+      age_years,
+      completion_scope,
+      station_code,
+      session_count,
+      class_count,
+      student_count,
+      scored_count,
+      avg_value,
+      min_value,
+      p25_value,
+      p50_value,
+      p75_value,
+      max_value,
+      stddev_value
+    )
+    select
+      v_batch,
+      'live_snapshot',
+      'snapshot_school_year_station',
+      p_school,
+      v_school_type,
+      p_academic_year,
+      sr.assessment_type,
+      sr.class_name,
+      sr.gender,
+      sr.age_years,
+      sr.completion_scope,
+      sr.station_code,
+      count(distinct sr.session_id)::integer as session_count,
+      coalesce(sc.class_count, 0),
+      coalesce(sc.student_count, 0),
+      count(*)::integer as scored_count,
+      avg(sr.value),
+      min(sr.value),
+      percentile_cont(0.25) within group (order by sr.value),
+      percentile_cont(0.50) within group (order by sr.value),
+      percentile_cont(0.75) within group (order by sr.value),
+      max(sr.value),
+      stddev_pop(sr.value)
+    from station_rows sr
+    left join scope_counts sc
+      on sc.assessment_type = sr.assessment_type
+     and sc.class_name = sr.class_name
+     and sc.gender = sr.gender
+     and sc.age_years is not distinct from sr.age_years
+     and sc.completion_scope = sr.completion_scope
+    group by sr.assessment_type, sr.class_name, sr.gender, sr.age_years, sr.completion_scope, sr.station_code, sc.class_count, sc.student_count;
+  end if;
+
+  get diagnostics v_rows = row_count;
+
+  begin
+    perform public.audit_log_event(
+      'analytics_snapshot',
+      'snapshot_school_year_station',
+      p_school::text,
+      null,
+      null,
+      jsonb_build_object(
+        'snapshot_batch_id', v_batch,
+        'school_id', p_school,
+        'academic_year', p_academic_year,
+        'inserted_rows', v_rows
+      ),
+      p_school,
+      null,
+      null,
+      null
+    );
+  exception when others then null; end;
+
+  return query select v_batch, v_rows;
+end;
+$fn$;
+exception when others then null; end $$;
+
+do $$ begin
+  grant execute on function snapshot_school_year_station(uuid, integer) to authenticated;
+  revoke execute on function snapshot_school_year_station(uuid, integer) from anon;
+exception when others then null; end $$;
+
+do $$ begin
+create or replace function preserve_student_delete_analytics_in_school(
+  p_student uuid,
+  p_school uuid,
+  p_scope_kind text default 'delete_student_in_school',
+  p_skip_auth boolean default false
+)
+returns table (
+  snapshot_batch_id uuid,
+  session_summary_rows integer,
+  session_station_rows integer,
+  school_year_station_rows integer
+)
+language plpgsql
+security definer
+set search_path = public
+as $fn$
+declare
+  v_allowed boolean := false;
+  v_school_type text;
+  v_batch uuid;
+  v_summary_rows integer := 0;
+  v_station_rows integer := 0;
+  v_school_year_rows integer := 0;
+begin
+  if not p_skip_auth then
+    select exists (
+      select 1 from memberships m
+      where m.user_id = auth.uid()
+        and m.school_id = p_school
+        and m.role in ('admin','superadmin')
+    ) into v_allowed;
+    if not v_allowed then
+      raise exception 'NOT_AUTHORIZED' using errcode = 'P0001';
+    end if;
+  end if;
+
+  select sc.type into v_school_type from schools sc where sc.id = p_school;
+
+  insert into analytics_snapshot_batches (
+    triggered_by_user_id, source_kind, scope_kind, school_id, session_id, academic_year, reason, details
+  ) values (
+    auth.uid(), 'delete_preserve', p_scope_kind, p_school, null, null,
+    'preserve_student_delete_analytics_in_school',
+    jsonb_build_object('student_id', p_student)
+  )
+  returning id into v_batch;
+
+  with completed_base as (
+    select
+      s.school_id,
+      v_school_type as school_type,
+      extract(year from s.session_date)::int as academic_year,
+      coalesce(s.assessment_type, 'NAPFA5') as assessment_type,
+      s.id as session_id,
+      s.session_date,
+      s.title as session_title,
+      coalesce(ec.class, '__UNCLASSIFIED__') as class_name,
+      coalesce(nullif(st.gender, ''), 'U') as gender,
+      case when st.dob is null then null else extract(year from age(s.session_date, st.dob))::int end as age_years,
+      case when coalesce(s.assessment_type, 'NAPFA5') = 'IPPT3' then (ip.run_2400 is not null)::int else (sc.run_2400 is not null)::int end as run_present,
+      case when coalesce(s.assessment_type, 'NAPFA5') = 'IPPT3' then ip.situps::numeric else sc.situps::numeric end as situps,
+      ip.pushups::numeric as pushups,
+      sc.shuttle_run::numeric as shuttle_run,
+      sc.sit_and_reach::numeric as sit_and_reach,
+      sc.pullups::numeric as pullups,
+      sc.broad_jump::numeric as broad_jump,
+      case when coalesce(s.assessment_type, 'NAPFA5') = 'IPPT3' then ip.run_2400::numeric else sc.run_2400::numeric end as run_2400
+    from sessions s
+    join students st on st.id = p_student
+    left join lateral (
+      select e.class
+      from enrollments e
+      where e.student_id = p_student
+        and e.school_id = p_school
+        and (e.academic_year = extract(year from s.session_date)::int or e.academic_year is null)
+      order by
+        case when e.academic_year = extract(year from s.session_date)::int then 0 else 1 end,
+        case when e.is_active then 0 else 1 end,
+        e.created_at desc
+      limit 1
+    ) ec on true
+    left join scores sc on sc.session_id = s.id and sc.student_id = p_student
+    left join ippt3_scores ip on ip.session_id = s.id and ip.student_id = p_student
+    where s.school_id = p_school
+      and (
+        (
+          coalesce(s.assessment_type, 'NAPFA5') = 'IPPT3'
+          and ip.situps is not null
+          and ip.pushups is not null
+          and ip.run_2400 is not null
+        ) or (
+          coalesce(s.assessment_type, 'NAPFA5') <> 'IPPT3'
+          and sc.situps is not null
+          and sc.shuttle_run is not null
+          and sc.sit_and_reach is not null
+          and sc.pullups is not null
+          and sc.broad_jump is not null
+        )
+      )
+  ),
+  ins as (
+    insert into analytics_session_summary_snapshot (
+      snapshot_batch_id, source_kind, snapshot_reason, school_id, school_type, academic_year, assessment_type,
+      session_id, session_date, session_title, class_name, gender, age_years, completion_scope,
+      roster_count, attempted_any_count, completed_5_count, incomplete_count, run_present_count,
+      award_fail_count, award_bronze_count, award_silver_count, award_gold_count, avg_total_points, p50_total_points
+    )
+    select
+      v_batch, 'delete_preserve', 'preserve_student_delete_analytics_in_school',
+      school_id, school_type, academic_year, assessment_type,
+      session_id, session_date, session_title, class_name, gender, age_years, 'completed_only',
+      count(*)::integer, count(*)::integer, count(*)::integer, 0::integer, sum(run_present)::integer,
+      0::integer, 0::integer, 0::integer, 0::integer, null::numeric, null::numeric
+    from completed_base
+    group by school_id, school_type, academic_year, assessment_type, session_id, session_date, session_title, class_name, gender, age_years
+    returning 1
+  )
+  select count(*) into v_summary_rows from ins;
+
+  with completed_base as (
+    select
+      s.school_id,
+      v_school_type as school_type,
+      extract(year from s.session_date)::int as academic_year,
+      coalesce(s.assessment_type, 'NAPFA5') as assessment_type,
+      s.id as session_id,
+      s.session_date,
+      s.title as session_title,
+      coalesce(ec.class, '__UNCLASSIFIED__') as class_name,
+      coalesce(nullif(st.gender, ''), 'U') as gender,
+      case when st.dob is null then null else extract(year from age(s.session_date, st.dob))::int end as age_years,
+      case when coalesce(s.assessment_type, 'NAPFA5') = 'IPPT3' then ip.situps::numeric else sc.situps::numeric end as situps,
+      ip.pushups::numeric as pushups,
+      sc.shuttle_run::numeric as shuttle_run,
+      sc.sit_and_reach::numeric as sit_and_reach,
+      sc.pullups::numeric as pullups,
+      sc.broad_jump::numeric as broad_jump,
+      case when coalesce(s.assessment_type, 'NAPFA5') = 'IPPT3' then ip.run_2400::numeric else sc.run_2400::numeric end as run_2400
+    from sessions s
+    left join students st on st.id = p_student
+    left join lateral (
+      select e.class
+      from enrollments e
+      where e.student_id = p_student
+        and e.school_id = p_school
+        and (e.academic_year = extract(year from s.session_date)::int or e.academic_year is null)
+      order by
+        case when e.academic_year = extract(year from s.session_date)::int then 0 else 1 end,
+        case when e.is_active then 0 else 1 end,
+        e.created_at desc
+      limit 1
+    ) ec on true
+    left join scores sc on sc.session_id = s.id and sc.student_id = p_student
+    left join ippt3_scores ip on ip.session_id = s.id and ip.student_id = p_student
+    where s.school_id = p_school
+      and (
+        (
+          coalesce(s.assessment_type, 'NAPFA5') = 'IPPT3'
+          and ip.situps is not null and ip.pushups is not null and ip.run_2400 is not null
+        ) or (
+          coalesce(s.assessment_type, 'NAPFA5') <> 'IPPT3'
+          and sc.situps is not null and sc.shuttle_run is not null and sc.sit_and_reach is not null and sc.pullups is not null and sc.broad_jump is not null
+        )
+      )
+  ),
+  station_rows as (
+    select school_id, school_type, academic_year, assessment_type, session_id, session_date, session_title, class_name, gender, age_years, 'completed_only'::text as completion_scope, 'situps'::text as station_code, situps as value from completed_base where situps is not null
+    union all select school_id, school_type, academic_year, assessment_type, session_id, session_date, session_title, class_name, gender, age_years, 'completed_only', 'pushups', pushups from completed_base where pushups is not null
+    union all select school_id, school_type, academic_year, assessment_type, session_id, session_date, session_title, class_name, gender, age_years, 'completed_only', 'shuttle_run', shuttle_run from completed_base where shuttle_run is not null
+    union all select school_id, school_type, academic_year, assessment_type, session_id, session_date, session_title, class_name, gender, age_years, 'completed_only', 'sit_and_reach', sit_and_reach from completed_base where sit_and_reach is not null
+    union all select school_id, school_type, academic_year, assessment_type, session_id, session_date, session_title, class_name, gender, age_years, 'completed_only', 'pullups', pullups from completed_base where pullups is not null
+    union all select school_id, school_type, academic_year, assessment_type, session_id, session_date, session_title, class_name, gender, age_years, 'completed_only', 'broad_jump', broad_jump from completed_base where broad_jump is not null
+    union all select school_id, school_type, academic_year, assessment_type, session_id, session_date, session_title, class_name, gender, age_years, 'completed_only', 'run_2400', run_2400 from completed_base where run_2400 is not null
+  ),
+  ins as (
+    insert into analytics_session_station_snapshot (
+      snapshot_batch_id, source_kind, snapshot_reason, school_id, school_type, academic_year, assessment_type,
+      session_id, session_date, session_title, class_name, gender, age_years, completion_scope, station_code,
+      student_count, scored_count, avg_value, min_value, p25_value, p50_value, p75_value, max_value, stddev_value
+    )
+    select
+      v_batch, 'delete_preserve', 'preserve_student_delete_analytics_in_school',
+      school_id, school_type, academic_year, assessment_type,
+      session_id, session_date, session_title, class_name, gender, age_years, completion_scope, station_code,
+      count(*)::integer, count(value)::integer, avg(value), min(value),
+      percentile_cont(0.25) within group (order by value),
+      percentile_cont(0.5) within group (order by value),
+      percentile_cont(0.75) within group (order by value),
+      max(value), stddev_pop(value)
+    from station_rows
+    group by school_id, school_type, academic_year, assessment_type, session_id, session_date, session_title, class_name, gender, age_years, completion_scope, station_code
+    returning 1
+  )
+  select count(*) into v_station_rows from ins;
+
+  with completed_base as (
+    select
+      s.id as session_id,
+      s.school_id,
+      v_school_type as school_type,
+      extract(year from s.session_date)::int as academic_year,
+      coalesce(s.assessment_type, 'NAPFA5') as assessment_type,
+      coalesce(ec.class, '__UNCLASSIFIED__') as class_name,
+      coalesce(nullif(st.gender, ''), 'U') as gender,
+      case when st.dob is null then null else extract(year from age(s.session_date, st.dob))::int end as age_years,
+      case when coalesce(s.assessment_type, 'NAPFA5') = 'IPPT3' then ip.situps::numeric else sc.situps::numeric end as situps,
+      ip.pushups::numeric as pushups,
+      sc.shuttle_run::numeric as shuttle_run,
+      sc.sit_and_reach::numeric as sit_and_reach,
+      sc.pullups::numeric as pullups,
+      sc.broad_jump::numeric as broad_jump,
+      case when coalesce(s.assessment_type, 'NAPFA5') = 'IPPT3' then ip.run_2400::numeric else sc.run_2400::numeric end as run_2400
+    from sessions s
+    left join students st on st.id = p_student
+    left join lateral (
+      select e.class
+      from enrollments e
+      where e.student_id = p_student
+        and e.school_id = p_school
+        and (e.academic_year = extract(year from s.session_date)::int or e.academic_year is null)
+      order by
+        case when e.academic_year = extract(year from s.session_date)::int then 0 else 1 end,
+        case when e.is_active then 0 else 1 end,
+        e.created_at desc
+      limit 1
+    ) ec on true
+    left join scores sc on sc.session_id = s.id and sc.student_id = p_student
+    left join ippt3_scores ip on ip.session_id = s.id and ip.student_id = p_student
+    where s.school_id = p_school
+      and (
+        (
+          coalesce(s.assessment_type, 'NAPFA5') = 'IPPT3'
+          and ip.situps is not null and ip.pushups is not null and ip.run_2400 is not null
+        ) or (
+          coalesce(s.assessment_type, 'NAPFA5') <> 'IPPT3'
+          and sc.situps is not null and sc.shuttle_run is not null and sc.sit_and_reach is not null and sc.pullups is not null and sc.broad_jump is not null
+        )
+      )
+  ),
+  station_rows as (
+    select session_id, school_id, school_type, academic_year, assessment_type, class_name, gender, age_years, 'completed_only'::text as completion_scope, 'situps'::text as station_code, situps as value from completed_base where situps is not null
+    union all select session_id, school_id, school_type, academic_year, assessment_type, class_name, gender, age_years, 'completed_only', 'pushups', pushups from completed_base where pushups is not null
+    union all select session_id, school_id, school_type, academic_year, assessment_type, class_name, gender, age_years, 'completed_only', 'shuttle_run', shuttle_run from completed_base where shuttle_run is not null
+    union all select session_id, school_id, school_type, academic_year, assessment_type, class_name, gender, age_years, 'completed_only', 'sit_and_reach', sit_and_reach from completed_base where sit_and_reach is not null
+    union all select session_id, school_id, school_type, academic_year, assessment_type, class_name, gender, age_years, 'completed_only', 'pullups', pullups from completed_base where pullups is not null
+    union all select session_id, school_id, school_type, academic_year, assessment_type, class_name, gender, age_years, 'completed_only', 'broad_jump', broad_jump from completed_base where broad_jump is not null
+    union all select session_id, school_id, school_type, academic_year, assessment_type, class_name, gender, age_years, 'completed_only', 'run_2400', run_2400 from completed_base where run_2400 is not null
+  ),
+  ins as (
+    insert into analytics_school_year_station_snapshot (
+      snapshot_batch_id, source_kind, snapshot_reason, school_id, school_type, academic_year, assessment_type,
+      class_name, gender, age_years, completion_scope, station_code,
+      session_count, class_count, student_count, scored_count, avg_value, min_value, p25_value, p50_value, p75_value, max_value, stddev_value
+    )
+    select
+      v_batch, 'delete_preserve', 'preserve_student_delete_analytics_in_school',
+      school_id, school_type, academic_year, assessment_type,
+      class_name, gender, age_years, completion_scope, station_code,
+      count(distinct session_id)::integer, count(distinct class_name)::integer, count(*)::integer, count(value)::integer,
+      avg(value), min(value),
+      percentile_cont(0.25) within group (order by value),
+      percentile_cont(0.5) within group (order by value),
+      percentile_cont(0.75) within group (order by value),
+      max(value), stddev_pop(value)
+    from station_rows
+    group by school_id, school_type, academic_year, assessment_type, class_name, gender, age_years, completion_scope, station_code
+    returning 1
+  )
+  select count(*) into v_school_year_rows from ins;
+
+  return query select v_batch, v_summary_rows, v_station_rows, v_school_year_rows;
+end;
+$fn$;
+exception when others then null; end $$;
+
+do $$ begin
+  grant execute on function preserve_student_delete_analytics_in_school(uuid, uuid, text, boolean) to authenticated;
+  revoke execute on function preserve_student_delete_analytics_in_school(uuid, uuid, text, boolean) from anon;
+exception when others then null; end $$;
+
+do $$ begin
+create or replace function preserve_student_delete_analytics_global(p_student uuid)
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $fn$
+declare
+  v_allowed boolean := false;
+  v_school uuid;
+  v_batches integer := 0;
+begin
+  select exists (
+    select 1 from memberships m
+    where m.user_id = auth.uid()
+      and m.role = 'superadmin'
+  ) into v_allowed;
+  if not v_allowed then
+    raise exception 'NOT_AUTHORIZED' using errcode = 'P0001';
+  end if;
+
+  for v_school in
+    select distinct school_id
+    from (
+      select e.school_id from enrollments e where e.student_id = p_student
+      union
+      select s.school_id from sessions s join scores sc on sc.session_id = s.id where sc.student_id = p_student
+      union
+      select s.school_id from sessions s join session_roster r on r.session_id = s.id where r.student_id = p_student
+    ) q
+    where school_id is not null
+  loop
+    perform *
+    from preserve_student_delete_analytics_in_school(
+      p_student,
+      v_school,
+      'delete_student_global',
+      true
+    );
+    v_batches := v_batches + 1;
+  end loop;
+
+  return v_batches;
+end;
+$fn$;
+exception when others then null; end $$;
+
+do $$ begin
+  grant execute on function preserve_student_delete_analytics_global(uuid) to authenticated;
+  revoke execute on function preserve_student_delete_analytics_global(uuid) from anon;
+exception when others then null; end $$;
 
 -- RLS for aggregate tables (readable by school admins)
 alter table if exists assessment_agg enable row level security;

@@ -602,14 +602,14 @@ export default function Gamification({ user }) {
             : "Select a session"}
         </div>
       </div>
-      <div className="max-w-6xl mx-auto px-4 py-6 space-y-6">
-        <header className="space-y-1">
+      <div className="max-w-6xl mx-auto op-page">
+        <header className="op-header">
           <h1 className="text-2xl font-semibold">Challenge Hub</h1>
           <p className="text-sm text-gray-600">Gamified insights to motivate higher performance.</p>
         </header>
 
         <section className="border rounded-lg p-3 bg-white shadow-sm">
-          <div className="flex items-center gap-3 flex-wrap">
+          <div className="compact-filter-bar">
             <label className="text-sm text-gray-600">Session</label>
             <select
               className="border rounded px-2 py-1 text-sm bg-white"
@@ -673,7 +673,7 @@ export default function Gamification({ user }) {
                 <div className="text-sm text-gray-500">No leaderboard data yet.</div>
               ) : leaderboardMode === "simple" ? (
                 <div className="overflow-hidden rounded-xl border bg-white shadow-sm">
-                  <table className="w-full text-sm">
+                  <table className="data-table compact-data-table min-w-[520px]">
                     <thead className="bg-slate-50 text-slate-600">
                       <tr>
                         <th className="px-4 py-3 text-left font-medium">Rank</th>
@@ -693,7 +693,7 @@ export default function Gamification({ user }) {
                   </table>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
                   {classLeaderboards.map(group => (
                     <div key={group.cls} className="border rounded-xl p-3 bg-white shadow-sm space-y-3">
                       <div className="flex items-center justify-between gap-3">
@@ -764,7 +764,7 @@ export default function Gamification({ user }) {
 
             <section className="space-y-3">
               <h2 className="text-lg font-semibold">Top Scorers</h2>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {pbCards.map(({ station, resByGender }) => (
                   <div key={station.key} className="border rounded-xl p-3 bg-white shadow-sm space-y-2.5">
                     <div className="flex items-center gap-2 text-xs text-gray-500">

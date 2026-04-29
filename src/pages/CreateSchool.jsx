@@ -157,7 +157,7 @@ export default function CreateSchool({ user }) {
                             const list = [...filtered.filter(s => s.type === 'primary')].sort((a,b)=> (a.name||'').localeCompare(b.name||''));
                             if (!list.length) return <div className="p-4 text-sm text-gray-600">No primary schools.</div>;
                             return (
-                                <table className="min-w-full text-sm">
+                                <table className="data-table min-w-full">
                                     <thead>
                                         <tr className="bg-gray-100 text-left">
                                             <th className="px-3 py-2 border">Name</th>
@@ -215,7 +215,7 @@ export default function CreateSchool({ user }) {
                             const list = [...filtered.filter(s => s.type === 'secondaryJC')].sort((a,b)=> (a.name||'').localeCompare(b.name||''));
                             if (!list.length) return <div className="p-4 text-sm text-gray-600">No secondary/JC schools.</div>;
                             return (
-                                <table className="min-w-full text-sm">
+                                <table className="data-table min-w-full">
                                     <thead>
                                         <tr className="bg-gray-100 text-left">
                                             <th className="px-3 py-2 border">Name</th>

@@ -673,8 +673,8 @@ export default function ManageStudents({ user }) {
   }
   return (
     <main className="w-full">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 space-y-6">
-        <header className="space-y-1">
+      <div className="max-w-6xl mx-auto op-page">
+        <header className="op-header">
           <h1 className="text-2xl font-semibold">Manage Students</h1>
           <p className="text-sm text-gray-600">
               This manages all the students in your school.
@@ -683,9 +683,9 @@ export default function ManageStudents({ user }) {
         </header>
 
         {/* Add / Enroll */}
-        <section className="border rounded-lg p-4 bg-white shadow-sm">
-          <h2 className="font-medium mb-3">Add Student / Enroll in School</h2>
-          <form onSubmit={addOrEnroll} className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <section className="op-card">
+          <h2 className="font-medium mb-2">Add Student / Enroll in School</h2>
+          <form onSubmit={addOrEnroll} className="grid grid-cols-1 gap-2 lg:grid-cols-3">
             <label className="text-sm">
               Student ID
               <input name="student_identifier" value={form.student_identifier} onChange={handleForm} className="w-full p-2 border rounded mt-1" placeholder="e.g., S12345" required />
@@ -714,16 +714,16 @@ export default function ManageStudents({ user }) {
               Academic Year
               <input name="academic_year" value={form.academic_year} onChange={handleForm} className="w-full p-2 border rounded mt-1" type="number" step="1" />
             </label>
-            <div className="md:col-span-3 flex gap-2">
+            <div className="lg:col-span-3 flex gap-2">
               <button type="submit" disabled={submitting || !membership?.school_id} className="px-4 py-2 bg-blue-600 text-white rounded disabled:opacity-60">
                 {submitting ? 'Saving...' : 'Save Enrollment'}
               </button>
               {error && <div className="text-sm text-red-600 self-center">{error}</div>}
             </div>
           </form>
-          <div className="text-xs text-gray-600 mt-2">Note: If the student already exists, their profile is updated and any previous active enrollment is automatically set inactive.</div>
+          <div className="text-xs text-gray-600 mt-1.5">Note: If the student already exists, their profile is updated and any previous active enrollment is automatically set inactive.</div>
           {/* ID format helper */}
-          <div className="mt-3 text-sm text-gray-700 border border-blue-200 bg-blue-50 rounded p-3">
+          <div className="mt-2 text-sm text-gray-700 border border-blue-200 bg-blue-50 rounded p-2">
             <div className="font-medium text-blue-900 mb-1">Tip: If you want to use your own Student ID format</div>
             <ul className="list-disc pl-5 space-y-1 text-blue-900">
                 <li>
@@ -743,8 +743,8 @@ export default function ManageStudents({ user }) {
         </section>
 
         {/* Search, Filters & Import */}
-        <section className="space-y-3">
-          <div className="flex flex-wrap items-center gap-2">
+        <section className="space-y-2">
+          <div className="compact-filter-bar">
             <input value={query} onChange={(e)=>{ setQuery(e.target.value); setPage(1) }} placeholder="Search by ID, name or class" className="w-full md:max-w-sm p-2 border rounded" />
             <select value={filterClass} onChange={(e)=>{ setFilterClass(e.target.value); setPage(1) }} className="p-2 border rounded">
               <option value="">All classes</option>
@@ -776,14 +776,14 @@ export default function ManageStudents({ user }) {
     Inactive
   </button>
 </div>
-            <div className="w-full flex items-center gap-2">
+            <div className="w-full flex flex-col gap-2 sm:flex-row sm:items-center">
               {/* Left group: Import + Template */}
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <button onClick={()=> setImportOpen(true)} className="px-3 py-2 border rounded hover:bg-gray-50">Import PFT</button>
                 <a href="/pft_template.csv" download className="px-3 py-2 border rounded hover:bg-gray-50">Download PFT template</a>
               </div>
               {/* Right group: Bulk actions */}
-              <div className="ml-auto flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
                 <button onClick={bulkActivate} disabled={selectedEnrollments.size===0} className="px-3 py-2 border rounded bg-white hover:bg-gray-50 disabled:opacity-60">Activate</button>
                 <button onClick={bulkDeactivate} disabled={selectedEnrollments.size===0} className="px-3 py-2 border rounded bg-white hover:bg-gray-50 disabled:opacity-60">Deactivate</button>
                 {(roleLower === 'admin' || roleLower === 'superadmin') && (
@@ -812,8 +812,8 @@ export default function ManageStudents({ user }) {
               {/* Danger zone note removed */}
           </div>
 
-            <div className="overflow-x-auto border rounded">
-            <table className="min-w-[1050px] w-full">
+            <div className="table-scroll">
+            <table className="data-table compact-data-table min-w-[1050px]">
               <thead>
                 <tr className="bg-gray-100 text-left">
                   <th className="border px-2 py-2 w-10"><input ref={headerSelectRef} type="checkbox" checked={allOnPageSelected} onChange={(e)=>toggleSelectAllOnPage(e.target.checked)} /></th>
@@ -923,8 +923,8 @@ export default function ManageStudents({ user }) {
           </div>
 
           {/* Pagination */}
-          <div className="flex items-center justify-between text-sm mt-2">
-            <div className="flex items-center gap-4">
+          <div className="flex flex-col gap-2 text-sm mt-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-wrap items-center gap-3">
               <div>Showing {(paged.cur-1)*pageSize + (filtered.length?1:0)}-{Math.min(paged.cur*pageSize, filtered.length)} of {filtered.length}</div>
               <div className="text-xs text-gray-600">Selected: {selectedEnrollments.size}</div>
             </div>
@@ -947,7 +947,7 @@ export default function ManageStudents({ user }) {
             </div>
             <div className="p-4">
               {history.length ? (
-                <table className="w-full">
+                <table className="data-table">
                   <thead>
                     <tr className="text-left bg-gray-100">
                       <th className="px-2 py-1 border">Class</th>

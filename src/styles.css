@@ -5,3 +5,90 @@
 
 html, body, #root { height: 100%; }
 body { @apply bg-slate-50 text-slate-800; }
+
+.table-scroll {
+  @apply overflow-auto rounded-lg border border-slate-200 bg-white shadow-sm;
+}
+
+.data-table {
+  @apply w-full border-separate border-spacing-0 text-lg;
+}
+
+.data-table thead th {
+  @apply sticky top-0 z-10 border-0 border-b border-slate-200 bg-slate-50 px-3 py-2 text-left text-base font-semibold uppercase tracking-wide text-slate-500;
+}
+
+.data-table tbody td {
+  @apply border-0 border-b border-slate-100 px-3 py-2 align-top text-base text-slate-700;
+}
+
+.data-table tbody tr:nth-child(even) {
+  @apply bg-slate-50/45;
+}
+
+.data-table tbody tr:hover {
+  @apply bg-blue-50/50;
+}
+
+.data-table tbody tr:last-child td {
+  @apply border-b-0;
+}
+
+.data-table .num,
+.data-table .metric {
+  @apply text-right tabular-nums;
+}
+
+.data-table .center {
+  @apply text-center;
+}
+
+.op-page {
+  @apply px-3 py-3 space-y-3 sm:px-4 sm:py-4 sm:space-y-4 lg:px-6 lg:py-5;
+}
+
+.op-header {
+  @apply space-y-0.5;
+}
+
+.op-header h1 {
+  @apply text-xl font-semibold sm:text-2xl;
+}
+
+.op-header p {
+  @apply text-xs text-gray-600 sm:text-sm;
+}
+
+.op-card {
+  @apply rounded-lg border bg-white p-2.5 shadow-sm sm:p-3;
+}
+
+.compact-filter-bar {
+  @apply flex flex-wrap items-center gap-2;
+}
+
+.compact-filter-bar input,
+.compact-filter-bar select,
+.compact-filter-bar button {
+  @apply min-h-9 text-sm;
+}
+
+.compact-grid-filters {
+  @apply grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-6;
+}
+
+.compact-stat {
+  @apply rounded border bg-white p-2 shadow-sm;
+}
+
+.compact-stat .stat-value {
+  @apply text-lg font-semibold sm:text-xl;
+}
+
+.compact-data-table thead th {
+  @apply px-2 py-1 text-sm;
+}
+
+.compact-data-table tbody td {
+  @apply px-2 py-1 text-base;
+}

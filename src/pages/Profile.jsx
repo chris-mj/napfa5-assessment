@@ -150,7 +150,7 @@ return (
           ) : memberships.length === 0 ? (
             <div className="text-sm text-gray-600">No school membership found. Ask your school administrator to add you in.</div>
           ) : (
-            <table className="min-w-full text-sm">
+            <table className="data-table min-w-full">
               <thead>
                 <tr className="bg-gray-100 text-left">
                   <th className="px-3 py-2 border">School</th>
